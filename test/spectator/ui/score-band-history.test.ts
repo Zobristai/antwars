@@ -169,7 +169,7 @@ function narrowHistoryHtml(font: string, repeatRows = 0): string {
 
 describe("Score Band side-by-side History ledger", () => {
   it("renders open Histories in one strip at 1200 and 1280 px, keeping the 244 px board floor, intact four-digit headers, sticky scroll, adjacent refused, and distinct open button state", async () => {
-    for (const defaultFontSize of [16, 32]) {
+    for (const defaultFontSize of [16]) {
       const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
       try {
         for (const width of [1200, 1280]) for (const font of ["Roboto", "Liberation Sans"]) {
@@ -270,7 +270,7 @@ describe("Score Band side-by-side History ledger", () => {
   }, 60_000);
 
   it("keeps a usable scrollable desktop History strip and 244 px board floor when two colonies have 3–4 long multi-agent rows", async () => {
-    for (const defaultFontSize of [16, 32]) {
+    for (const defaultFontSize of [16]) {
       const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
       try {
         for (const agentsPerColony of [3, 4]) for (const width of [1200, 1280]) for (const font of ["Roboto", "Liberation Sans"]) {
@@ -344,12 +344,13 @@ describe("Score Band side-by-side History ledger", () => {
     }
   }, 60_000);
 
-  it("wraps History rows cleanly at 320, 390, 640, 195 and 160 CSS px with uncapped lists and sticky colony bar", async () => {
+  it("wraps narrow History rows cleanly at phone sizes and at 1200 and 1280 px with doubled text", async () => {
     for (const defaultFontSize of [16, 32]) {
       const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
       try {
-        for (const width of [320, 390, 640, 195, 160]) for (const font of ["Roboto", "Liberation Sans"]) {
-          const height = width < 320 ? 900 : width === 640 ? 400 : 844;
+        const widths = defaultFontSize === 32 ? [320, 390, 640, 195, 160, 1200, 1280] : [320, 390, 640, 195, 160];
+        for (const width of widths) for (const font of ["Roboto", "Liberation Sans"]) {
+          const height = width < 320 ? 900 : width === 640 ? 400 : width >= 1200 ? 800 : 844;
           const page = await browser.newPage({ viewport: { width, height } });
           try {
             // At sub-320 CSS px (phone 200% zoom), keep the frame compact inside this isolated harness so History rows are measurable without changing HUD phone-zoom CSS.

@@ -32,8 +32,10 @@ import { caption, colonyCount, legend, type Caption, type Legend } from "./model
  * In em, so it grows with the browser's text size: 520 px at default text. */
 const BUTTON_IN_BAR = "(min-width: 32.5em)";
 /** From this width aligned colony rows fit; narrower, the stacked deck follows the board. */
-// Keep in sync with deck.css: fit the Flyers grid before moving the deck above the board.
-const DECK_FIRST = "(min-width: 1200px)";
+// Keep in sync with deck.css: 75em (1200 px at default text) fits the Flyers grid before stacking.
+const DECK_FIRST = "(min-width: 75em)";
+/** On short narrow screens (phones at doubled text or 200% zoom), the board window joins the scroller at full height. */
+const WINDOW_IN_SCROLLER = "(max-width: 19.99em) and (max-height: 24.99em)";
 
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;
@@ -49,8 +51,33 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   // ---------------------------------------------------------------- the top bar
   const top = h(doc, "header", "d1-top");
   const brand = deckBrand(doc);
+  const nav = navigation(doc, "watch", search());
+  nav.id = "d1-site-pages";
+  const pages = h(doc, "button", "d2-nav-link d1-pages");
+  pages.type = "button";
+  pages.setAttribute("aria-expanded", "false");
+  pages.setAttribute("aria-controls", nav.id);
+  const pagesChevron = h(doc, "span", "d1-pages-chevron");
+  pagesChevron.setAttribute("aria-hidden", "true");
+  pages.append(h(doc, "span", "d1-pages-word", "Site pages"), pagesChevron);
   const barSlot = h(doc, "div", "d1-top-end");
-  top.append(brand, navigation(doc, "watch", search()), barSlot);
+  top.append(brand, pages, nav, barSlot);
+
+  const setMenu = (open: boolean) => {
+    if (open) root.dataset.menu = "open";
+    else delete root.dataset.menu;
+    pages.setAttribute("aria-expanded", String(open));
+  };
+  listen(pages, "click", () => setMenu(root.dataset.menu !== "open"));
+  listen(root, "keydown", e => {
+    if ((e as KeyboardEvent).key === "Escape" && root.dataset.menu === "open") {
+      setMenu(false);
+      pages.focus();
+    }
+  });
+  listen(doc, "pointerdown", e => {
+    if (root.dataset.menu === "open" && !top.contains(e.target as Node)) setMenu(false);
+  });
 
   // ---------------------------------------------------------------- the board's frame: the legend, the window, the lane
   const frameEl = h(doc, "section", "d1-frame");
@@ -129,11 +156,25 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const keyIcon = h(doc, "span"); keyIcon.setAttribute("aria-hidden", "true"); keyIcon.innerHTML = ICON.info;
   keyToggle.append(keyIcon, "Key");
   const key = h(doc, "div", "sb-key"); key.id = "score-band-key"; key.hidden = true;
-  const keyLine = h(doc, "p", undefined, keyText(VISUAL_KEY)), explainer = h(doc, "p", undefined, LOG_EXPLAINER);
+  const keyPlain = keyText(VISUAL_KEY);
+  const keyLine = h(doc, "p", undefined, keyPlain), explainer = h(doc, "p", undefined, LOG_EXPLAINER);
   key.append(keyLine, explainer);
+  // Under reader text-spacing overrides at 320 px and wider, keep Key terms whole as inline blocks only when the line overflows.
+  const fitKey = () => {
+    if (keyLine.firstElementChild || keyLine.textContent !== keyPlain) keyLine.textContent = keyPlain;
+    const vw = doc.documentElement?.clientWidth ?? 0;
+    if (vw < 320 || typeof keyLine.getClientRects !== "function" || !keyLine.getClientRects().length) return;
+    if (keyLine.scrollWidth <= keyLine.clientWidth + 0.5) return;
+    const terms = keyPlain.split("\u00a0\u00b7 ");
+    keyLine.replaceChildren(...terms.flatMap((t, i) => {
+      const term = h(doc, "span", "sb-key-term", t.replace(/\u00a0/g, " ") + (i < terms.length - 1 ? "\u00a0\u00b7" : ""));
+      return i ? [doc.createTextNode(" "), term] : [term];
+    }));
+  };
   listen(keyToggle, "click", () => {
     key.hidden = !key.hidden;
     setAttr(keyToggle, "aria-expanded", String(!key.hidden));
+    if (!key.hidden) fitKey();
   });
   rulesKey.append(rules, keyToggle);
   foot.append(rulesKey, inspired, teams.offer, h(doc, "span", "d2-credit d1-foot-credit", PAGE_COPY.credit), key);
@@ -145,40 +186,130 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const agent = mountAgentDialog(doc, root);
 
   // One Bring your agent button: in the top bar from 32.5em (520 px at default text); narrower, at the deck's end before the footer.
-  const wide = typeof win.matchMedia === "function" ? win.matchMedia(BUTTON_IN_BAR) : null;
+  const mq = (query: string) => (typeof win.matchMedia === "function" ? win.matchMedia(query) : null);
+  const wide = mq(BUTTON_IN_BAR);
   const placeButton = () => {
-    const slot = wide === null || wide.matches ? barSlot : deckEnd;
+    const inBar = wide === null || wide.matches;
+    const slot = inBar ? barSlot : deckEnd;
     if (agent.button.parentElement !== slot) slot.append(agent.button);
     setHidden(deckEnd, slot !== deckEnd);
+    if (inBar && root.dataset.menu === "open") setMenu(false);
   };
   placeButton();
   if (wide) listen(wide, "change", placeButton);
 
-  // From 1200 px wide the deck stands over the board and the footer closes the page; narrower, the board comes first and
-  // the deck, its end and the footer scroll beneath it. The nodes move, not only their boxes, so reading and focus order
-  // follow what is seen.
-  const deckFirst = typeof win.matchMedia === "function" ? win.matchMedia(DECK_FIRST) : null;
+  let refit = 0;
+  const scheduleRefit = () => {
+    if (refit) return;
+    refit = win.requestAnimationFrame(() => {
+      refit = 0;
+      win.dispatchEvent(new Event("resize"));
+    });
+  };
+
+  // From 75em wide the deck stands over the board and the footer closes the page; narrower, the board window stays
+  // under the pinned bar while metadata, board controls, deck, its end and footer open one scroller beneath it. On
+  // short narrow screens the window joins the scroller as its first item at full height. Nodes move so reading and
+  // focus order follow what is seen.
+  const deckFirst = mq(DECK_FIRST);
+  const short = mq(WINDOW_IN_SCROLLER);
   let placed = false;
   const placeDeck = () => {
     const focused = doc.activeElement as HTMLElement | null;
     const wideDeck = deckFirst === null || deckFirst.matches;
     if (wideDeck) {
+      root.classList.remove("d1-joined");
+      frameEl.insertBefore(metadata, hole);
+      frameEl.append(lane);
       band.append(deck.score);
       top.after(below, frameEl, foot);
     } else {
       deckEl.append(deck.score);
       below.append(foot);
-      top.after(frameEl, below);
+      below.prepend(lane);
+      below.prepend(metadata);
+      if (short?.matches) {
+        below.prepend(frameEl);
+        root.classList.add("d1-joined");
+        top.after(below);
+      } else {
+        root.classList.remove("d1-joined");
+        top.after(frameEl, below);
+      }
     }
     teams.setWide(wideDeck);
     // A moved node loses the focus: a viewer who zooms across the width keeps their place.
     if (focused && focused !== doc.activeElement && root.contains(focused)) focused.focus({ preventScroll: true });
     // The board's window moved: fit the board to it again, as after a resize.
-    if (placed) win.requestAnimationFrame(() => win.dispatchEvent(new Event("resize")));
+    if (placed) scheduleRefit();
     placed = true;
   };
   placeDeck();
   if (deckFirst) listen(deckFirst, "change", placeDeck);
+  if (short) listen(short, "change", placeDeck);
+  listen(below, "scroll", scheduleRefit);
+  listen(host, "scroll", scheduleRefit);
+
+  // Under reader text-spacing overrides at 320 px and wider, move whole gauge figures onto a further row only when they
+  // cannot fit their row without clipping, overlapping or running past the screen.
+  const overlap = (a: DOMRect, b: DOMRect) =>
+    Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
+    Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
+  const gaugeMisfit = (g: HTMLElement): boolean => {
+    const vw = doc.documentElement?.clientWidth ?? 0;
+    const figs = [...g.querySelectorAll<HTMLElement>(".sb-figure")]
+      .filter(e => !e.hidden && !e.parentElement?.hidden && typeof e.getClientRects === "function" && e.getClientRects().length > 0);
+    if (!figs.length) return false;
+    const labels = [...g.children]
+      .filter((e): e is HTMLElement => e instanceof HTMLElement && e.classList.contains("d1-ml") && typeof e.getClientRects === "function" && e.getClientRects().length > 0);
+    const parts = [...figs, ...labels];
+    if (figs.some(e => e.scrollWidth > e.clientWidth + 0.5)) return true;
+    const boxes = parts.map(e => e.getBoundingClientRect());
+    if (boxes.some(b => b.left < -0.5 || b.right > vw + 0.5)) return true;
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) if (overlap(boxes[i]!, boxes[j]!)) return true;
+    }
+    const neighbours = [...(g.parentElement?.children ?? [])]
+      .filter((e): e is HTMLElement => e !== g && e instanceof HTMLElement && (e.classList.contains("sb-gauge") || e.classList.contains("sb-hold")) && typeof e.getClientRects === "function" && e.getClientRects().length > 0)
+      .map(e => e.getBoundingClientRect());
+    return figs.some(e => {
+      const b = e.getBoundingClientRect();
+      return neighbours.some(n => overlap(b, n));
+    });
+  };
+  let fittingGauges = false;
+  const fitGauges = () => {
+    if (fittingGauges) return;
+    fittingGauges = true;
+    const vw = doc.documentElement?.clientWidth ?? 0;
+    for (const g of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) {
+      g.classList.remove("sb-wrap-figures");
+      if (vw >= 320 && typeof g.getClientRects === "function" && g.getClientRects().length > 0 && gaugeMisfit(g)) {
+        g.classList.add("sb-wrap-figures");
+      }
+    }
+    fittingGauges = false;
+  };
+  let fitQueued = 0;
+  const queueFitGauges = () => {
+    if (!fitQueued) fitQueued = win.requestAnimationFrame(() => { fitQueued = 0; fitGauges(); });
+  };
+  const gaugeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(queueFitGauges);
+  for (const g of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) gaugeObserver?.observe(g);
+  for (const f of deck.score.querySelectorAll<HTMLElement>(".sb-figure")) gaugeObserver?.observe(f);
+  const keyObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(fitKey);
+  if (keyObserver && typeof Node !== "undefined" && key instanceof Node) {
+    keyObserver.observe(key, { attributes: true, attributeFilter: ["hidden"] });
+  }
+  listen(win, "resize", fitKey);
+  listen(win, "resize", fitGauges);
+  fitKey();
+  fitGauges();
+  listeners.push(() => {
+    gaugeObserver?.disconnect();
+    keyObserver?.disconnect();
+    if (fitQueued) win.cancelAnimationFrame(fitQueued);
+  });
 
   // The board's own squad and mark tooltips: shown over this view.
   for (const tip of tips) root.append(tip);
@@ -265,22 +396,24 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     if (!(r.width > 0 && r.bottom - top > 0)) return { x0: 0, y0: 0, x1: win.innerWidth, y1: win.innerHeight };
     return { x0: r.left, y0: top, x1: r.right, y1: r.bottom };
   }
-  // A legend that wraps to another line (a long recording's on a phone) moves the window's top: fit the board again.
+  // A legend that wraps to another line (a long recording's on a phone) or a replay state line in the lane moves the
+  // window's edge: fit the board again.
   let legendH = -1;
   let deckH = -1;
   let metadataH = -1;
   let footerH = -1;
-  let refit = 0;
+  let laneH = -1;
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
     const next = legendEl.offsetHeight;
-    const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight;
-    if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH) && !refit) refit = win.requestAnimationFrame(() => { refit = 0; win.dispatchEvent(new Event("resize")); });
-    legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter;
+    const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight, nextLane = lane.offsetHeight;
+    if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH || nextLane !== laneH)) scheduleRefit();
+    legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter; laneH = nextLane;
   });
   watch?.observe(legendEl);
   watch?.observe(deckEl);
   watch?.observe(metadata);
   watch?.observe(foot);
+  watch?.observe(lane);
   listeners.push(() => { watch?.disconnect(); if (refit) win.cancelAnimationFrame(refit); });
 
   return {

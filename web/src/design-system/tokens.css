@@ -1,8 +1,7 @@
-/* Antwars design tokens (docs/design-system.md). Set on the page root .d1p, not :root, so they change no value outside it
-   (web/index.html sets its own --aw-tap on :root, 44 px on phones). The top bar (ui/deck/deck.css .d1-top) takes them
-   too, so the live view's bar, outside .d1p, is drawn from the same values; those it shares with web/index.html's :root
-   are equal there. */
-.d1p, .d1-top {
+/* Antwars design tokens (docs/design-system.md). Set on the page root .d1p, the top bar .d1-top, and the live match HUD
+   root .d1, not :root, so they change no value outside them (web/index.html sets its own --aw-tap on :root, 44 px on
+   phones). Every value shared with web/index.html's :root is equal there. */
+.d1p, .d1-top, .d1 {
   /* Colour: surfaces, darkest to lightest */
   --aw-bg: #121719;
   --aw-surface: #1a2225;
@@ -63,5 +62,5 @@
 /* A 44 px tap target on touch screens, and wherever web/index.html sets it on :root: phones in portrait (700 px wide or
    less) and in landscape (500 px tall or less, wider than 500 px). */
 @media (pointer: coarse), (max-width: 700px), (max-height: 500px) and (min-width: 501px) {
-  .d1p, .d1-top { --aw-tap: 44px; }
+  .d1p, .d1-top, .d1 { --aw-tap: 44px; }
 }
