@@ -5629,17 +5629,6 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Abliterated GLM-5.3",
-   "extent": 54,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
    "text": "above: Claude Fable 5.2",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
@@ -5673,7 +5662,18 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5",
+   "text": "above: Claude Sonnet 5.5",
+   "extent": 54,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 1280,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Gemini 3.8 Flash",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5695,7 +5695,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna",
+   "text": "above: GPT-6.1 Terra",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5706,7 +5706,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol",
+   "text": "above: GPT-6.1 Terra",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5739,7 +5739,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Muse Wonder 1.0",
+   "text": "above: kain",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5750,8 +5750,19 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max",
+   "text": "above: Qwen4 Max",
    "extent": 54,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 1280,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: 1 Nov 2026",
+   "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -5794,7 +5805,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 12 Nov 2026",
+   "text": "above: 18 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5805,7 +5816,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 26 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5816,7 +5827,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5827,29 +5838,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 31 Oct 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5870,10 +5859,10 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 7 Nov 2026",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 13 Nov 2026",
+   "extent": 53,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch",
@@ -5881,10 +5870,21 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 7 Nov 2026",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 21 Nov 2026",
+   "extent": 53,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
+  },
+  {
+   "surface": "watch",
+   "width": 1280,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 22 Nov 2026",
+   "extent": 53,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch",
@@ -5904,17 +5904,6 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Abliterated GLM-5.3",
-   "extent": 54,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
    "text": "above: Claude Fable 5.2",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
@@ -5948,7 +5937,18 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5",
+   "text": "above: Claude Sonnet 5.5",
+   "extent": 54,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 1280,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Gemini 3.8 Flash",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5970,7 +5970,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna",
+   "text": "above: GPT-6.1 Terra",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -5981,7 +5981,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol",
+   "text": "above: GPT-6.1 Terra",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6014,7 +6014,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Muse Wonder 1.0",
+   "text": "above: kain",
    "extent": 54,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6025,19 +6025,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max",
+   "text": "above: Qwen4 Max",
    "extent": 54,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > b",
-   "text": "above: 12 Nov 2026",
-   "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -6048,6 +6037,17 @@
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > b",
    "text": "above: 5 Nov 2026",
+   "extent": 52,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 1280,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 1 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6091,7 +6091,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 26 Oct 2026",
+   "text": "above: 13 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6102,7 +6102,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 18 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6113,7 +6113,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6124,7 +6124,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6135,7 +6135,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 21 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6146,7 +6146,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 7 Nov 2026",
+   "text": "above: 22 Nov 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6157,7 +6157,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 7 Nov 2026",
+   "text": "above: 31 Oct 2026",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6199,11 +6199,11 @@
    "width": 320,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Abliterated GLM-5.3",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
+   "rule": "clipped",
+   "element": "span.aw-row.aw-player > span.aw-who > span.aw-name.aw-cut > span.aw-model",
+   "text": "GPT-6.2 Astra Standard",
+   "extent": 13,
+   "why": "The tile's designed shortening, at 320 px with doubled text only: \"GPT-6.2 Astra Standard\" stays on one line and gives way to a single ellipsis beside its effort badge; the name's title and the tile's title and accessible name carry the whole name."
   },
   {
    "surface": "watch",
@@ -6245,7 +6245,18 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5",
+   "text": "above: Claude Sonnet 5.5",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Gemini 3.8 Flash",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6267,7 +6278,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6278,7 +6289,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6311,7 +6322,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Muse Wonder 1.0",
+   "text": "above: kain",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6322,8 +6333,19 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max",
+   "text": "above: Qwen4 Max",
    "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: 1 Nov 2026",
+   "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -6366,7 +6388,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 12 Nov 2026",
+   "text": "above: 18 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6377,7 +6399,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 26 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6388,7 +6410,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6399,29 +6421,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 31 Oct 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6442,10 +6442,10 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 7 Nov 2026",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 13 Nov 2026",
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch",
@@ -6453,9 +6453,42 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 7 Nov 2026",
-   "extent": 132,
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 21 Nov 2026",
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 22 Nov 2026",
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
+   "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -6465,7 +6498,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra HIGH 12 Nov 2026",
+   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6487,7 +6520,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Abliterated GLM-5.3 MAX GPT-6.1 Sol HIGH 7 Nov 2026",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM 11 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6498,7 +6531,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH 11 Nov 2026",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6509,7 +6542,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX 10 Nov 2026",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX 1 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6520,62 +6553,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH 7 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Muse Wonder 1.0 MAX Gemini 4 Argon HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX 26 Oct 2026",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH 18 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6587,6 +6565,50 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 2 PER SIDE GPT-6 Astra MAX K3.1 Pro Highspeed HIGH 12 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6606,11 +6628,11 @@
    "width": 320,
    "textSize": 32,
    "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Abliterated GLM-5.3",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
+   "rule": "clipped",
+   "element": "span.aw-row.aw-player > span.aw-who > span.aw-name.aw-cut > span.aw-model",
+   "text": "GPT-6.2 Astra Standard",
+   "extent": 4,
+   "why": "The tile's designed shortening, at 320 px with doubled text only: \"GPT-6.2 Astra Standard\" stays on one line and gives way to a single ellipsis beside its effort badge; the name's title and the tile's title and accessible name carry the whole name."
   },
   {
    "surface": "watch",
@@ -6652,7 +6674,18 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5",
+   "text": "above: Claude Sonnet 5.5",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Gemini 3.8 Flash",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6674,7 +6707,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6685,7 +6718,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6718,7 +6751,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Muse Wonder 1.0",
+   "text": "above: kain",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6729,19 +6762,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max",
+   "text": "above: Qwen4 Max",
    "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > b",
-   "text": "above: 12 Nov 2026",
-   "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -6752,6 +6774,17 @@
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > b",
    "text": "above: 5 Nov 2026",
+   "extent": 132,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 1 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6795,7 +6828,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 26 Oct 2026",
+   "text": "above: 13 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6806,7 +6839,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 18 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6817,7 +6850,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6828,7 +6861,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 21 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6839,7 +6872,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 22 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6850,7 +6883,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 7 Nov 2026",
+   "text": "above: 31 Oct 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6860,9 +6893,31 @@
    "textSize": 32,
    "typeface": "Roboto",
    "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 7 Nov 2026",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name.aw-cut > span.aw-model",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
+   "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -6872,7 +6927,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra HIGH 12 Nov 2026",
+   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6894,7 +6949,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Abliterated GLM-5.3 MAX GPT-6.1 Sol HIGH 7 Nov 2026",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM 11 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6905,7 +6960,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH 11 Nov 2026",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6916,7 +6971,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX 10 Nov 2026",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX 1 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6927,62 +6982,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH 7 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Muse Wonder 1.0 MAX Gemini 4 Argon HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX 26 Oct 2026",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH 18 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -6994,6 +6994,50 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 2 PER SIDE GPT-6 Astra MAX K3.1 Pro Highspeed HIGH 12 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7037,17 +7081,6 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Abliterated GLM-5.3",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
    "text": "above: Claude Fable 5.2",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
@@ -7081,7 +7114,18 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5",
+   "text": "above: Claude Sonnet 5.5",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Gemini 3.8 Flash",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7103,7 +7147,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7114,7 +7158,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7147,7 +7191,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Muse Wonder 1.0",
+   "text": "above: kain",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7158,8 +7202,19 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max",
+   "text": "above: Qwen4 Max",
    "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: 1 Nov 2026",
+   "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -7202,7 +7257,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 12 Nov 2026",
+   "text": "above: 18 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7213,7 +7268,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 26 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7224,7 +7279,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7235,29 +7290,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 31 Oct 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7278,10 +7311,10 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 7 Nov 2026",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 13 Nov 2026",
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch",
@@ -7289,9 +7322,31 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: 7 Nov 2026",
-   "extent": 132,
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 21 Nov 2026",
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 22 Nov 2026",
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
+   "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -7301,7 +7356,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra HIGH 12 Nov 2026",
+   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7323,7 +7378,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Abliterated GLM-5.3 MAX GPT-6.1 Sol HIGH 7 Nov 2026",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM 11 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7334,7 +7389,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH 11 Nov 2026",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7345,7 +7400,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX 10 Nov 2026",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX 1 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7356,62 +7411,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH 7 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Muse Wonder 1.0 MAX Gemini 4 Argon HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX 26 Oct 2026",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH 18 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7423,6 +7423,50 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 2 PER SIDE GPT-6 Astra MAX K3.1 Pro Highspeed HIGH 12 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7444,17 +7488,6 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Abliterated GLM-5.3",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
    "text": "above: Claude Fable 5.2",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
@@ -7488,7 +7521,18 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5",
+   "text": "above: Claude Sonnet 5.5",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Gemini 3.8 Flash",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7510,7 +7554,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7521,7 +7565,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol",
+   "text": "above: GPT-6.1 Terra",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7554,7 +7598,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Muse Wonder 1.0",
+   "text": "above: kain",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7565,19 +7609,8 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max",
+   "text": "above: Qwen4 Max",
    "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > b",
-   "text": "above: 12 Nov 2026",
-   "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -7588,6 +7621,17 @@
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > b",
    "text": "above: 5 Nov 2026",
+   "extent": 132,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: 1 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7631,7 +7675,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 26 Oct 2026",
+   "text": "above: 13 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7642,7 +7686,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 18 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7653,7 +7697,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7664,7 +7708,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 19 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7675,7 +7719,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 29 Oct 2026",
+   "text": "above: 21 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7686,7 +7730,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 7 Nov 2026",
+   "text": "above: 22 Nov 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7697,7 +7741,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: 7 Nov 2026",
+   "text": "above: 31 Oct 2026",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7708,7 +7752,18 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 GPT-6.1 Terra MAX kain GPT-6.1 Terra HIGH 12 Nov 2026",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot 21 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Opus 5.5 XHIGH Scripted bot 22 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7730,7 +7785,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Abliterated GLM-5.3 MAX GPT-6.1 Sol HIGH 7 Nov 2026",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM 11 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7741,7 +7796,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH 11 Nov 2026",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7752,7 +7807,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX 10 Nov 2026",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX 1 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7763,62 +7818,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH 7 Nov 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Muse Wonder 1.0 MAX Gemini 4 Argon HIGH 29 Oct 2026",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX 26 Oct 2026",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH 18 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7830,6 +7830,50 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 2 PER SIDE GPT-6 Astra MAX K3.1 Pro Highspeed HIGH 12 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX 19 Nov 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH 31 Oct 2026",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot 13 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -7950,6 +7994,28 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: Queens killed",
+   "extent": 52,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 1280,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: Queens killed",
+   "extent": 52,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 1280,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
    "text": "above: Sustained territory lead",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
@@ -7960,10 +8026,10 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
    "text": "above: Time-up",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
+   "extent": 53,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch-results-shown",
@@ -7971,32 +8037,10 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
    "text": "above: Time-up",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: Time-up",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 1280,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: Time-up",
-   "extent": 52,
-   "why": "Already on main when this coverage was added to the render check."
+   "extent": 53,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch-results-shown",
@@ -8104,7 +8148,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
+   "text": "above: Queens killed",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8115,7 +8159,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
+   "text": "above: Queens killed",
    "extent": 52,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8179,9 +8223,20 @@
    "width": 320,
    "textSize": 32,
    "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "span.aw-row.aw-player > span.aw-who > span.aw-name.aw-cut > span.aw-model",
+   "text": "GPT-6.2 Astra Standard",
+   "extent": 13,
+   "why": "The tile's designed shortening, at 320 px with doubled text only: \"GPT-6.2 Astra Standard\" stays on one line and gives way to a single ellipsis beside its effort badge; the name's title and the tile's title and accessible name carry the whole name."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 HIGH",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8192,7 +8247,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 MAX",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8203,7 +8258,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 MEDIUM",
+   "text": "above: Claude Sonnet 5.5 MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8214,7 +8269,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 XHIGH",
+   "text": "above: Gemini 3.8 Flash HIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8225,7 +8280,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Gemini 4 Argon HIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8236,7 +8291,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna MAX",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8247,18 +8302,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol HIGH",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol XHIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8302,8 +8346,41 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max XHIGH",
+   "text": "above: Qwen4 Max HIGH",
    "extent": 128,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Scripted bot",
+   "extent": 128,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: Queens killed",
+   "extent": 132,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: Queens killed",
+   "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -8400,10 +8477,10 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
    "text": "above: Time-up",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch-results-shown",
@@ -8411,31 +8488,31 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
    "text": "above: Time-up",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch-results-shown",
    "width": 320,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: Time-up",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
   },
   {
    "surface": "watch-results-shown",
    "width": 320,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: Time-up",
-   "extent": 132,
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
+   "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -8456,7 +8533,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 kain GPT-6.1 Terra HIGH GPT-6.1 Terra MAX Time-up 12 Nov 2026 60",
+   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8467,7 +8544,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH Queens killed 11 Nov 202",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM Queens killed 11 Nov ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8478,7 +8555,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX Queens killed 10 Nov 2026 39 mi",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH Queens killed 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8489,7 +8566,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH Queens killed 29 Oct 2026 2",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX Queens killed 1 Nov 2026 25 mi",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8500,62 +8577,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH Queens killed 29 Oct 2026 34 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Gemini 4 Argon HIGH Muse Wonder 1.0 MAX Time-up 29 Oct 2026 45 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH Time-up 7 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol HIGH Abliterated GLM-5.3 MAX Queens killed 7 Nov 2026 28",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH Queens killed 29 Oct 2026 36 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX Time-up 26 Oct 2026 30 mi",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH Queens killed 18 Nov 2026 29 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8567,6 +8589,50 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 2 PER SIDE K3.1 Pro Highspeed HIGH GPT-6 Astra MAX Queens killed 12 Nov ",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH Queens kill",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX Queens killed 19 Nov 2026 1",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8586,9 +8652,20 @@
    "width": 320,
    "textSize": 32,
    "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "span.aw-row.aw-player > span.aw-who > span.aw-name.aw-cut > span.aw-model",
+   "text": "GPT-6.2 Astra Standard",
+   "extent": 4,
+   "why": "The tile's designed shortening, at 320 px with doubled text only: \"GPT-6.2 Astra Standard\" stays on one line and gives way to a single ellipsis beside its effort badge; the name's title and the tile's title and accessible name carry the whole name."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 HIGH",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8599,7 +8676,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 MAX",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8610,7 +8687,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 MEDIUM",
+   "text": "above: Claude Sonnet 5.5 MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8621,7 +8698,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 XHIGH",
+   "text": "above: Gemini 3.8 Flash HIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8632,7 +8709,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Gemini 4 Argon HIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8643,7 +8720,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna MAX",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8654,18 +8731,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol HIGH",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol XHIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8709,7 +8775,18 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max XHIGH",
+   "text": "above: Qwen4 Max HIGH",
+   "extent": 128,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Scripted bot",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8808,7 +8885,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
+   "text": "above: Queens killed",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8840,9 +8917,31 @@
    "textSize": 32,
    "typeface": "Roboto",
    "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name.aw-cut > span.aw-model",
+   "text": "above: Queens killed",
    "extent": 132,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content > ol.aw-grid > span.aw-cut.aw-name",
+   "text": "",
+   "extent": 11,
+   "why": "The one tile whose name is shortened by the tile's designed single ellipsis at 320 px with doubled text (\"GPT-6.2 Astra Standard\"): a name carries the aw-cut class only while it is shortened, so the other 11 tiles' names lack it; no tile lacks a name."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
+   "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -8863,7 +8962,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 kain GPT-6.1 Terra HIGH GPT-6.1 Terra MAX Time-up 12 Nov 2026 60",
+   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8874,7 +8973,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH Queens killed 11 Nov 202",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM Queens killed 11 Nov ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8885,7 +8984,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX Queens killed 10 Nov 2026 39 mi",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH Queens killed 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8896,7 +8995,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH Queens killed 29 Oct 2026 2",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX Queens killed 1 Nov 2026 25 mi",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8907,62 +9006,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH Queens killed 29 Oct 2026 34 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Gemini 4 Argon HIGH Muse Wonder 1.0 MAX Time-up 29 Oct 2026 45 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH Time-up 7 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol HIGH Abliterated GLM-5.3 MAX Queens killed 7 Nov 2026 28",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH Queens killed 29 Oct 2026 36 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX Time-up 26 Oct 2026 30 mi",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH Queens killed 18 Nov 2026 29 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -8979,6 +9023,50 @@
   },
   {
    "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH Queens kill",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX Queens killed 19 Nov 2026 1",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
    "width": 390,
    "textSize": 16,
    "typeface": "Liberation Sans",
@@ -9017,7 +9105,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 HIGH",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9028,7 +9116,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 MAX",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9039,7 +9127,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 MEDIUM",
+   "text": "above: Claude Sonnet 5.5 MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9050,7 +9138,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 XHIGH",
+   "text": "above: Gemini 3.8 Flash HIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9061,7 +9149,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Gemini 4 Argon HIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9072,7 +9160,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna MAX",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9083,18 +9171,7 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol HIGH",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol XHIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9138,8 +9215,41 @@
    "typeface": "Liberation Sans",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max XHIGH",
+   "text": "above: Qwen4 Max HIGH",
    "extent": 128,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Scripted bot",
+   "extent": 128,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: Queens killed",
+   "extent": 132,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "text": "above: Queens killed",
+   "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -9236,10 +9346,10 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
    "text": "above: Time-up",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch-results-shown",
@@ -9247,31 +9357,20 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
    "text": "above: Time-up",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
+   "extent": 133,
+   "why": "The empty band below a Top matches tile's players at doubled text, as held for the tiles whose last player line ends in an effort badge, 1 px taller: this tile's last line is \"Scripted bot\", which has no badge, and in Liberation Sans the name's text box ends 1 px above where a badge's does."
   },
   {
    "surface": "watch-results-shown",
    "width": 390,
    "textSize": 32,
    "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: Time-up",
-   "extent": 132,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "page-empty",
-   "element": "band below span.aw-lines > span.aw-row.aw-player > span.aw-tags > span.aw-badge",
-   "text": "above: Time-up",
-   "extent": 132,
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
+   "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -9292,7 +9391,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 kain GPT-6.1 Terra HIGH GPT-6.1 Terra MAX Time-up 12 Nov 2026 60",
+   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9303,7 +9402,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH Queens killed 11 Nov 202",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM Queens killed 11 Nov ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9314,7 +9413,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX Queens killed 10 Nov 2026 39 mi",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH Queens killed 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9325,7 +9424,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH Queens killed 29 Oct 2026 2",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX Queens killed 1 Nov 2026 25 mi",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9336,62 +9435,7 @@
    "typeface": "Liberation Sans",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH Queens killed 29 Oct 2026 34 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Gemini 4 Argon HIGH Muse Wonder 1.0 MAX Time-up 29 Oct 2026 45 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH Time-up 7 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol HIGH Abliterated GLM-5.3 MAX Queens killed 7 Nov 2026 28",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH Queens killed 29 Oct 2026 36 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX Time-up 26 Oct 2026 30 mi",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH Queens killed 18 Nov 2026 29 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9403,6 +9447,50 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 2 PER SIDE K3.1 Pro Highspeed HIGH GPT-6 Astra MAX Queens killed 12 Nov ",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH Queens kill",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX Queens killed 19 Nov 2026 1",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9424,7 +9512,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 HIGH",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9435,7 +9523,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Fable 5.2 MAX",
+   "text": "above: Claude Fable 5.2 XHIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9446,7 +9534,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 MEDIUM",
+   "text": "above: Claude Sonnet 5.5 MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9457,7 +9545,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Claude Opus 5.5 XHIGH",
+   "text": "above: Gemini 3.8 Flash HIGH",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9468,7 +9556,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Gemini 4 Argon HIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9479,7 +9567,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6 Luna MAX",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9490,18 +9578,7 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol HIGH",
-   "extent": 128,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: GPT-6.1 Sol XHIGH",
+   "text": "above: GPT-6.1 Terra MAX",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9545,7 +9622,18 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
-   "text": "above: Qwen3.8 Max XHIGH",
+   "text": "above: Qwen4 Max HIGH",
+   "extent": 128,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below li > a.aw-tile > span.aw-row.aw-meta > span.aw-type.aw-name",
+   "text": "above: Scripted bot",
    "extent": 128,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9644,7 +9732,18 @@
    "typeface": "Roboto",
    "rule": "page-empty",
    "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
+   "text": "above: Queens killed",
+   "extent": 132,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
+   "text": "above: Queens killed",
    "extent": 132,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9675,10 +9774,10 @@
    "width": 390,
    "textSize": 32,
    "typeface": "Roboto",
-   "rule": "page-empty",
-   "element": "band below span.aw-row.aw-player > span.aw-who > span.aw-name > span.aw-model",
-   "text": "above: Time-up",
-   "extent": 132,
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "CHALLENGE · 1V1 Claude Fable 5.2 XHIGH Scripted bot Time-up 21 Nov 2026 30 min",
+   "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -9699,7 +9798,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "CHALLENGE · 1V1 kain GPT-6.1 Terra HIGH GPT-6.1 Terra MAX Time-up 12 Nov 2026 60",
+   "text": "CHALLENGE · 1V1 Scripted bot Claude Opus 5.5 XHIGH Queens killed 22 Nov 2026 21 ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9710,7 +9809,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 HIGH Claude Opus 5.5 XHIGH Queens killed 11 Nov 202",
+   "text": "INDEX · 1V1 Claude Fable 5.2 XHIGH Claude Fable 5.2 MEDIUM Queens killed 11 Nov ",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9721,7 +9820,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Fable 5.2 MAX GPT-6.1 Sol MAX Queens killed 10 Nov 2026 39 mi",
+   "text": "INDEX · 1V1 Gemini 3.8 Flash HIGH MiMo V2.6 Flash HIGH Queens killed 10 Nov 2026",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9732,7 +9831,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 MEDIUM GPT-6.1 Sol XHIGH Queens killed 29 Oct 2026 2",
+   "text": "INDEX · 1V1 GPT-6.1 Terra MAX Claude Opus 5.5 MAX Queens killed 1 Nov 2026 25 mi",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9743,62 +9842,7 @@
    "typeface": "Roboto",
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Claude Opus 5.5 XHIGH GPT-6.1 Sol HIGH Queens killed 29 Oct 2026 34 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Gemini 4 Argon HIGH Muse Wonder 1.0 MAX Time-up 29 Oct 2026 45 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6 Luna MAX Mistral Large 4 HIGH Time-up 7 Nov 2026 30 min",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol HIGH Abliterated GLM-5.3 MAX Queens killed 7 Nov 2026 28",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 GPT-6.1 Sol XHIGH MiMo V2.6 Flash HIGH Queens killed 29 Oct 2026 36 ",
-   "extent": 134,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "watch-results-shown",
-   "width": 390,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "tile-empty",
-   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
-   "text": "INDEX · 1V1 Qwen3.8 Max XHIGH Muse Wonder Full 1.0 MAX Time-up 26 Oct 2026 30 mi",
+   "text": "INDEX · 1V1 Qwen4 Max HIGH Qwen4 Max XHIGH Queens killed 18 Nov 2026 29 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   },
@@ -9810,6 +9854,50 @@
    "rule": "tile-empty",
    "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
    "text": "INDEX · 2 PER SIDE K3.1 Pro Highspeed HIGH GPT-6 Astra MAX Queens killed 12 Nov ",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE Claude Sonnet 5.5 MAX GPT-6.2 Astra Standard HIGH Queens kill",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 3 PER SIDE GPT-6.1 Terra MAX GPT-6.1 Sol MAX Queens killed 19 Nov 2026 1",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "INDEX · 4 PER SIDE GPT-6.1 Terra MAX Claude Opus 5.5 XHIGH Queens killed 31 Oct ",
+   "extent": 134,
+   "why": "Already on main when this coverage was added to the render check."
+  },
+  {
+   "surface": "watch-results-shown",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "div.d1p-content > ol.aw-grid > li > a.aw-tile",
+   "text": "RANKED · 1V1 kain GPT-6.1 Terra HIGH Scripted bot Time-up 13 Nov 2026 45 min",
    "extent": 134,
    "why": "Already on main when this coverage was added to the render check."
   }
