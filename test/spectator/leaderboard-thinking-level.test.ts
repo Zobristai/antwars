@@ -68,11 +68,12 @@ describe("Benchmark model names and badges", () => {
     ["antwars/claude-opus-5-5", "high", null, "Claude Opus 5.5", ["high"]],
     ["antwars/claude-opus-5-5-xhigh", "xhigh", null, "Claude Opus 5.5", ["xhigh"]],
     ["antwars/gpt-6-1-sol-high-fast", "high", "fast", "GPT-6.1 Sol", ["high", "Fast"]],
-    ["antwars/gpt-6-astra", "max", "fast", "GPT-6 Astra", ["max", "Fast"]],
-    ["antwars/gpt-6-astra", "max", "Fast", "GPT-6 Astra", ["max", "Fast"]],
+    ["antwars/gpt-6-luna", "max", "fast", "GPT-6 Luna", ["max", "Fast"]],
+    ["antwars/gpt-6-luna", "max", "Fast", "GPT-6 Luna", ["max", "Fast"]],
     ["antwars/gpt-6-1-sol-high", "high", "standard", "GPT-6.1 Sol", ["high"]],
-    ["antwars/gpt-6-astra", "max", "ultrafast", "GPT-6 Astra", ["max"]],
+    ["antwars/gpt-6-luna", "max", "ultrafast", "GPT-6 Luna", ["max"]],
     ["antwars/Qwen3-8-Max", "xhigh", null, "Qwen3.8 Max", ["xhigh", "retired"]],
+    ["antwars/gpt-6-astra", "max", "fast", "GPT-6 Astra", ["max", "Fast", "retired"]],
     ["antwars/grok-composer-2-5-fast", null, null, "Grok Composer 2.5 Fast", []],
     // A retired handle keeps its name and level and adds the retired badge last; its successor shows none.
     ["antwars/claude-fable-5-1", "max", null, "Claude Fable 5.1", ["max", "retired"]],
@@ -87,7 +88,7 @@ describe("Benchmark model names and badges", () => {
 
   it("renders Benchmark rows as a display name with text badges and other rows as the handle only", async () => {
     const p = shown([{ entries: [
-      { displayName: "antwars/gpt-6-astra", rating: 1600, ratedMatches: 4, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
+      { displayName: "antwars/gpt-6-luna", rating: 1600, ratedMatches: 4, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
       { displayName: "antwars/claude-opus-5-5", rating: 1550, ratedMatches: 3, thinkingLevel: "high", benchmark: true },
       { displayName: "antwars/gemini-3-1-pro-preview", rating: 1520, ratedMatches: 1, benchmark: true },
       { displayName: "antwars/lookalike", rating: 1500, ratedMatches: 2, thinkingLevel: "high", serviceTier: "fast", benchmark: false },
@@ -97,7 +98,7 @@ describe("Benchmark model names and badges", () => {
     await vi.waitFor(() => expect(p.card().names).toHaveLength(6));
     // A Benchmark name cell holds the name, then one text badge per level and Fast; other rows show the handle only.
     expect(p.card().named).toEqual([
-      "GPT-6 Astra [max] [Fast]",
+      "GPT-6 Luna [max] [Fast]",
       "Claude Opus 5.5 [high]",
       "Gemini 3.1 Pro Preview",
       "antwars/lookalike",
