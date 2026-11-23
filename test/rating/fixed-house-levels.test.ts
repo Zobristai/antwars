@@ -36,7 +36,8 @@ const CONFIRMED: Readonly<Record<string, readonly [level: string | null, tier: s
   "claude-haiku-5-5": ["max", null, "Claude Haiku 5.5", ["max"]],
   "deepseek-flash": ["max", null, "DeepSeek V4.1 Flash", ["max"]],
   "gpt-6-luna": ["max", "fast", "GPT-6 Luna", ["max", "Fast"]],
-  "gpt-6-astra": ["max", "fast", "GPT-6 Astra", ["max", "Fast"]],
+  // Its model is no longer offered: the retired badge follows Fast.
+  "gpt-6-astra": ["max", "fast", "GPT-6 Astra", ["max", "Fast", "retired"]],
   "k3-1-pro-highspeed": ["high", null, "K3.1 Pro Highspeed", ["high"]],
   "grok-4-7": ["xhigh", null, "Grok 4.7", ["xhigh"]],
   "mimo-v2-6-flash": ["high", null, "MiMo V2.6 Flash", ["high"]],

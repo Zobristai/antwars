@@ -8,11 +8,16 @@ import { existsSync, readdirSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { Page } from "playwright-core";
+import type { CDPSession, Page } from "playwright-core";
 
 export const TYPEFACES = ["Roboto", "Liberation Sans"] as const;
 export type Typeface = (typeof TYPEFACES)[number];
 export const typefaceSlug = (t: Typeface): string => t.toLowerCase().replace(/ /g, "-");
+
+/** Browser default text sizes (px) judged on every standard surface: default (16 px) and doubled (32 px). */
+export const DEFAULT_TEXT_SIZE = 16 as const;
+export const TEXT_SIZES = [DEFAULT_TEXT_SIZE, 32] as const;
+export type TextSize = (typeof TEXT_SIZES)[number];
 
 const ROBOTO_DIR = resolve(import.meta.dirname, "../../node_modules/@expo-google-fonts/roboto");
 const LIBERATION_DIRS = ["/usr/share/fonts/truetype/liberation", "/usr/share/fonts/truetype/liberation2", "/usr/share/fonts/liberation"];
@@ -87,4 +92,28 @@ export function fontProblem(typeface: Typeface, fonts: Record<string, number>): 
   const named = system.filter(([name]) => name.startsWith(typeface)).reduce((n, [, c]) => n + c, 0);
   if (named / total >= 0.98) return null;
   return `only ${named} of ${total} system-font glyphs were drawn in ${typeface}: ${system.map(([n, c]) => `${n} ${c}`).join(", ")}`;
+}
+
+/**
+ * Set the browser's default font size (px) through DevTools Page.setFontSizes before navigation. Keep the returned
+ * session attached until the page closes so Chromium keeps the preference.
+ */
+export async function applyTextSize(page: Page, textSize: TextSize): Promise<CDPSession> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Page.setFontSizes", { fontSizes: { standard: textSize } });
+  return cdp;
+}
+
+/** Read the document root's computed font size in px, or NaN if unreadable. */
+export async function rootFontSize(page: Page): Promise<number> {
+  return page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+}
+
+/**
+ * The render is valid only when the document root's computed font size matches the requested browser default text
+ * size (within 0.1 px for subpixel rounding).
+ */
+export function textSizeProblem(expected: TextSize, actualPx: number): string | null {
+  if (Number.isFinite(actualPx) && Math.abs(actualPx - expected) <= 0.1) return null;
+  return `document root font-size was ${Number.isFinite(actualPx) ? `${actualPx} px` : "unreadable"}, expected ${expected} px`;
 }

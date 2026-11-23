@@ -16,7 +16,7 @@ import { playable } from "../playable.ts";
 import { createMatch } from "../../src/sim/map.ts";
 import { SUB } from "../../src/sim/config.ts";
 import { step } from "../../src/sim/step.ts";
-import { COUNT_VERBS, type ColonyId, type SimInput, type SimState } from "../../src/sim/types.ts";
+import { COUNT_VERBS, type ColonyId, type SimInput, type SimState, type StepOutput } from "../../src/sim/types.ts";
 
 export interface RedesignScript {
   readonly seed: number;
@@ -32,6 +32,8 @@ export interface RedesignScript {
   };
   /** Record from this tick on, as a recording captured mid-match is: its first message a full snapshot at that tick. */
   readonly startAt?: number;
+  /** Called with each step's output and every ant before the step, by id: its HP, and whether a soldier or a flyer. */
+  readonly observe?: (out: StepOutput, before: ReadonlyMap<number, { readonly hp: number; readonly soldier: boolean; readonly flyer: boolean }>) => void;
 }
 
 /** The stored pre-frontline redesign recipe on its original controls, with uncapped count marks: the
@@ -94,8 +96,11 @@ export function playRedesign(o: RedesignScript): StreamMessage[] {
   };
   let recorder: SpectatorRecorder | null = o.startAt ? null : open();
   while (state.tick < o.ticks && state.result === null) {
+    const before = o.observe === undefined ? null
+      : new Map(state.ants.map((a) => [a.id, { hp: a.hp, soldier: a.caste === "soldier", flyer: a.flyer === true }]));
     const result = step(state, inputs(state, o));
     state = result.state;
+    if (before !== null) o.observe!(result, before);
     if (recorder === null) {
       if (state.tick >= o.startAt!) recorder = open();
       continue;

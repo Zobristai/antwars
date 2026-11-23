@@ -312,6 +312,11 @@
    "type": "application/json",
    "file": "07b55efe326482c65175.body"
   },
+  "/watch/ratings/2026-11-16T09-21-43-735Z-11240848029112": {
+   "status": 200,
+   "type": "application/json",
+   "file": "661b1ea31fa6b9b671cf.body"
+  },
   "/watch/ratings/2026-11-17T08-55-08-583Z-151632020035470": {
    "status": 200,
    "type": "application/json",

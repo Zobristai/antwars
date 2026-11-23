@@ -86,7 +86,8 @@ describe("the team section's agent rows", () => {
 
   it("supports Escape in history as well as selected cards and tooltips", () => {
     expect(PANE).toContain('listen(line, "keydown", e => {');
-    expect(PANE).toContain('setHidden(line, true); historyButton.focus();');
+    // Escape closes this colony's History through the shared open state, which hides it, then returns focus.
+    expect(PANE).toContain("historyOpen[colony] = false;\n      syncHistory();\n      historyButton.focus();");
   });
 
   it("keeps the agents in view while a card is open: only the history gives way", () => {

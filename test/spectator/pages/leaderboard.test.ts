@@ -153,7 +153,7 @@ describe("badges", () => {
   it("holds a name's two badges in one group, in the table and in the stacked rows", async () => {
     const p = page();
     await p.answer("house-1v1", new Response(JSON.stringify({ entries: [
-      { displayName: "antwars/gpt-6-astra", rating: 1600, ratedMatches: 4, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
+      { displayName: "antwars/gpt-6-luna", rating: 1600, ratedMatches: 4, thinkingLevel: "max", serviceTier: "fast", benchmark: true },
       { displayName: "antwars/claude-opus-5-5", rating: 1550, ratedMatches: 3, thinkingLevel: "high", benchmark: true },
     ] })));
     const groups = p.root.byClass("d1p-tags");

@@ -214,6 +214,16 @@ export interface ReducedRecord {
   readonly calls: CallFact[];
   /** Rerun mode: the stored events' blocks, ascending; empty in refused mode. */
   readonly blocks: EventBlock[];
+  /**
+   * Rerun mode: whether any stored event is a kill-total ("kills") event. Records made before kill totals were streamed
+   * carry none; neither does a current-format record in which no kill was credited. False in refused mode.
+   */
+  readonly killTotals: boolean;
+  /**
+   * Rerun mode: whether any stored event is a queen-bite ("queenBites") event. Records made before queen bites were
+   * streamed carry none; neither does a current-format record in which no queen was bitten. False in refused mode.
+   */
+  readonly queenBites: boolean;
   /** setup.houseIdleTicks, or null where the record carries none. */
   readonly houseIdleTicks: number | null;
   readonly modelIndex: boolean;
@@ -318,6 +328,7 @@ export function recordScanner(mode: ScanMode = "refused", options: ScannerOption
   const seats: ReducedSeat[] = [];
   const calls: CallFact[] = [];
   const blocks = new Map<number, { count: number; hash: Hash }>();
+  let killTotals = false, queenBites = false;
   const lines = new ReplyLines();
   const refusals: (Refusal & { agentId?: string })[] = [];
   const omitted = new Map<number | string, number>();
@@ -405,6 +416,8 @@ export function recordScanner(mode: ScanMode = "refused", options: ScannerOption
       if (block === undefined) { block = { count: 0, hash: createHash("sha256") }; blocks.set(index, block); }
       block.count++;
       block.hash.update(comparableEvent(tick as number, event) + "\n");
+      if (event.kind === "kills") killTotals = true;
+      if (event.kind === "queenBites") queenBites = true;
       if (event.kind === "call") {
         calls.push({ tick: tick as number, seat: event.agent as number, call: typeof event.call === "string" ? event.call : "",
           accepted: event.accepted === true, activity: Number.isSafeInteger(event.houseActivityTick) ? event.houseActivityTick as number : null });
@@ -702,7 +715,7 @@ export function recordScanner(mode: ScanMode = "refused", options: ScannerOption
       status: typeof root.status === "string" ? root.status : null,
       ticksPerSecond: tps,
       reduced: { config, result, rerun: rerunData(root.rerun), codeVersion: typeof root.codeVersion === "string" ? root.codeVersion : null,
-        seats: [...seats].sort((a, b) => a.seat - b.seat), calls, blocks: [...blocks].sort(([a], [b]) => a - b).map(([index, { count, hash }]) => [index, count, hash.digest("hex")] as const),
+        seats: [...seats].sort((a, b) => a.seat - b.seat), calls, blocks: [...blocks].sort(([a], [b]) => a - b).map(([index, { count, hash }]) => [index, count, hash.digest("hex")] as const), killTotals, queenBites,
         houseIdleTicks, modelIndex: setup?.modelIndex === true, lines: mode === "rerun" && repliesSeen ? lines : null },
       refusals: mode === "refused" && repliesSeen && keep ? refusals.map(({ agentId, ...r }) => agentId === undefined ? r : { ...r, seat: seatOf(agentId) }) : null,
       omitted: bySeat(omitted),
