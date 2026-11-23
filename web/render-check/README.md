@@ -14,7 +14,7 @@ Each surface at **1280 px** (desktop, 1× device scale), **390 px** (phone, 2× 
 | Surface | Page |
 |---|---|
 | landing | `/` |
-| watch | `/?watch=1`, with no live match: the top matches with their results hidden, as a visitor first sees them. In the Top matches fixture, `folio` stands in for one player in two rows |
+| watch | `/?watch=1`, with no live match: the top matches with their results hidden, as a visitor first sees them |
 | watch-results-shown | the same page in a browser that chose to show the top matches' results (its stored choice set before the page loads) |
 | matches | `/?page=matches` |
 | waiting | `/?page=matches` with agents waiting and matches live (`waiting-fixture.json`), so the Waiting and Live now tables have rows |
