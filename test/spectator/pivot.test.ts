@@ -3,7 +3,7 @@ import { Texture, type Renderer, type Particle } from "pixi.js";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import { Mesh } from "@babylonjs/core/Meshes/mesh.js";
-import { decodeMessage, SUB_TILE, type StreamMessage } from "../../src/live/format.ts";
+import { decodeMessage, SUB_TILE, type StreamFlyer, type StreamMessage } from "../../src/live/format.ts";
 import { RECORD_CONFIG, playScripted, recordLog } from "../../src/live/record.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
 import { playable } from "../playable.ts";
@@ -239,4 +239,88 @@ it("holds, seeks deterministically, reconnects and follows stable ids without mo
   const full = structuredClone(messages[0]!); full.tick = messages.at(-1)!.tick + 10;
   full.ants.id[0] = 999; pb.push(full, full.tick * 100); read(full.tick * 100);
   expect(f.id[0]).toBe(999); expect(f.drawX?.[0]).toBe(f.x[0]);
+});
+
+describe("flyers over water and rock", () => {
+  const water = [2, 2, 2, 2] as const, rock = [6, 2, 2, 2, 1] as const;
+  const inside = (x: number, y: number, [rx, ry, w, h]: readonly number[]) => x > rx + EPS && x < rx + w - EPS && y > ry + EPS && y < ry + h - EPS;
+  /** One ant through these positions and flyer states, one per tick, on a board with one water and one rock rect. */
+  function flyerFixture(points: readonly (readonly [number, number])[], states: readonly (StreamFlyer | null)[],
+    events: (tick: number) => StreamMessage["events"] = () => []): StreamMessage[] {
+    const full = structuredClone(shipped[0]!.full!);
+    full.setup.terrain = { mapId: "pivot-flyer-fixture", mapName: "Pivot flyer fixture", water: [water], rocks: [rock] };
+    return points.map(([x, y], tick) => {
+      const prev = points[Math.max(0, tick - 1)]!;
+      const heading = x === prev[0] && y === prev[1] ? 0 : Math.round((Math.atan2(y - prev[1], x - prev[0]) / (2 * Math.PI) * 256 + 256) % 256);
+      const flyer = states[tick]!;
+      return { tick, full: tick === 0 ? full : null, events: events(tick), ants: { count: 1, id: Uint32Array.of(1),
+        x: Uint16Array.of(Math.round(x * SUB_TILE)), y: Uint16Array.of(Math.round(y * SUB_TILE)), heading: Uint8Array.of(heading),
+        colony: Uint8Array.of(0), agent: Int16Array.of(-1), caste: Uint8Array.of(0), carrying: Uint8Array.of(0),
+        ...(flyer ? { flyers: [flyer] } : {}) } };
+    });
+  }
+  /** Every 10 ms of the drawn body (the position both boards draw), and the canonical position beside it. */
+  function drawn(messages: readonly StreamMessage[]) {
+    const pb = new Playback(), f = new Frame(), out: { at: number; x: number; y: number; rawX: number; rawY: number }[] = [];
+    for (const m of messages) pb.push(m, m.tick * 100);
+    for (let at = 0; at <= messages.at(-1)!.tick * 100; at += 10) {
+      pb.sample(at + RENDER_DELAY_MS, f);
+      out.push({ at, x: f.drawX?.[0] ?? f.x[0]!, y: f.drawY?.[0] ?? f.y[0]!, rawX: f.x[0]!, rawY: f.y[0]! });
+    }
+    return out;
+  }
+  const dest = { destX: 9 * SUB_TILE, destY: 3 * SUB_TILE };
+  // Grounded at (1, 3) for ticks 0-3, takes off and flies 0.8 tiles a tick east over the water and the rock, lands at (9, 3).
+  const flight: [number, number][] = [], flightStates: StreamFlyer[] = [];
+  for (let t = 0; t <= 16; t++) {
+    const k = Math.min(10, Math.max(0, t - 3));
+    flight.push([1 + 0.8 * k, 3]);
+    flightStates.push(t <= 3 ? { state: "grounded" } : t < 13 ? { state: "flying", ...dest } : { state: "lockedOut", takeOffTick: 43 });
+  }
+
+  it("draws an airborne flyer on its straight flight line, take-off and landing included", () => {
+    const samples = drawn(flyerFixture(flight, flightStates));
+    let overWater = 0, overRock = 0;
+    for (const s of samples) {
+      expect(Math.abs(s.x - s.rawX)).toBeLessThanOrEqual(EPS);
+      expect(Math.abs(s.y - s.rawY)).toBeLessThanOrEqual(EPS);
+      if (inside(s.x, s.y, water)) overWater++;
+      if (inside(s.x, s.y, rock)) overRock++;
+    }
+    expect(overWater).toBeGreaterThan(0);
+    expect(overRock).toBeGreaterThan(0);
+  });
+
+  it("draws a flyer that takes off and lands in one step on its flight line, grounded at both ends", () => {
+    // One 0.71-tile flight step cutting the water's corner; grounded before it, locked out after it.
+    const hop = [[1.9, 2.4], [2.4, 1.9], [2.4, 1.9]] as const;
+    const states: StreamFlyer[] = [{ state: "grounded" }, { state: "lockedOut", takeOffTick: 31 }, { state: "lockedOut", takeOffTick: 31 }];
+    const at = (x: number, y: number) => ({ antId: 1, colony: 0 as const, x: Math.round(x * SUB_TILE), y: Math.round(y * SUB_TILE) });
+    const flew = drawn(flyerFixture(hop, states, (tick) => tick === 1
+      ? [{ kind: "takeoff", ...at(2.4, 1.9) }, { kind: "landing", ...at(2.4, 1.9) }] : []));
+    for (const s of flew) {
+      expect(Math.abs(s.x - s.rawX)).toBeLessThanOrEqual(EPS);
+      expect(Math.abs(s.y - s.rawY)).toBeLessThanOrEqual(EPS);
+    }
+    expect(flew.some(s => inside(s.x, s.y, water))).toBe(true);
+    // The same step with no flight in its message is a walk, routed around the water.
+    const walked = drawn(flyerFixture(hop, states));
+    for (const s of walked) expect(inside(s.x, s.y, water)).toBe(false);
+  });
+
+  it("still routes a walking ant and a landed flyer around water as before", () => {
+    const corner = [[1.9, 3], [1.9, 1.9], [4.1, 1.9], [4.1, 3], [4.1, 2], [4.1, 1], [4.1, 1]] as const;
+    const points: [number, number][] = [[corner[0][0], corner[0][1]]];
+    for (let k = 1; k < corner.length; k++) {
+      const a = corner[k - 1]!, b = corner[k]!, n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.2));
+      for (let q = 1; q <= n; q++) points.push([a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n]);
+    }
+    const walker = drawn(flyerFixture(points, points.map(() => null)));
+    for (const landed of [{ state: "grounded" } as const, { state: "lockedOut", takeOffTick: 1000 } as const]) {
+      const flyer = drawn(flyerFixture(points, points.map(() => landed)));
+      expect(flyer).toEqual(walker);
+    }
+    expect(walker.some(s => Math.hypot(s.x - s.rawX, s.y - s.rawY) > EPS)).toBe(true);
+    for (const s of walker) expect(inside(s.x, s.y, water)).toBe(false);
+  });
 });
