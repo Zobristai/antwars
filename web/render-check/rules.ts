@@ -444,7 +444,8 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const found = new Set<string>();
       for (const p of c.querySelectorAll("[class]")) {
         if (!p.textContent?.trim() || skipped(p) || !shown(p)) continue;
-        const cls = [...p.classList].filter(keepClass).sort().join(".");
+        // A shortened name and the spaces it holds are the same part as an unshortened name.
+        const cls = [...p.classList].filter(c => keepClass(c) && c !== "aw-cut" && c !== "aw-held").sort().join(".");
         if (cls) found.add(p.tagName.toLowerCase() + "." + cls);
       }
       return found;

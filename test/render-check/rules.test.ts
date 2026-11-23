@@ -176,6 +176,16 @@ describe("render check rules", () => {
       expect(rules(await judged(run(tile, "", "Wrong name"), 390, 32))).toContain("clipped");
     });
 
+    it("does not count a name’s cut state or held spaces as extra tile parts", async () => {
+      const cut = run(true);
+      const whole = '<a class="aw-tile" aria-label="Bob versus Alice"><span class="aw-player"><span class="aw-who">'
+        + '<span class="aw-name" title="Bob"><b>Bob</b></span></span></span></a>';
+      const parts = async (extra: string) => (await judged(`<ol class="grid"><li class="tile">${cut}${extra}</li>`
+        + `<li class="tile">${whole}</li></ol>`, 320, 32)).failures.filter(f => f.rule === "part-uneven").map(f => f.element);
+      expect(await parts("")).toEqual([]);
+      expect(await parts('<span class="rating">1500</span>')).toEqual(["ol.grid > span.rating"]);
+    });
+
     it("still fails other cuts to a shortened name and an unrelated name", async () => {
       const nested = run(false).replace("<b>", '<b style="display:inline-block;width:20px;overflow:hidden">');
       expect(rules(await judged(nested, 320))).toContain("clipped");
