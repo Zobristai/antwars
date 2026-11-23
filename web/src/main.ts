@@ -33,7 +33,7 @@ import { FoodPiles } from "./food.ts";
 import { LockoutDials } from "./flyer-lockout.ts";
 import { StartBoxes2D } from "./start-boxes2d.ts";
 import { Battles, CVD_MATRICES, FlightMoments, PlaceMarkers, QUEEN_EMBLEM, QueenHomes, cvdFilter, tiltShift, type Deficiency } from "./effects.ts";
-import { QueenBiteCues, cueKey } from "./queen-bites.ts";
+import { QueenBiteCues } from "./queen-bites.ts";
 import { FONT_LICENCE, Words, loadFonts, nestRects, nestZoneRect, type MarkStats, type Rect } from "./words.ts";
 import { Camera, FALL_MOVE_MS, LOCATE_ZOOM, easeInOut, fightLane, foundingEnvelope, lerpView, queensBox, reducedMotion, type View } from "./camera.ts";
 import { Squads, agentHues } from "./squads.ts";
@@ -405,7 +405,7 @@ async function start(): Promise<void> {
   scene.addChild(world);
   // Each airborne flyer's line to its destination and each landed flyer's lockout, then the markers and badges, over the world; the tooltips are the page's own, above every panel.
   // The queen bite cues draw above the emblems and under the marks' labels, which keep clear of them.
-  app.stage.addChild(scene, destinationLines.layer, lockoutDials.layer, cues.layer, words.layer, squads.layer);
+  app.stage.addChild(scene, destinationLines.layer, lockoutDials.layer, cues.layer, words.layer, squads.layer, cues.aboveBadges);
   // An ant biting a queen aims at her emblem's ring, which keeps its CSS px size at every zoom.
   ants.queenRing = () => QUEEN_EMBLEM.r / camera.view.tilePx;
   scene.filters = tiltOn ? [tilt] : [];
@@ -682,15 +682,18 @@ async function start(): Promise<void> {
     lastBlocked = blocked;
     // The queen bite cues are placed first, clear of the panels, and reserved: the marks' labels and badges keep clear of them.
     const antPx = antLengthPx(camera.fit.tilePx * scale) / camera.fit.tilePx * camera.view.tilePx;
-    const cueRects = cues.update(shown, { toScreen: camera.toScreen, bodyPx: (_x, _y, soldier) => antPx * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : []);
-    words.update(shown, camera.toScreen, cueRects.length === 0 ? blocked : [...blocked, ...cueRects], `${viewVersion}:${overlaysOn}:${cueKey(cueRects)}`, squads.anchors(shown, camera.toScreen), squads.badgeR);
+    const placementView = `${viewVersion}:${overlaysOn}`;
+    const dots = words.projectMarkers(shown, camera.toScreen, placementView);
+    const cueRects = cues.update(shown, { toScreen: camera.toScreen, bodyPx: (_x, _y, soldier) => antPx * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : [], words.layer.visible ? dots : []);
+    words.update(shown, camera.toScreen, blocked, placementView, squads.anchors(shown, camera.toScreen), squads.badgeR, camera.toScreen, cueRects);
     lap("words");
     squads.updateBadges(shown, camera.toScreen, words.badges);
+    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : []);
     lap("tags");
     // The finale: once playback has the result, the board's text and badges fade out under it, and the tooltips go.
     if (board?.result) endedAt ??= now;
     else endedAt = null;
-    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = endedAt === null ? 1 : Math.max(0, 1 - (now - endedAt) / FINALE_FADE_MS);
+    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = cues.aboveBadges.alpha = endedAt === null ? 1 : Math.max(0, 1 - (now - endedAt) / FINALE_FADE_MS);
     // Hover and tap details: the focused marker's and squad's tooltips, in the page's type above every panel.
     const tipsOn = overlaysOn && wordsOn && endedAt === null;
     const markTip = tipsOn ? words.tipContent() : null;

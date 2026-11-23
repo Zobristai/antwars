@@ -17,9 +17,9 @@
  *   than the viewport
  * - row-uneven / grid-uneven: tiles of one kind (2+ in a grid, one column or several) of unequal height, in a row or
  *   across the grid, in one column as in several, whatever the tiles hold (a heading and a paragraph included)
- * - tile-empty: an empty band inside such a tile taller than 1.5 lines of its text
+ * - tile-empty: an empty band inside such a tile taller than 1.5 lines of its text (stacked player centering below)
  * - part-uneven: a tile part shown on some tiles of the grid but not others
- * - page-empty: an empty horizontal band on the page taller than RULE_LIMITS.pageBandPx
+ * - page-empty: an empty horizontal band on the page taller than the text-scaled band limit
  * - column-start: in a table whose head and row cells carry their column's key (data-col, inside [data-col-table]), a
  *   row cell whose first text starts more than RULE_LIMITS.columnSlackPx from its column head's text. With the head
  *   hidden (a phone's stacked rows), a key's cells must start at one x, except a cell that continues a line another keyed
@@ -240,6 +240,27 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     }
   }
 
+  const rootPx = parseFloat(style(document.documentElement).fontSize);
+  // At enlarged text both player names can shorten; at default text only narrow Top matches tiles can.
+  // A title alone, or overflow:hidden alone, does not make a cut intentional.
+  const designedEnds = new Set<Element>();
+  if (rootPx > 16 || vw < 360) {
+    for (const run of document.querySelectorAll<HTMLElement>(
+      ".d1p-rec-player > .d1p-rec-who > .d1p-rec-name.aw-cut, .aw-tile .aw-player > .aw-who > .aw-name.aw-cut")) {
+      if (rootPx <= 16 && run.matches(".d1p-rec-name")) continue;
+      const cs = style(run);
+      const parts = [...run.children].filter(p => !p.matches(".d1p-sr"));
+      const words = parts.map(p => p.textContent).join("").trim();
+      const tile = run.closest(".aw-tile");
+      if (cs.textOverflow !== "ellipsis" || cs.overflowX !== "hidden" || !["pre", "nowrap"].includes(cs.whiteSpace)
+        || !["block", "inline-block"].includes(cs.display) || parts.some(p => style(p).display !== "inline")
+        || !words || !(run.title === words || run.title.startsWith(`${words} (`)) || run.closest('[aria-hidden="true"]')
+        || (tile && !tile.getAttribute("aria-label")?.includes(words))) continue;
+      // A box too narrow even for a letter and its ellipsis can show a plain clip instead.
+      if (run.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) >= 1.5 * parseFloat(cs.fontSize) - 0.5) designedEnds.add(run);
+    }
+  }
+
   // Text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport.
   interface Edges { left: number; top: number; right: number; bottom: number }
   /**
@@ -249,7 +270,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
    * whatever reaches past it by more than `cuts` allows. Returns the first such box, its edges and the content's box
    * there, or the content's box as seen from the page when nothing cuts it.
    */
-  const clipWalk = (start: Element, r: Edges, cuts: (r: Edges, e: Edges, x: boolean, y: boolean) => number) => {
+  const clipWalk = (start: Element, r: Edges, cuts: (r: Edges, e: Edges, x: boolean, y: boolean) => number, textRun = false) => {
     let at = { ...r };
     for (const a of [start, ...ancestors(start)]) {
       if (a === document.body || a === document.documentElement) break;
@@ -259,6 +280,12 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const left = b.left + parseFloat(cs.borderLeftWidth), top = b.top + parseFloat(cs.borderTopWidth);
       const e = { left, top, right: left + a.clientWidth, bottom: top + a.clientHeight };
       const scrollX = /auto|scroll/.test(cs.overflowX), scrollY = /auto|scroll/.test(cs.overflowY);
+      if (textRun && designedEnds.has(a)) {
+        // The ellipsis replaces only text past the run's end. Keep its visible portion for the
+        // vertical, enclosing-box and viewport checks; never ignore a cut at the start of a line.
+        at.right = Math.min(at.right, e.right);
+        at.left = Math.min(at.left, e.right);
+      }
       const past = cuts(at, e, !scrollX && cs.overflowX !== "visible", !scrollY && cs.overflowY !== "visible");
       if (past > 0) return { by: a, edges: e, at, past };
       const into = (lo: number, hi: number, min: number, max: number): [number, number] => {
@@ -282,7 +309,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const pastX = x ? Math.max(at.right - e.right, e.left - at.left, 0) : 0;
       const pastY = y ? Math.max(at.bottom - e.bottom, e.top - at.top, 0) : 0;
       return Math.max(pastX > 0.5 ? pastX : 0, pastY > slackY ? pastY : 0);
-    });
+    }, true);
     if (walk.by) {
       if (had?.rule !== "offscreen" && (!had || walk.past > had.past)) textCuts.set(el, { rule: "clipped", by: walk.by, past: walk.past, r });
       continue;
@@ -319,7 +346,7 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   }
   for (const el of all) {
     const cs = style(el);
-    if (cs.textOverflow !== "ellipsis" || el.scrollWidth <= el.clientWidth + 0.5 || reported.has(el) || !shown(el)) continue;
+    if (cs.textOverflow !== "ellipsis" || el.scrollWidth <= el.clientWidth + 0.5 || reported.has(el) || designedEnds.has(el) || !shown(el)) continue;
     if ([...el.querySelectorAll("*")].some(c => reported.has(c))) continue;
     fail({ rule: "cut", element: name(el), text: text(el), measure: `${el.scrollWidth} px of text in ${el.clientWidth} px`, extent: el.scrollWidth - el.clientWidth, box: box(el.getBoundingClientRect()) }, el);
   }
@@ -344,6 +371,21 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     return kids.length === 1 && boxed(kids[0]!) ? kids[0]! : null;
   };
   const kind = (k: Element) => k.tagName + "." + [...k.classList].filter(keepClass).sort().join(".");
+  // Under 18em, Top matches stacks its players in eight slots instead of four. Only the two
+  // gaps touching this block get a centering budget: half the unused lines, plus half a line
+  // for the row insets and glyph boxes (the ordinary 1v1 uses one spare line + this half).
+  // Count the players, not the block's measured height: extra height must still fail.
+  const stacked = rootPx > 16 && matchMedia("(max-width: 17.999em)").matches;
+  const bandLimit = (ordinary: number, above: Element | null, below: Element | null) => {
+    if (!stacked || !above || !below) return ordinary;
+    const lines = above.closest(".aw-lines") ?? below.closest(".aw-lines");
+    if (!lines?.matches(".aw-grid > li > .aw-tile > .aw-lines")) return ordinary;
+    if (!(lines.previousElementSibling?.matches(".aw-meta") && lines.previousElementSibling.contains(above) && lines.contains(below))
+      && !(lines.contains(above) && lines.nextElementSibling?.matches(".aw-how, .aw-date") && lines.nextElementSibling.contains(below))) return ordinary;
+    const count = lines.querySelectorAll(".aw-player").length;
+    const playerLine = 1.25 * rootPx;
+    return count >= 2 && count <= 8 ? Math.max(ordinary, (8 - count + 1) / 2 * playerLine) : ordinary;
+  };
   let grids = 0, tiles = 0;
   for (const el of all) {
     const cs = style(el);
@@ -376,18 +418,25 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const cr = c.getBoundingClientRect(), ccs = style(c);
       const top = cr.top + parseFloat(ccs.borderTopWidth) + parseFloat(ccs.paddingTop);
       const bottom = cr.bottom - parseFloat(ccs.borderBottomWidth) - parseFloat(ccs.paddingBottom);
-      const spans: [number, number][] = textRects(c).map(t => [t.r.top, t.r.bottom]);
+      const spans: [number, number, Element][] = textRects(c).map(t => [t.r.top, t.r.bottom, t.el]);
       for (const m of c.querySelectorAll("img, svg, canvas, video, input, button, select")) {
         const r = m.getBoundingClientRect();
-        if (r.height > 0 && shown(m)) spans.push([r.top, r.bottom]);
+        if (r.height > 0 && shown(m)) spans.push([r.top, r.bottom, m]);
       }
       spans.sort((a, b) => a[0] - b[0]);
-      let at = top, gap = 0, gapAt = top;
-      for (const [t, b] of spans) { if (t - at > gap) { gap = t - at; gapAt = at; } at = Math.max(at, b); }
-      if (bottom - at > gap) { gap = bottom - at; gapAt = at; }
       const line = parseFloat(ccs.lineHeight) || parseFloat(ccs.fontSize) * 1.35;
-      if (gap > limits.tileBandLines * line) {
-        fail({ rule: "tile-empty", element: name(c), text: text(c), measure: `${Math.round(gap)} px empty (limit ${Math.round(limits.tileBandLines * line)} px)`, extent: Math.round(gap),
+      const ordinary = limits.tileBandLines * line;
+      let at = top, above: Element | null = null, gap = 0, gapAt = top, limit = ordinary;
+      // Keep the largest *failing* band, not just the largest: an approved band cannot mask another gap.
+      for (const [t, b, el] of [...spans, [bottom, bottom, c] as const]) {
+        if (t - at > Math.max(ordinary, gap)) {
+          const allowed = bandLimit(ordinary, above, el);
+          if (t - at > allowed) { gap = t - at; gapAt = at; limit = allowed; }
+        }
+        if (b > at) { at = b; above = el; }
+      }
+      if (gap > 0) {
+        fail({ rule: "tile-empty", element: name(c), text: text(c), measure: `${Math.round(gap)} px empty (limit ${Math.round(limit)} px)`, extent: Math.round(gap),
           box: { x: Math.round(cr.left + scrollX), y: Math.round(gapAt + scrollY), w: Math.round(cr.width), h: Math.round(gap) } }, c);
       }
     }
@@ -396,7 +445,8 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const found = new Set<string>();
       for (const p of c.querySelectorAll("[class]")) {
         if (!p.textContent?.trim() || skipped(p) || !shown(p)) continue;
-        const cls = [...p.classList].filter(keepClass).sort().join(".");
+        // A shortened name and the spaces it holds are the same part as an unshortened name.
+        const cls = [...p.classList].filter(c => keepClass(c) && c !== "aw-cut" && c !== "aw-held").sort().join(".");
         if (cls) found.add(p.tagName.toLowerCase() + "." + cls);
       }
       return found;
@@ -502,9 +552,15 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
   for (const band of bands) {
     const tall = band.bottom - band.top;
     if (tall <= limits.pageBandPx) continue;
+    // The landing page's gutters between sections are fixed px, not text-scaled spacing.
+    const section = band.below.closest(".fg-inner > *");
+    const fixed = section && band.above?.closest(".fg-inner > *")?.nextElementSibling === section
+      && /^\d+(?:\.\d+)?px$/.test(style(section).getPropertyValue("--fg-gap").trim());
+    const limit = bandLimit(limits.pageBandPx * (fixed ? 1 : rootPx / 16), band.above, band.below);
+    if (tall <= limit) continue;
     const where = `band below ${band.above ? name(band.above) : "page top"}`;
     fail({ rule: "page-empty", element: where, text: band.below ? `above: ${text(band.below)}` : "",
-      measure: `${Math.round(tall)} px empty (limit ${limits.pageBandPx} px)`, extent: Math.round(tall), box: { x: 0, y: Math.round(band.top), w: vw, h: Math.round(tall) } }, band.below);
+      measure: `${Math.round(tall)} px empty (limit ${Math.round(limit)} px)`, extent: Math.round(tall), box: { x: 0, y: Math.round(band.top), w: vw, h: Math.round(tall) } }, band.below);
   }
   return { failures, tight, counted: { items: items.length, grids, tiles } };
 }
