@@ -385,6 +385,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const usersDeadline = options.usersDeadlineMs ?? 120_000, usersNow = options.usersNow ?? Date.now;
   let snapshot: { body?: Buffer; expires: number; digest: string } | undefined;
   type Flight = { reply: Promise<Buffer>; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
+  const readerLeft = new Error("Users reader disconnected");
   let flight: Flight | undefined;
   function begin(policy: ReturnType<typeof policyNow>): Flight {
     const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
@@ -397,7 +398,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       snapshot = { body, digest: policy.digest, expires: published + 60_000 };
       return body;
     }).catch(error => {
-      snapshot = { digest: policy.digest, expires: usersNow() + 60_000 };
+      if (signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 60_000 };
       throw error;
     }).finally(() => { flight = undefined; });
     return { reply: untilAborted(work, signal), settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
@@ -418,10 +419,12 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         await untilAborted(build.settled, signal);
         continue;
       }
+      // The departing visitor cancelled the work, not the listing. Join cleanup before starting its replacement.
+      if (build.signal.reason === readerLeft) { await untilAborted(build.settled, signal); continue; }
       build.signal.throwIfAborted();
       build.waiters++;
       try { return await untilAborted(build.reply, signal); }
-      finally { if (--build.waiters === 0 && flight === build) build.stop.abort(); }
+      finally { if (--build.waiters === 0 && flight === build) build.stop.abort(signal.reason); }
     }
   }
   const picks = options.topMatches ?? shippedTopMatchList();
@@ -477,7 +480,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     // A record download is bounded only by no progress: refreshed on each step below.
     const deadline = setTimeout(() => abort.abort(), usersList ? usersDeadline : list || topList ? LIST_DEADLINE_MS : recordIdleMs);
     deadline.unref();
-    const cancel = () => abort.abort();
+    const cancel = () => abort.abort(usersList ? readerLeft : undefined);
     res.once("close", cancel);
     try {
       if (usersList) {

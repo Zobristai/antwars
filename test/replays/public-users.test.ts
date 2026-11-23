@@ -118,6 +118,37 @@ it("keeps an unfinished ranking read in its build slot after disconnect and dead
   } finally { finish.resolve(); }
 });
 
+it("waits for the last reader's cancelled build to stop, then starts a fresh build without a retry delay", async () => {
+  const entered = Promise.withResolvers<void>(), cancelled = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
+  const replacementArrived = Promise.withResolvers<void>();
+  let abandoned = false, running = 0, peak = 0;
+  const scan = vi.fn(async function* (signal: AbortSignal) {
+    peak = Math.max(peak, ++running);
+    try {
+      if (!abandoned) {
+        entered.resolve(); await once(signal, "abort");
+        abandoned = true; cancelled.resolve(); await finish.promise;
+        signal.throwIfAborted();
+      }
+      yield [oneMatch()];
+    } finally { --running; }
+  });
+  const origin = await listen(sourceWith(scan), undefined, {
+    usersPolicy: () => { if (abandoned) replacementArrived.resolve(); return { digest: "same" }; },
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } },
+  });
+  const controller = new AbortController();
+  const first = fetch(origin + "/matches/users", { signal: controller.signal }).catch(() => null);
+  try {
+    await entered.promise; controller.abort(); await cancelled.promise; expect(await first).toBeNull();
+    const next = fetch(origin + "/matches/users"); await replacementArrived.promise;
+    expect(scan).toHaveBeenCalledTimes(1); finish.resolve();
+    const response = await next; expect(response.status).toBe(200);
+    expect((await response.json()).users).toHaveLength(2);
+    expect(scan).toHaveBeenCalledTimes(2); expect(peak).toBe(1);
+  } finally { finish.resolve(); }
+});
+
 it("applies public visibility as each page arrives", async () => {
   const earlier = oneMatch(), later = match(1, ["fern", "spruce"]);
   earlier.seats[0]!.modelLabel = "earlier"; later.seats[0]!.modelLabel = "later";
@@ -198,12 +229,23 @@ it("cancels the ranking transport when the last Users reader leaves, without aff
   expect(await ratings.leaderboard()).toEqual({ ok: true, value: { entries: [] } });
 });
 
-it("logs a fixed, data-free message when the Users listing returns 503", async () => {
+it.each(["upstream failure", "deadline"])("keeps the data-free 503 and retry delay after %s", async reason => {
+  let now = 0, healthy = false;
+  const scan = vi.fn(async function* (signal: AbortSignal) {
+    if (!healthy) {
+      if (reason === "deadline") { await once(signal, "abort"); signal.throwIfAborted(); }
+      throw Error("fixture-specific private detail");
+    }
+    yield [oneMatch()];
+  });
   const log = vi.spyOn(console, "warn").mockImplementation(() => {});
   try {
-    const origin = await listen(sourceWith(async function* () { yield [oneMatch()]; }), undefined,
-      { ratings: { async leaderboard() { throw Error("fixture-specific private detail"); } } });
-    expect((await fetch(origin + "/matches/users")).status).toBe(503);
-    expect(log.mock.calls).toEqual([["Users listing unavailable (503)"]]);
+    const origin = await listen(sourceWith(scan), undefined, { usersNow: () => now, usersDeadlineMs: 100,
+      ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+    const read = () => fetch(origin + "/matches/users");
+    expect((await read()).status).toBe(503); healthy = true; now = 59_999;
+    expect((await read()).status).toBe(503); expect(scan).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls).toEqual([["Users listing unavailable (503)"], ["Users listing unavailable (503)"]]);
+    ++now; expect((await read()).status).toBe(200); expect(scan).toHaveBeenCalledTimes(2);
   } finally { log.mockRestore(); }
 });
