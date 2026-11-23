@@ -1,17 +1,19 @@
 /**
  * The render check's verdict and its outputs: report.json, report.md, GitHub annotations and the job summary.
  * A failure counts against the build unless the reviewed held list (held.json) holds that very finding: the same
- * rule on the same element and text of the same surface, width and typeface, broken no further than it was held at.
+ * rule on the same element and text of the same surface, width, text size and typeface, broken no further than it was
+ * held at.
  */
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Finding, RuleId } from "./rules.ts";
-import type { Typeface } from "./fonts.ts";
+import { DEFAULT_TEXT_SIZE, type TextSize, type Typeface } from "./fonts.ts";
 
 export interface Render {
   surface: string;
   url: string;
   width: number;
+  textSize: TextSize;
   typeface: Typeface;
   failures: Finding[];
   tight: Finding[];
@@ -24,16 +26,18 @@ export interface Render {
   fonts: Record<string, number>;
   /** Problems that make this render itself invalid: wrong typeface, unanswered requests, a page that did not load. */
   invalid: string[];
+  /** JSON metadata and comparison-image references, retained for an invalid render. */
+  invalidEvidence?: string;
   pageErrors: string[];
   fixtures: string[];
 }
 
 /** One finding already on main: held at its extent (lines, px or tiles, as its rule measures it). */
-export interface HeldEntry { surface: string; width: number; typeface: Typeface; rule: RuleId; element: string; text: string; extent: number; why: string }
+export interface HeldEntry { surface: string; width: number; textSize: TextSize; typeface: Typeface; rule: RuleId; element: string; text: string; extent: number; why: string }
 export interface HeldList { note: string; held: HeldEntry[] }
 
-export const heldKey = (e: { surface: string; width: number; typeface: string; rule: string; element: string; text: string }): string =>
-  [e.surface, e.width, e.typeface, e.rule, e.element, e.text].join(" | ");
+export const heldKey = (e: { surface: string; width: number; textSize: TextSize; typeface: string; rule: string; element: string; text: string }): string =>
+  [e.surface, e.width, `${e.textSize}px`, e.typeface, e.rule, e.element, e.text].join(" | ");
 
 /** How much further than its held extent a finding may measure and still be the held one: rounding, not change. */
 export const heldSlack = (rule: RuleId): number => rule === "wrap" || rule === "part-uneven" ? 0 : 1;
@@ -42,13 +46,13 @@ export async function readHeld(file: string): Promise<HeldList> {
   return JSON.parse(await readFile(file, "utf8")) as HeldList;
 }
 
-export interface Judged extends Finding { surface: string; width: number; typeface: Typeface; image: string; held: boolean; outOfView?: boolean }
+export interface Judged extends Finding { surface: string; width: number; textSize: TextSize; typeface: Typeface; image: string; held: boolean; outOfView?: boolean }
 export interface Verdict {
   passed: boolean;
   newFailures: Judged[];
   heldFailures: Judged[];
   tight: Judged[];
-  invalid: { surface: string; width: number; typeface: Typeface; problem: string }[];
+  invalid: { surface: string; width: number; textSize: TextSize; typeface: Typeface; problem: string; evidence?: string }[];
   /** Held entries this run did not match: fixed, or now worse (then also a new failure). The list can shrink. */
   heldUnused: HeldEntry[];
 }
@@ -59,7 +63,7 @@ export function judge(renders: readonly Render[], held: HeldList): Verdict {
   const newFailures: Judged[] = [], heldFailures: Judged[] = [], tight: Judged[] = [];
   const invalid: Verdict["invalid"] = [];
   for (const r of renders) {
-    const at = { surface: r.surface, width: r.width, typeface: r.typeface };
+    const at = { surface: r.surface, width: r.width, textSize: r.textSize, typeface: r.typeface };
     // The worst findings take the largest held extents first, so a held finding that worsens is the one left over.
     const order = r.failures.map((f, i) => i).sort((a, b) => r.failures[b]!.extent - r.failures[a]!.extent);
     for (const i of order) {
@@ -73,7 +77,7 @@ export function judge(renders: readonly Render[], held: HeldList): Verdict {
       newFailures.push(was ? { ...judged, measure: `${judged.measure}; held at ${was.extent}, now ${f.extent}` } : judged);
     }
     for (const f of r.tight) tight.push({ ...f, ...at, image: r.images[0] ?? "", held: false });
-    for (const problem of r.invalid) invalid.push({ surface: r.surface, width: r.width, typeface: r.typeface, problem });
+    for (const problem of r.invalid) invalid.push({ ...at, problem, ...(r.invalidEvidence ? { evidence: r.invalidEvidence } : {}) });
   }
   const heldUnused = [...open.values()].flat();
   return { passed: newFailures.length === 0 && invalid.length === 0, newFailures, heldFailures, tight, invalid, heldUnused };
@@ -84,7 +88,7 @@ export function heldFrom(renders: readonly Render[], previous: HeldList, why: st
   const reasons = new Map(previous.held.map(e => [heldKey({ ...e, text: "" }), e.why]));
   const held: HeldEntry[] = [];
   for (const r of renders) for (const f of r.failures) {
-    const entry = { surface: r.surface, width: r.width, typeface: r.typeface, rule: f.rule, element: f.element, text: f.text, extent: f.extent };
+    const entry = { surface: r.surface, width: r.width, textSize: r.textSize, typeface: r.typeface, rule: f.rule, element: f.element, text: f.text, extent: f.extent };
     held.push({ ...entry, why: reasons.get(heldKey({ ...entry, text: "" })) ?? why });
   }
   return { note: previous.note, held: held.sort((a, b) => heldKey(a).localeCompare(heldKey(b)) || a.extent - b.extent) };
@@ -92,7 +96,9 @@ export function heldFrom(renders: readonly Render[], previous: HeldList, why: st
 
 /** Tight fits are listed, not failed; the report shows only the tightest. */
 const TIGHT_SHOWN = 40;
-const where = (j: { surface: string; width: number; typeface: string }) => `${j.surface} at ${j.width} px in ${j.typeface}`;
+const textLabel = (size: TextSize) => size === DEFAULT_TEXT_SIZE ? "default text" : `${size} px text`;
+const where = (j: { surface: string; width: number; textSize: TextSize; typeface: string }) =>
+  `${j.surface} at ${j.width} px (${textLabel(j.textSize)}) in ${j.typeface}`;
 const line = (j: Judged) => `${where(j)}: ${j.rule} — ${j.element}${j.text ? ` “${j.text}”` : ""} — ${j.measure}`;
 const escape = (s: string) => s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
 // A backslash first, so the one written before a pipe is not read as escaping something else.
@@ -104,12 +110,12 @@ export function markdown(v: Verdict, renders: readonly Render[], context: { buil
   out.push(`Build: ${context.build}. Data: ${context.snapshot}.`, "");
   out.push(`${renders.length} renders. ${v.newFailures.length} new failures, ${v.invalid.length} invalid renders, ${v.heldFailures.length} held failures (already on main, reviewed in held.json), ${v.tight.length} tight fits (listed, not failed).`, "");
   if (v.invalid.length) {
-    out.push("## Invalid renders", "", ...v.invalid.map(i => `- ${where(i)}: ${i.problem}`), "");
+    out.push("## Invalid renders", "", ...v.invalid.map(i => `- ${where(i)}: ${i.problem}${i.evidence ? ` ([evidence](${i.evidence}))` : ""}`), "");
   }
   const table = (title: string, rows: Judged[]) => {
     if (!rows.length) return;
-    out.push(`## ${title}`, "", "| Surface | Width | Typeface | Rule | Element | Text | Measure | Render |", "|---|---|---|---|---|---|---|---|");
-    for (const j of rows) out.push(`| ${j.surface} | ${j.width} | ${j.typeface} | ${j.rule} | ${cell(j.element)} | ${cell(j.text)} | ${cell(j.measure)} | ${j.image}${j.outOfView ? " (outside the view: nothing scrolls to it)" : ""} |`);
+    out.push(`## ${title}`, "", "| Surface | Width | Text size | Typeface | Rule | Element | Text | Measure | Render |", "|---|---|---|---|---|---|---|---|---|");
+    for (const j of rows) out.push(`| ${j.surface} | ${j.width} | ${j.textSize} px | ${j.typeface} | ${j.rule} | ${cell(j.element)} | ${cell(j.text)} | ${cell(j.measure)} | ${j.image}${j.outOfView ? " (outside the view: nothing scrolls to it)" : ""} |`);
     out.push("");
   };
   table("New failures", v.newFailures);

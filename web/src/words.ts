@@ -51,7 +51,7 @@ import { EVERYWHERE, clipToRect, projectedPath, type Project, type ScreenRect } 
 
 export const FONT_FAMILY = "IBM Plex Mono";
 export const FONT_LICENCE = "IBM Plex Mono, Copyright 2017 IBM Corp., SIL Open Font License 1.1 (OFL-1.1)";
-const GLOSS_FONT = "antwar-plex-500";
+export const GLOSS_FONT = "antwar-plex-500";
 const FADE_IN_MS = 350;
 
 export async function loadFonts(): Promise<void> {

@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import type { AccountStores } from "../accounts/service.js";
 import { isReplayId, type ReplayRead, type ReplaySource } from "../replays/access.js";
 import type { PrivateArchive } from "../replays/private-archive.js";
+import { LIVE_OPT_INS } from "./format.js";
 import type { LiveHub } from "./hub.js";
 import { admitMatchWatch, type MatchAccess } from "./match-access.js";
 import { listedMatches, matchWatchStatus, publicMatchCatalog, type PublicColonies, type PublicSeat } from "./match-catalog.js";
@@ -152,7 +153,8 @@ export function watchRoutes(options: {
         if (!retained || retained.origin === options.origin || req.headers["x-antwar-watch-proxy"] !== undefined) { reply(res, 404); return; }
         // Registry origins are captured from operator configuration, never a request URL.
         const target = new URL(`/watch/${kind}/${encodeURIComponent(lobbyId)}`, retained.origin);
-        if (kind === "live" && url.searchParams.get("kills") === "1") target.searchParams.set("kills", "1");
+        // Wire-format opt-ins pass through; a page without them keeps the earlier format it reads.
+        if (kind === "live") for (const optIn of LIVE_OPT_INS) if (url.searchParams.get(optIn) === "1") target.searchParams.set(optIn, "1");
         // A live relay holds a place for as long as it streams; past the cap, the viewer's page retries.
         if (kind === "live" && !relays.admit(res, clientSource(req.headers))) return;
         const headers: Record<string, string> = { "x-antwar-watch-proxy": "1", accept: kind === "live" ? "text/event-stream" : "application/json" };
