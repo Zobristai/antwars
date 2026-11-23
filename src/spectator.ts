@@ -154,7 +154,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
       const read = await lobbies.readLobby(found.lobbyId);
       return read.ok ? read.value : null;
     } : undefined;
-    server.mount("/matches", historyRoutes(options.historySource, lookup, { publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
+    server.mount("/matches", historyRoutes(options.historySource, lookup, { ratings: options.accounts?.ratings, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
   }
   server.mount("/rules", (req, res, game) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;

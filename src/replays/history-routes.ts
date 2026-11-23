@@ -1,3 +1,5 @@
+import { publicUsers } from "./public-users.js";
+import type { Ratings } from "../rating/ratings.js";
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import { addAbortListener } from "node:events";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
@@ -212,6 +214,8 @@ const LIST_DEADLINE_MS = 60_000;
 const RECORD_IDLE_MS = 30_000;
 
 export interface HistoryRouteOptions {
+  readonly ratings?: Pick<Ratings, "leaderboard">;
+  readonly usersDeadlineMs?: number;
   readonly publicVisibility?: PublicVisibility;
   /** Longest a record download may go without handing the client a chunk; past it the download is dropped. */
   readonly recordIdleMs?: number;
@@ -291,7 +295,7 @@ export const TOP_PATH = "/matches/top";
  */
 async function publicHistoryPage(source: HistorySource, token: string | undefined, signal: AbortSignal,
   visibility: PublicVisibility | undefined, continuations: ListingContinuations,
-  serve: (page: HistoryPage) => Promise<ServedPage>): Promise<ServedPage> {
+  serveVisible: (page: HistoryPage) => Promise<ServedPage>): Promise<ServedPage> {
   token = continuations.open(token);
   const seen = new Set<string>();
   if (token !== undefined) seen.add(token);
@@ -299,8 +303,7 @@ async function publicHistoryPage(source: HistorySource, token: string | undefine
   for (let pages = 1; ; pages++) {
     signal.throwIfAborted();
     const raw = await source.list(token, signal);
-    const visible = visibility ? await untilAborted(publiclyVisible(raw.matches, row => visibility.replayVisible(row.id), signal), signal) : raw.matches;
-    const served = await untilAborted(serve({ matches: visible, nextPageToken: raw.nextPageToken }), signal);
+    const served = await serveVisible(raw);
     listed.push(...served.matches);
     if (raw.nextPageToken === null && listed.length <= PAGE_ROWS) return { ...served, matches: listed, nextPageToken: null };
     if (listed.length >= PAGE_ROWS) {
@@ -352,9 +355,39 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
     return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
   }
-  /** One public listing page, as GET /matches serves it. */
+  /** Both public listings use this exact filter and projection, including recording corrections. */
+  async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
+    const visible = options.publicVisibility ? await untilAborted(publiclyVisible(raw.matches, row => options.publicVisibility!.replayVisible(row.id), signal), signal) : raw.matches;
+    return untilAborted(serve({ ...raw, matches: visible }, signal), signal);
+  }
   const listPage = (token: string | undefined, signal: AbortSignal) =>
-    publicHistoryPage(source, token, signal, options.publicVisibility, continuations, listed => serve(listed, signal));
+    publicHistoryPage(source, token, signal, options.publicVisibility, continuations, raw => serveVisible(raw, signal));
+  async function* userBatches(signal: AbortSignal) {
+    if (!source.scan) throw new Error("History scan unavailable");
+    for await (const batch of source.scan(signal)) {
+      // A few bounded parallel groups avoid serialising every visibility lookup on a large history.
+      const reads = [];
+      for (let i = 0; i < batch.length; i += 5) reads.push(serveVisible({ matches: batch.slice(i, i + 5), nextPageToken: null }, signal));
+      for (const page of await Promise.all(reads)) yield page.matches;
+    }
+  }
+  type UsersRead = { controller: AbortController; result: ReturnType<typeof publicUsers>; waiters: number };
+  let building: UsersRead | undefined;
+  const usersDeadline = options.usersDeadlineMs ?? 240_000;
+  async function users(signal: AbortSignal) {
+    if (!building) {
+      const controller = new AbortController();
+      const buildSignal = AbortSignal.any([controller.signal, AbortSignal.timeout(usersDeadline)]);
+      const result = untilAborted(publicUsers(userBatches(buildSignal), options.ratings, buildSignal), buildSignal);
+      building = { controller, result, waiters: 0 };
+    }
+    const build = building;
+    build.waiters++;
+    try { return await untilAborted(build.result, signal); }
+    finally {
+      if (--build.waiters === 0) { build.controller.abort(); building = undefined; }
+    }
+  }
   const picks = options.topMatches ?? shippedTopMatchList();
   /** The listed records' complete summaries: a complete record is never replaced (records/record-store.ts save), so it is kept. */
   const complete = new Map<string, HistorySummary>();
@@ -392,9 +425,10 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const list = url.pathname === "/matches";
+    const usersList = url.pathname === "/matches/users";
     const topList = url.pathname === TOP_PATH;
     const id = url.pathname.startsWith("/matches/") && !topList ? url.pathname.slice("/matches/".length) : "";
-    if (!list && !topList && !isReplayId(id)) { res.writeHead(404).end(); return; }
+    if (!list && !topList && !usersList && !isReplayId(id)) { res.writeHead(404).end(); return; }
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { allow: "GET, HEAD" }).end(); return; }
     const token = url.searchParams.get("pageToken") ?? undefined;
     if ((!list && url.search.length > 0) || [...url.searchParams.keys()].some(key => key !== "pageToken") ||
@@ -405,12 +439,17 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     // A listing is bounded as a whole as well as each upstream read: a progressing
     // page must not accumulate twenty independent network/worker deadlines.
     // A record download is bounded only by no progress: refreshed on each step below.
-    const deadline = setTimeout(() => abort.abort(), list || topList ? LIST_DEADLINE_MS : recordIdleMs);
+    const deadline = setTimeout(() => abort.abort(), usersList ? usersDeadline : list || topList ? LIST_DEADLINE_MS : recordIdleMs);
     deadline.unref();
     const cancel = () => abort.abort();
     res.once("close", cancel);
     try {
-      if (topList) {
+      if (usersList) {
+        const body = Buffer.from(JSON.stringify({ users: await users(abort.signal) }));
+        if (res.destroyed) return;
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
+        res.end(req.method === "HEAD" ? undefined : body);
+      } else if (topList) {
         const matches = await topMatches(abort.signal);
         if (res.destroyed) return;
         const body = Buffer.from(JSON.stringify({ matches }));

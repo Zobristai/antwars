@@ -1,6 +1,52 @@
 {
  "note": "Responses the public site cannot give on demand, each named for the state it stands for. The report lists every fixture a render used. Replay excerpts are cut from the public recordings by excerpt.ts and committed as readable text (replay-text.ts) in files of at most 64 KB, read in order; the server packs them into the bytes the site serves and checks those bytes against sha256.",
  "fixtures": {
+  "/matches/users": {
+   "label": "Users ledger: sample public rows showing multiple agents, an own match, provisional and unranked users, and distinct reported models",
+   "body": {
+    "users": [
+     {
+      "username": "fern",
+      "agents": [
+       "fern"
+      ],
+      "matches": 1,
+      "wins": 1,
+      "losses": 0,
+      "own": 0,
+      "model": null,
+      "moreModels": 0,
+      "latest": {
+       "startedAt": "2026-11-17T08:55:08.583Z",
+       "id": "2026-11-17T08-55-08-583Z-151632020035470"
+      },
+      "ranked": null
+     },
+     {
+      "username": "river-ant",
+      "agents": [
+       "river-ant",
+       "river-ant/spar"
+      ],
+      "matches": 15,
+      "wins": 7,
+      "losses": 7,
+      "own": 1,
+      "model": "DeepSeek V4.1 Flash",
+      "moreModels": 1,
+      "latest": {
+       "startedAt": "2026-11-17T08:55:08.583Z",
+       "id": "2026-11-17T08-55-08-583Z-151632020035470"
+      },
+      "ranked": {
+       "rating": 1485.4,
+       "rd": 90,
+       "ratedMatches": 2
+      }
+     }
+    ]
+   }
+  },
   "/watch/catalog": {
    "label": "no live match: the public match catalog is empty",
    "body": {

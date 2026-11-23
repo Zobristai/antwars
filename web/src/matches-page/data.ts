@@ -1,4 +1,5 @@
 // The Matches page's data: the live catalog, saved recordings, with no invented rows.
+import { usersResponse, type PublicUser } from "./users.ts";
 import { z } from "zod";
 import { neverJoined } from "../ui/format.ts";
 // A seated player: the stream's seat name, and the rating, RD and rated-match count in the match's ranked mode,
@@ -102,6 +103,7 @@ export type Collection<T> =
   | { readonly status: "ready"; readonly rows: readonly T[] }
   | { readonly status: "error"; readonly rows: readonly T[] };
 export interface MatchesView {
+  readonly users?: Collection<PublicUser>;
   /** The agents waiting in the ranked queues and Quadrants, then the public lobbies and queue pairings not yet begun;
    * read only where createMatchesData is given waiting: true. */
   readonly waiting: Collection<WaitingRow>;
@@ -114,13 +116,14 @@ export interface MatchesDataOptions {
   /** Read GET /watch/queue on each refresh: the Matches page's Waiting card. Off by default, so other pages sharing this
    * data (the landing page) make no queue request. */
   readonly waiting?: boolean;
+  readonly users?: boolean;
 }
 /** Rows one Recordings load aims for: a full server page. */
 const FILL_ROWS = 20;
 /** Further requests one Recordings load may make to reach FILL_ROWS. */
 const MAX_FOLLOWS = 4;
 export function createMatchesData(request: typeof fetch, publish: (view: MatchesView) => void, options: MatchesDataOptions = {}) {
-  let view: MatchesView = { waiting: { status: "loading", rows: [] }, live: { status: "loading", rows: [] }, recordings: { status: "loading", rows: [] }, next: null };
+  let view: MatchesView = { ...(options.users ? { users: { status: "loading", rows: [] } as const } : {}), waiting: { status: "loading", rows: [] }, live: { status: "loading", rows: [] }, recordings: { status: "loading", rows: [] }, next: null };
   const abort = new AbortController();
   let historyBusy = false, overviewBusy = false, refreshBusy = false, waitingBusy = false;
   const seen = new Set<string>();
@@ -182,12 +185,27 @@ export function createMatchesData(request: typeof fetch, publish: (view: Matches
     emit();
     waitingBusy = false;
   }
+  let usersLoad: AbortController | undefined;
+  async function users() {
+    usersLoad?.abort();
+    const load = new AbortController(); usersLoad = load;
+    view = { ...view, users: { status: "loading", rows: [] } }; emit();
+    try {
+      const response = await request("/matches/users", { cache: "no-store", credentials: "same-origin", redirect: "error",
+        signal: AbortSignal.any([abort.signal, load.signal, AbortSignal.timeout(245_000)]) });
+      if (!response.ok) throw new Error("Users unavailable");
+      const { users: rows } = usersResponse.parse(await response.json());
+      if (!load.signal.aborted) view = { ...view, users: { status: "ready", rows } };
+    } catch { if (!load.signal.aborted) view = { ...view, users: { status: "error", rows: [] } }; }
+    if (!load.signal.aborted) emit();
+  }
   async function refresh() {
     if (refreshBusy || historyBusy || abort.signal.aborted) return;
     refreshBusy = true;
     // The queue read runs beside the refresh, never inside its lock: a slow /watch/queue never holds Live now or
     // Recordings' next Refresh. It serializes itself (waitingBusy).
     if (options.waiting) void waiting();
+    if (options.users) void users();
     try {
       await Promise.all([overview(), history(true)]);
     } finally { refreshBusy = false; }

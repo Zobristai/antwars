@@ -1,0 +1,55 @@
+.users-card { font-size: var(--aw-text-body); line-height: var(--aw-lh-body); }
+.users-card .d1p-state { font-size: inherit; line-height: inherit; }
+.users-card .d1p-glyph { margin-top: calc((var(--aw-lh-body) - 8px) / 2); }
+.users-card small, .users-muted, .users-label, .users-notes { color: var(--aw-ink-3); }
+.users-table { border-collapse: collapse; width: 100%; table-layout: fixed; color: var(--aw-ink); }
+.users-table tr, .users-notes, .users-message, .users-skeleton { border-top: 1px solid var(--aw-line); }
+.users-table th, .users-table td { text-align: left; font-weight: normal; vertical-align: middle; overflow-wrap: anywhere; }
+.users-table tr > * { padding: 8px 6px; }
+.users-table tr > :first-child { padding-left: var(--d1p-inset); }
+.users-table tr > :last-child { padding-right: var(--d1p-inset); }
+.users-table thead th { padding-block: 0; }
+.users-table thead button { font: 600 var(--aw-text-label)/var(--aw-lh-label) var(--aw-sans); color: var(--aw-ink-3); text-transform: uppercase; letter-spacing: var(--aw-track-label); border: 0; padding: 0; background: none; cursor: pointer; min-height: var(--aw-tap); text-align: inherit; }
+.users-table thead button:hover, .users-table [aria-sort] button { color: var(--aw-ink-bright); }
+.users-table [aria-sort] button::after, .users-table thead :is(.field-2,.field-3,.field-4,.field-6) button::after {
+  content: ''; display: inline-block; vertical-align: middle; margin-left: .2em;
+  border: .28em solid transparent; border-top: .4em solid currentColor; border-bottom: 0;
+}
+.users-table [aria-sort=ascending] button::after { transform: rotate(180deg); }
+.users-table .field-0 { width: 15%; } .users-table .field-1 { width: 18%; } .users-table .field-2 { width: 8%; }
+.users-table .field-3 { width: 9%; } .users-table .field-4 { width: 15%; } .users-table .field-5 { width: 22%; }
+.users-table :is(.field-2,.field-3) { text-align: right; font-variant-numeric: tabular-nums; }
+.users-table .field-3 { padding-right: 1.25rem; }
+.users-table .field-0 strong { font-size: var(--aw-text-lead); }
+.users-agent.is-next::before { content: ', '; }
+.users-card .d1p-prov, .users-card .d1p-elo-badge { font-size: var(--aw-text-badge-sm); line-height: var(--aw-lh-badge-sm); }
+.users-card .d1p-prov { margin-left: 6px; }
+.users-own { display: block; font-size: var(--aw-text-label); } .users-more-models { white-space: nowrap; margin-left: 6px; font-size: inherit; }
+.users-replay { color: var(--aw-ink-2); text-decoration: underline; }
+.users-notes, .users-message { padding: 10px var(--d1p-inset) 12px; }
+.users-notes { font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); } .users-notes p + p { margin-top: 4px; }
+.users-label, .users-sort { display: none; }
+.users-skeleton { display: grid; grid-template-columns: 1fr 20%; gap: 12px; padding: 16px var(--d1p-inset); }
+.users-skeleton span:first-child { width: 66%; } .users-skeleton span:last-child { width: 90%; }
+@container d1p-card (width < 62rem) {
+  .users-card .d1p-card-head { flex-direction: column; }
+  .users-table, .users-table :is(thead,tbody) { display: block; }
+  .users-table tr { display: grid; grid-template-columns: minmax(0,1fr) 4.6rem 4.2rem; align-items: baseline; gap: 2px 9px; padding: 10px var(--d1p-inset); }
+  .users-table tr > :is(th,td)[class] { padding: 0; width: auto; min-width: 0; }
+  .users-table thead tr { padding-block: 0; } .users-table thead button { min-height: 44px; }
+  .users-table thead :is(.field-1,.field-4,.field-5,.field-6) { display: none; }
+  .users-table :is(.field-0,.field-2,.field-3) { grid-row: 1; } .users-table .field-2 { grid-column: 2; } .users-table .field-3 { grid-column: 3; }
+  .users-detail { grid-column: 1/-1; display: grid; grid-template-columns: 7.05rem minmax(0,1fr); gap: 6px; align-items: baseline; }
+  .users-detail, .users-label { font-size: var(--aw-text-meta); }
+  .users-detail .users-label { display: block; }
+  .users-detail .users-agent { display: block; } .users-agent.is-next::before { content: none; }
+  .users-replay { display: inline-flex; align-items: center; min-height: 44px; }
+}
+@container d1p-card (width < 21rem) { .users-more-models { display: block; margin: 0; } }
+@container d1p-card (width < 17rem) {
+  .users-table thead { display: none; } .users-table tr { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
+  .users-table .field-0 { grid-column: 1/-1; }
+  .users-table .field-2, .users-table .field-3 { grid-row: 2; text-align: left; grid-column:auto; }
+  .users-detail { display: block; } .users-label { display: block; }
+  .users-card .users-sort { display: block; field-sizing: content; max-width: 100%; min-height: 44px; border: 0; border-radius: var(--aw-radius-pill); padding: 0 10px; color: var(--aw-ink-bright); background: var(--aw-raise); font: 600 var(--aw-text-body)/var(--aw-lh-body) var(--aw-sans); }
+}

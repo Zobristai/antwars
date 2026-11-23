@@ -226,6 +226,7 @@ export function correctedHistorySource(source: HistorySource, store: Pick<Store,
   const applied = appliedReader(store);
   return {
     list: (pageToken, signal) => source.list(pageToken, signal),
+    scan: source.scan?.bind(source),
     continuationAfter: source.continuationAfter === undefined ? undefined : id => source.continuationAfter!(id),
     // Uncorrected, as list(): listed corrects every served row, the top matches' included.
     summary: source.summary === undefined ? undefined : (id, signal) => source.summary!(id, signal),

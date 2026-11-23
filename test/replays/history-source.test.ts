@@ -821,3 +821,14 @@ it("summarises one record by id as a listing page does, and answers null for a m
   expect(await f.source.summary!(emptyId, signal)).toBeNull();
   await expect(f.source.summary!("../x", signal)).rejects.toThrow("invalid match id");
 });
+
+it("streams all summary batches from a single metadata traversal, reusing reads by generation", async () => {
+  const ids = Array.from({ length: 21 }, (_, i) => `2026-10-20T02-00-00-000Z-${i + 1}`);
+  const f = await fixture((req, res) => { const match = ids.find(value => req.url!.includes(`${value}.json`))!; res.end(JSON.stringify(record(match))); },
+    cursor => ({ items: (cursor ? ids.slice(10) : ids.slice(0, 10)).map(value => ({ name: `${value}.json`, generation: "1" })), nextPageToken: cursor ? undefined : "more" }));
+  const scan = async () => { const batches: string[][] = []; for await (const rows of f.source.scan!(signal())) batches.push(rows.map(row => row.id)); return batches; };
+  expect(await scan()).toEqual([ids.slice(0,20), ids.slice(20)]);
+  expect(await scan()).toEqual([ids.slice(0,20), ids.slice(20)]);
+  expect(f.objects.length).toBe(21);
+  expect(f.calls.filter(c => !c.url.includes("metadata.google.internal"))).toHaveLength(4);
+});
