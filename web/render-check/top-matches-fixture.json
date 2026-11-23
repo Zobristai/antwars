@@ -434,30 +434,30 @@
    }
   },
   {
-   "id": "2026-10-25T18-41-02-757Z-110123240274979",
-   "startedAt": "2026-10-25T18:41:02.757Z",
-   "endedAt": "2026-10-25T19:09:02.691Z",
-   "simulationEndedAt": "2026-10-25T19:09:02.757Z",
-   "winner": 1,
+   "id": "2026-11-01T23-22-31-374Z-2344607731018",
+   "startedAt": "2026-11-01T23:22:31.374Z",
+   "endedAt": "2026-11-01T23:47:49.306Z",
+   "simulationEndedAt": "2026-11-01T23:47:49.374Z",
+   "winner": 0,
    "reason": "queens_killed",
    "decidedBy": "queens_killed",
    "seats": [
     {
      "seat": 0,
      "colony": 0,
-     "modelLabel": "anthropic/claude-opus-5-5",
-     "thinkingLevel": null,
-     "serviceTier": null,
-     "handle": "antwars/claude-opus-5-5",
+     "modelLabel": "openai/gpt-6.1-terra",
+     "thinkingLevel": "max",
+     "serviceTier": "fast",
+     "handle": "antwars/gpt-6-1-terra-max-fast",
      "startRating": null
     },
     {
      "seat": 1,
      "colony": 1,
      "modelLabel": "anthropic/claude-opus-5-5",
-     "thinkingLevel": null,
+     "thinkingLevel": "max",
      "serviceTier": null,
-     "handle": "antwars/claude-opus-5-5-xhigh",
+     "handle": "antwars/claude-opus-5-5-max",
      "startRating": null
     }
    ],
@@ -466,14 +466,14 @@
     "Calls refused before simulation (adapter validation, rate limits, post-match calls) are not recorded."
    ],
    "rated": true,
-   "modelIndex": false,
+   "modelIndex": true,
    "matchType": {
     "kind": "index",
     "size": 1
    },
    "harnessPhase": {
-    "phase": "rounds 1-7",
-    "possibleEffortMismatch": true
+    "phase": "rounds 11-25",
+    "possibleEffortMismatch": false
    }
   },
   {
