@@ -3,13 +3,10 @@ import { createRequire } from "node:module";
 export type HudProbe = "hidden" | "unclipped";
 export type HudOnScreen = "shown" | "not shown" | "insufficient HUD paint" | "clipped" | "screen not still";
 export const HUD_SAMPLE_CYCLES = 3;
-// Device pixels, not a per-channel tolerance. More stable witnesses than this are needed to prove visibility;
-// the clip probe must still detect a cut as small as one device pixel.
-const PIXEL_BUDGET = 256;
 
 export interface HudTriplet { before?: Buffer; altered?: Buffer; after?: Buffer }
 export interface HudMeasurement {
-  width: number; height: number; stableDifferences: number; variablePixels: number;
+  width: number; height: number; pixelLimit: number; stableDifferences: number; variablePixels: number;
   alteredVariablePixels: number; variableTouchingBackground: number; verdict: HudOnScreen;
 }
 
@@ -56,13 +53,17 @@ export function measureHudProbe(kind: HudProbe, samples: readonly HudTriplet[]):
       if (kind === "hidden" && moves && touches) variableTouchingBackground++;
     } else if (v !== a) stableDifferences++;
   }
+  // Visible-only variation may occupy up to 1% of the screenshot, but never counts as painted HUD.
+  // To establish visibility we require *more* than that area in stable, exactly differing device pixels.
+  // Small HUD-only motion may be indistinguishable from repaint noise; clipping still fails on one pixel.
+  const pixelLimit = Math.floor(width * height / 100);
   let verdict: HudOnScreen;
-  if (variablePixels > PIXEL_BUDGET) verdict = "screen not still";
+  if (variablePixels > pixelLimit) verdict = "screen not still";
   else if (kind === "unclipped") {
     // An excluded pixel might be the only pixel the clip removed. Uncertainty can never prove a HUD whole.
     verdict = stableDifferences ? "clipped" : variablePixels ? "screen not still" : "shown";
   } else if (alteredVariablePixels || variableTouchingBackground) verdict = "screen not still";
-  else if (stableDifferences > PIXEL_BUDGET) verdict = "shown";
+  else if (stableDifferences > pixelLimit) verdict = "shown";
   else verdict = stableDifferences || variablePixels ? "insufficient HUD paint" : "not shown";
-  return { width, height, stableDifferences, variablePixels, alteredVariablePixels, variableTouchingBackground, verdict };
+  return { width, height, pixelLimit, stableDifferences, variablePixels, alteredVariablePixels, variableTouchingBackground, verdict };
 }

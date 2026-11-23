@@ -13,20 +13,22 @@ const cycles = (before: Buffer, altered: Buffer, after = before): HudTriplet[] =
   Array.from({ length: 3 }, () => ({ before, altered, after }));
 
 describe("HUD pixel evidence", () => {
-  it("counts stable witnesses, not the union of witnesses and changing pixels", () => {
-    const painted = row(() => 1);
-    for (const n of [256, 257]) {
-      const toggled = row(x => x < n ? 2 : 1);
-      const m = measureHudProbe("hidden", cycles(painted, empty, toggled));
-      expect(m).toMatchObject({ variablePixels: n, stableDifferences: 513 - n, alteredVariablePixels: 0,
-        verdict: n === 256 ? "shown" : "screen not still" });
+  it.each([[500, 5], [599, 5], [600, 6]])("uses one percent of %i device pixels (limit %i)", (width, limit) => {
+    const background = row(() => 0, width);
+    const painted = row(() => 1, width);
+    for (const n of [limit, limit + 1]) {
+      const toggled = row(x => x < n ? 2 : 1, width);
+      expect(measureHudProbe("hidden", cycles(painted, background, toggled))).toMatchObject({ pixelLimit: limit,
+        variablePixels: n, stableDifferences: width - n, verdict: n === limit ? "shown" : "screen not still" });
+      // Stable changes at or below the same floor cannot establish visibility, even with maximal allowed noise.
+      const visible = row(x => x < limit + n ? 1 : 0, width);
+      const flicker = row(x => x < limit ? 2 : x < limit + n ? 1 : 0, width);
+      expect(measureHudProbe("hidden", cycles(visible, background, flicker))).toMatchObject({ pixelLimit: limit,
+        variablePixels: limit, stableDifferences: n, verdict: n === limit ? "insufficient HUD paint" : "shown" });
     }
-    // Exactly 256 phase-locked stray pixels plus 256 unstable ones do not certify a nonpainting HUD.
-    const sparse = row(x => x < 512 ? 1 : 0);
-    const flicker = row(x => x < 256 ? 2 : x < 512 ? 1 : 0);
-    expect(measureHudProbe("hidden", cycles(sparse, empty, flicker))).toMatchObject({
-      variablePixels: 256, stableDifferences: 256, verdict: "insufficient HUD paint" });
-    expect(measureHudProbe("hidden", cycles(empty, empty)).verdict).toBe("not shown");
+    const tiny = row(x => x === 0 ? 1 : 0, width);
+    expect(measureHudProbe("hidden", cycles(tiny, background)).verdict).toBe("insufficient HUD paint");
+    expect(measureHudProbe("hidden", cycles(background, background)).verdict).toBe("not shown");
   });
 
   it("rejects even one changing hidden pixel or a varying visible pixel that sometimes matches its background", () => {
@@ -46,8 +48,8 @@ describe("HUD pixel evidence", () => {
     expect(measureHudProbe("unclipped", cycles(empty, dot))).toMatchObject({ stableDifferences: 1, variablePixels: 0, verdict: "clipped" });
     const shots = cycles(empty, dot); shots[2]!.altered = empty;
     expect(measureHudProbe("unclipped", shots)).toMatchObject({ stableDifferences: 0, variablePixels: 1, verdict: "screen not still" });
-    expect(measureHudProbe("unclipped", cycles(empty, dot, row(x => x < 256 ? 1 : 0))).verdict).toBe("clipped");
-    expect(measureHudProbe("unclipped", cycles(empty, dot, row(x => x < 257 ? 1 : 0))).verdict).toBe("screen not still");
+    expect(measureHudProbe("unclipped", cycles(empty, dot, row(x => x < 5 ? 1 : 0))).verdict).toBe("clipped");
+    expect(measureHudProbe("unclipped", cycles(empty, dot, row(x => x < 6 ? 1 : 0))).verdict).toBe("screen not still");
     expect(measureHudProbe("unclipped", cycles(dot, dot)).verdict).toBe("shown");
   });
 
