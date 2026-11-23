@@ -4,7 +4,7 @@
  * one answer out. It scans the record itself ("rerun" mode) and re-plays the match from it alone, as
  * test/replays/history.test.ts rebuild does. Findings come only from a re-run that reproduces its record: every call's
  * acceptance and error code, every 100-tick block of stored events, and the whole stored result (less its rating changes).
- * Kill-total events are compared only when the stored record carries any (see rerunRecord).
+ * Kill-total and queen-bite events are each compared only when the stored record carries any (see rerunRecord).
  *
  * An accepted command has no effect when stepping its tick without it leaves the whole state the same, ignoring only its
  * own seat's lastCommandTick, lastCallTick and pendingEvents: at most restarting this seat's own timers and, as any
@@ -285,6 +285,10 @@ export function rerunRecord(record: ReducedRecord, progress: (tick: number) => v
       // the comparison when the stored record has none. That also leaves them out for a current-format record in which
       // no kill was credited; any record that stores kill totals has them compared.
       if (event.kind === "kills" && !record.killTotals) continue;
+      // Likewise a record made before queen bites were streamed stores no queen-bite events, so the recorder's are left
+      // out when the stored record has none (as for a current-format record in which no queen was bitten); the queen HP
+      // and deaths behind them are still compared, and any record that stores queen bites has them compared.
+      if (event.kind === "queenBites" && !record.queenBites) continue;
       hash.update(comparableEvent(tick, event as unknown as Record<string, unknown>) + "\n");
       count++;
     }
