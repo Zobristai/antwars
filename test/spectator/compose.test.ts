@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { Ants, COLONY_TINT, DIM_TINT, FALLEN_ALPHA, FALLEN_TINT, SOLDIER_ABDOMEN, SOLDIER_HEAD, SOLDIER_SCALE, antTint } from "../../web/src/ants.ts";
 import { agentHues, agentShade, cssColour } from "../../web/src/squads.ts";
 import { CASTE_ICON_PATH } from "../../web/src/ui/deck/icons.ts";
-import { LABEL_PLATE_ALPHA, MARK_EXIT_MS, Placer, Words, boardLabel, exitAlpha, labelSize, labelSpots, leaderLine, markAge, markByline, markLabel, markReading, markerRect, nestRects, nestZoneRect, overlaps, placeBadges, wordlessMarkTip, wordsText, type Rect } from "../../web/src/words.ts";
+import { AIR_SEGMENT, LINE_DOTS, LABEL_PLATE_ALPHA, MARK_EXIT_MS, Placer, Words, boardLabel, exitAlpha, labelSize, labelSpots, leaderLine, markAge, markByline, markLabel, markReading, markerRect, nestRects, nestZoneRect, overlaps, placeBadges, wordlessMarkTip, wordsText, type Rect } from "../../web/src/words.ts";
 import { Squads, squadCentres, squadTipText } from "../../web/src/squads.ts";
 import { Frame, MARK_LIFE_MS, Playback } from "../../web/src/buffer.ts";
 import { decodeMessage } from "../../src/live/format.ts";
@@ -88,6 +88,37 @@ describe("marks as ground markers", () => {
     // The layout reserves the whole ping, so a badge never covers it.
     const r = markerRect(0, 0);
     expect(r.x1).toBeGreaterThanOrEqual(MARK_DOT.ring + MARK_DOT.ringW / 2);
+  });
+
+  it("reserves the marker drawn at its tile and the actual ground LINE end and air post", () => {
+    const words = new Words({ w: 400, h: 400 });
+    const ground: StreamMark = { ...mark(1, 1, 1, 0), verb: "LINE", toTileX: 4, toTileY: 5 };
+    const air: StreamMark = { ...mark(2, 2, 3, 0), verb: "LINE", caste: "flyer", toTileX: 8, toTileY: 9 };
+    const frame = frameOf([ground, air]);
+    const g = LINE_DOTS.endR + 3, a = AIR_SEGMENT.w + 3;
+    const rects = words.projectMarkers(frame, toScreen, 1);
+    expect(rects).toEqual([markerRect(30, 30), markerRect(50, 70),
+      { x0: 90 - g, y0: 110 - g, x1: 90 + g, y1: 110 + g },
+      { x0: 170 - a, y0: 190 - AIR_SEGMENT.lift - a, x1: 170 + a, y1: 190 + a }]);
+    words.update(frame, toScreen, [], 1);
+    expect(words.placer.rects.slice(0, 4)).toEqual(rects);
+    expect(words.markers().map(m => [m.x, m.y])).toEqual([[30, 30], [50, 70]]);
+  });
+
+  it("keeps crowded badge fallbacks and moving badges clear of bite labels", () => {
+    const cue = { x0: 170, y0: 170, x1: 230, y1: 230 };
+    const crowded = new Placer(400, 400, [{ x0: 0, y0: 0, x1: 400, y1: 400 }]);
+    const box = placeBadges(crowded, [[0, 200, 200]], 7, [], [], [cue]).get(0)!;
+    expect(overlaps(box, cue)).toBe(false);
+    expect(Math.hypot((box.x0 + box.x1) / 2 - 200, (box.y0 + box.y1) / 2 - 200)).toBeLessThanOrEqual(56);
+
+    const words = new Words({ w: 400, h: 400 }), frame = frameOf([]);
+    const place = (x: number) => words.update(frame, toScreen, [], 1, [[0, x, 213]], 7, toScreen, [cue]);
+    const layout = place(70);
+    expect(words.badges.get(0)).toEqual({ x0: 63, y0: 193, x1: 77, y1: 207 });
+    expect(place(200)).toBe(layout); // offset would now put the badge in the middle of the cue
+    expect(words.badges.size).toBe(1);
+    expect(overlaps(words.badges.get(0)!, cue)).toBe(false);
   });
 
   // Regression caught in review: badges and fades stepping at 100 to 1000 ms because the

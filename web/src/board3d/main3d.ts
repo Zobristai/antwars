@@ -42,7 +42,7 @@ import { Frame, Playback, QUEEN_FRAME_TILES, fallWindow, fallenNests, fallenQuee
 import { createClock } from "../clock.ts";
 import { gpuReadback, realTimeSource, type RealNow } from "../timing.ts";
 import { CVD_MATRICES, QUEEN_EMBLEM } from "../effects.ts";
-import { QueenBiteCues, cueKey } from "../queen-bites.ts";
+import { QueenBiteCues } from "../queen-bites.ts";
 import { FONT_LICENCE, Words, loadFonts, nestRects, nestZoneRect, type Rect } from "../words.ts";
 import { Camera, FALL_MOVE_MS, easeInOut, fightLane, keepPinch, queensBox, reducedMotion, type View } from "../camera.ts";
 import { Squads, agentHues } from "../squads.ts";
@@ -422,7 +422,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   // markers and badges; the tooltips are the page's own, above every panel.
   pixi.stage.addChild(destinationLines.layer, lockoutDials.layer);
   // The queen bite cues draw above the emblems and under the marks' labels, which keep clear of them.
-  pixi.stage.addChild(markers.layer, cues.layer, words.layer, squads.layer);
+  pixi.stage.addChild(markers.layer, cues.layer, words.layer, squads.layer, cues.aboveBadges);
 
   // Tile -> screen through the 3D camera; recomputed every frame before anything is placed.
   let viewport = new Viewport(0, 0, 1, 1).toGlobal(w, h);
@@ -749,12 +749,15 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     // A hovering flyer's line starts at its body, drawn AIR_LIFT_3D_TILES above the ground (Ants3D.update).
     destinationLines.update(shown, toScreenInFront, teamView.choice === "full" ? null : teamView.choice, { x0: 0, y0: 0, x1: w, y1: h }, (tx, ty) => toScreenInFront(tx, ty, AIR_LIFT_3D_TILES));
     // The queen bite cues are placed first, clear of the panels, and reserved: the marks' labels and badges keep clear of them.
-    const cueRects = cues.update(shown, { toScreen, bodyPx: (tx, ty, soldier) => ants.lengthTiles * tilePxAt(tx, ty) * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : []);
-    words.update(shown, toScreen, cueRects.length === 0 ? blocked : [...blocked, ...cueRects], `${viewKey()}:${overlaysOn}:${cueKey(cueRects)}`, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront);
+    const placementView = `${viewKey()}:${overlaysOn}`;
+    const dots = words.projectMarkers(shown, toScreen, placementView, toScreenInFront);
+    const cueRects = cues.update(shown, { toScreen, bodyPx: (tx, ty, soldier) => ants.lengthTiles * tilePxAt(tx, ty) * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : [], words.layer.visible ? dots : []);
+    words.update(shown, toScreen, blocked, placementView, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront, cueRects);
     squads.updateBadges(shown, toScreen, words.badges);
+    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : []);
     if (board?.result) endedAt ??= now;
     else endedAt = null;
-    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = endedAt === null ? 1 : Math.max(0, 1 - (now - endedAt) / FINALE_FADE_MS);
+    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = cues.aboveBadges.alpha = endedAt === null ? 1 : Math.max(0, 1 - (now - endedAt) / FINALE_FADE_MS);
     // Hover and tap details, as on the 2D board: the page's tooltips, above every panel, until the finale.
     const tipsOn = overlaysOn && wordsOn && endedAt === null;
     const markTip = tipsOn ? words.tipContent() : null;

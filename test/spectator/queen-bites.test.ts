@@ -4,6 +4,7 @@
  * playback holds them per message (Frame.queenPulse); her disc is held lit and her bar shows the HP lost this second;
  * her biters take the bite pose aimed at her ring; brackets, a name tab and a count stack are placed clear of each other.
  */
+import { BitmapText, Container, Graphics } from "pixi.js";
 import { describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
@@ -21,8 +22,8 @@ import { COLONY_RGB, Ground } from "../../web/src/board3d/ground.ts";
 import { colonyTint } from "../../web/src/colony-palette.ts";
 import { EMBLEM_BAR, QUEEN_CHIP, QUEEN_EMBLEM, QUEEN_LIT, QueenHomes, emblemState, mixColour } from "../../web/src/effects.ts";
 import { markerParticles } from "../../web/src/board3d/markers3d.ts";
-import { CUE_BRACKETS, bracketBox, cueName, emblemRect, layoutCues, stackSpots } from "../../web/src/queen-bites.ts";
-import { overlaps } from "../../web/src/words.ts";
+import { QueenBiteCues, CUE_BRACKETS, bracketBox, cueName, emblemRect, layoutCues, stackSpots } from "../../web/src/queen-bites.ts";
+import { Placer, placeBadges, overlaps } from "../../web/src/words.ts";
 import { boardQueenHp } from "../../web/src/variant.ts";
 import { playRedesign } from "./redesign-recording.ts";
 
@@ -352,6 +353,45 @@ describe("the cues' layout", () => {
     }
     expect(overlaps(stack, tab)).toBe(false);
     expect(placed.stacks[0]!.rows[0]!.text).toBe(`2 ${names[1]}`);
+  });
+
+  it("tries normal spots then the nearest clear grid spot within reach; on exhaustion draws the first spot on top", () => {
+    const stack = layoutCues(f, board, screen, []).stacks[0]!;
+    const r = stack.rect;
+    const [x, y] = board.toScreen(stack.queen.x, stack.queen.y);
+    const spots = stackSpots(x, y, r.x1 - r.x0, r.y1 - r.y0);
+    const place = (markers: typeof spots) => layoutCues(f, board, screen, [], markers).stacks[0]!;
+    expect(place([spots[0]!]).rect).toEqual(spots[1]);
+    const near = place(spots);
+    expect(near.onTop).toBe(false);
+    expect(near.rect).toEqual({ ...r, y0: r.y0 - 24, y1: r.y1 - 24 }); // height 18 + gap 4, rounded up to the 4 px grid
+    expect(near.leader.slice(2)).toEqual([near.rect.x0, near.rect.y0 + near.rowH / 2]);
+    const top = place([{ x0: x - 300, y0: y - 300, x1: x + 300, y1: y + 300 }]);
+    expect(top.onTop).toBe(true);
+    expect(top.rect).toEqual(spots[0]);
+  });
+
+  it("raises only the colliding label's drawing, including when a badge cannot step aside", () => {
+    const cues = new QueenBiteCues();
+    cues.update(f, board, screen, [], []);
+    const stack = cues.placed.stacks[0]!, r = stack.rect;
+    expect(stack.onTop).toBe(false);
+    // The only marker-free badge spot is on the count row. Retain both drawings.
+    const [cx, cy] = [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2].map(Math.round);
+    const dots = [{ x0: 0, y0: 0, x1: cx - 7, y1: screen.h }, { x0: cx + 7, y0: 0, x1: screen.w, y1: screen.h },
+      { x0: 0, y0: 0, x1: screen.w, y1: cy - 7 }, { x0: 0, y0: cy + 7, x1: screen.w, y1: screen.h }];
+    const badges = placeBadges(new Placer(screen.w, screen.h, [...dots, ...cues.placed.reserved]), [[0, cx!, cy! + 13]], 7, dots, [], cues.placed.reserved);
+    expect(badges.size).toBe(1);
+    expect(overlaps(badges.get(0)!, r)).toBe(true);
+    const texts = (layer: Container): string[] => layer.children.flatMap(c => c instanceof BitmapText ? (c.visible ? [c.text] : []) : texts(c));
+    const paint = () => cues.aboveBadges.children.flatMap(c => c instanceof Graphics ? c.context.instructions.map(i => i.action) : []);
+    cues.drawLabels([...badges.values()]);
+    expect(texts(cues.aboveBadges)).toEqual(stack.rows.map(row => row.text));
+    expect(paint()).toEqual(["stroke", ...stack.rows.flatMap(() => ["fill", "fill"])]); // leader, plate and bar
+    expect(texts(cues.layer)).toContain(cues.placed.tabs[0]!.text);
+    cues.drawLabels([]);
+    expect(texts(cues.aboveBadges)).toEqual([]);
+    expect(paint()).toEqual([]);
   });
 
   it("draws nothing for a frame without records", () => {
