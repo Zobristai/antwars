@@ -11,8 +11,8 @@ import { historyRoutes } from "../../src/replays/history-routes.ts";
 import { createTestRecordings } from "../../src/replays/test-recordings.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
-// Synthetic end-to-end latency, not a production measurement. A common row costs 150 ms in series:
-// 100 ms to open a record, 25 ms to read ownership, 25 ms to look up its lobby. Legacy rows cost extra.
+// Synthetic end-to-end latency, not a production measurement: 200 ms per record body and
+// 25 ms per database call, with both stored and legacy ownership.
 it("builds the five-match listing with bounded reads, including cold and expired snapshots", async () => {
   const ids = Array.from({ length: 512 }, (_, i) => `2026-11-01T00-00-00-000Z-${i + 1}`).sort();
   const { store, docs } = memoryWatchStore();
@@ -42,7 +42,7 @@ it("builds the five-match listing with bounded reads, including cold and expired
   const objects = createServer(async (req, res) => {
     const body = bodies.get(req.url?.split("?", 1)[0] ?? "");
     if (body === undefined) { res.writeHead(404).end(); return; }
-    peak = Math.max(peak, ++active); ++bodyReads; await sleep(100); --active;
+    peak = Math.max(peak, ++active); ++bodyReads; await sleep(200); --active;
     res.writeHead(200, { "content-type": "application/json" }).end(body);
   });
   objects.listen(0, "127.0.0.1"); await once(objects, "listening");
@@ -51,30 +51,41 @@ it("builds the five-match listing with bounded reads, including cold and expired
     ? Response.json({ access_token: "sample" }) : Response.json({ items: ids.map(id => ({ name: `${id}.json`, generation: "1" })) }),
     (url, options, cb) => get(local + url.pathname + url.search, options, cb));
   let now = 0;
-  const handler = historyRoutes(source, async () => { await latency(); return { kind: "public", mode: null, size: 1, colonies: seats.map(s => [s]) }; }, { publicVisibility: visibility,
+  let lobbies = 0, lobbyPeak = 0;
+  const handler = historyRoutes(source, async () => { lobbyPeak = Math.max(lobbyPeak, ++lobbies); await latency(); --lobbies; return { kind: "public", mode: null, size: 1, colonies: seats.map(s => [s]) }; }, { publicVisibility: visibility,
     currentRosterSeats: currentRosterSeats(store, () => 1),
     testRecordings: createTestRecordings(store), usersNow: () => now, ratings: { async leaderboard() { await latency(); return { ok: true, value: { entries: [] } }; } } });
   const site = createServer((req, res) => { void handler(req, res, undefined as never); });
   site.listen(0, "127.0.0.1"); await once(site, "listening");
   try {
     expect((await fetch(`${local}/storage/v1/b/fixture/o/unknown.json`)).status).toBe(404);
+    const read = async () => {
+      const res = await fetch(`http://127.0.0.1:${(site.address() as AddressInfo).port}/matches/users`);
+      expect(res.status).toBe(200);
+      return (await res.json()).users;
+    };
     for (const build of ["cold", "hit", "expired"]) {
-      if (build === "expired") now += 60_001;
-      bodyReads = dbReads = peak = 0;
+      if (build === "expired") {
+        now += 60_001;
+        docs.set(`testRecordings/${ids[1]}`, { version: "1" });
+      }
+      bodyReads = dbReads = peak = lobbyPeak = 0;
       const start = performance.now();
-      const visitors = await Promise.all(Array.from({ length: 3 }, async () => {
-        const res = await fetch(`http://127.0.0.1:${(site.address() as AddressInfo).port}/matches/users`);
-        expect(res.status).toBe(200);
-        return (await res.json()).users;
-      }));
-      console.info(`Synthetic Users ${build}: ${Math.round(performance.now() - start)} ms; ${bodyReads} bodies, ${dbReads} database reads, peak ${peak} simultaneous bodies`);
-      expect(bodyReads).toBe(build === "hit" ? 0 : 512);
-      if (build !== "hit") { expect(peak).toBeGreaterThan(1); expect(peak).toBeLessThanOrEqual(20); }
+      const visitors = await Promise.all([read(), read(), read()]);
+      console.info(`Synthetic Users ${build} response: ${Math.round(performance.now() - start)} ms`);
       for (const rows of visitors) {
         expect(rows).toHaveLength(2);
         expect(rows[0].matches).toBe(511);
         expect(rows[0].recent.map((r: { id: string }) => r.id)).toEqual(ids.slice(-5).reverse());
       }
+      if (build === "expired") {
+        await expect.poll(async () => (await read())[0].matches, { timeout: 15_000 }).toBe(510);
+        console.info(`Synthetic Users refreshed response: ${Math.round(performance.now() - start)} ms from expiry request`);
+      }
+      console.info(`Synthetic Users ${build} work: ${bodyReads} bodies, ${dbReads} database calls, peak ${peak} bodies / ${lobbyPeak} lobby lookups`);
+      expect(bodyReads).toBe(build === "hit" ? 0 : ids.length);
+      expect(lobbyPeak).toBeLessThanOrEqual(40); // At most two projection pages of 20.
+      if (build !== "hit") { expect(peak).toBeGreaterThan(20); expect(peak).toBeLessThanOrEqual(48); }
     }
   } finally {
     for (const server of [objects, site]) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }

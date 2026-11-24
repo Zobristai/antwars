@@ -382,7 +382,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
       return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
     }
-    return { serve, serveVisible };
+    return { serve, serveVisible, visibleRows };
   }
   const { serve, serveVisible } = projection(options.publicVisibility);
   const continuations = listingContinuations();
@@ -398,8 +398,15 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     const pages: Promise<TypedHistorySummary[]>[] = [];
     async function project(matches: HistorySummary[]) {
       const page = projection(policy, reading);
-      const served = await page.serveVisible({ matches, nextPageToken: null }, reading);
-      return served.matches;
+      const visible = await page.visibleRows(matches, reading);
+      const rows: TypedHistorySummary[] = [];
+      // A wider storage read must not fan out an entire window of individual lobby lookups.
+      for (let i = 0; i < visible.length; i += PAGE_ROWS) {
+        reading.throwIfAborted();
+        const served = await page.serve({ matches: visible.slice(i, i + PAGE_ROWS), nextPageToken: null }, reading);
+        rows.push(...served.matches);
+      }
+      return rows;
     }
     try {
       for (;;) {
@@ -438,18 +445,21 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
       throw error;
     }).finally(() => { flight = undefined; });
-    return { reply: untilAborted(work, signal), settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
+    return { reply: work, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
   }
   async function users(signal: AbortSignal): Promise<Buffer> {
     for (;;) {
       signal.throwIfAborted();
       const policy = policyNow();
-      if (snapshot && snapshot.digest === policy.digest && usersNow() < snapshot.expires) {
+      if (snapshot?.digest !== policy.digest) snapshot = undefined;
+      if (snapshot && usersNow() < snapshot.expires) {
         if (snapshot.body) return snapshot.body;
         throw new Error("Users listing temporarily unavailable");
       }
-      snapshot = undefined;
       const build = flight ??= begin(policy);
+      // A refresh belongs to the snapshot, not to the reader that triggered it. Stale readers
+      // neither occupy cold-reader slots nor cancel the refresh when their responses close.
+      if (snapshot?.body && build.digest === policy.digest && !build.signal.aborted) return snapshot.body;
       if (++build.admissions > 128) throw new Error("Listing busy");
       if (build.digest !== policy.digest) {
         build.stop.abort();
@@ -460,7 +470,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (build.signal.reason === readerLeft) { await untilAborted(build.settled, signal); continue; }
       build.signal.throwIfAborted();
       build.waiters++;
-      try { return await untilAborted(build.reply, signal); }
+      try { return await untilAborted(build.reply, AbortSignal.any([build.signal, signal])); }
       finally { if (--build.waiters === 0 && flight === build) build.stop.abort(signal.reason); }
     }
   }

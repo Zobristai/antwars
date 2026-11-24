@@ -101,7 +101,9 @@ it("agrees with the entire visible Matches list, including ownership, markers, l
   expect(leaderboard).toHaveBeenCalledWith(expect.objectContaining({ cursor: "more", mode: "1v1", scope: "everyone", limit: 50 }));
   now += 60_000;
   docs.set(`replayOwnership/${team.id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([excluded]) });
-  expect((await (await fetch(url + "/matches/users")).json()).users).toContainEqual(expect.objectContaining({ username: "fern", matches: 2, wins: 0 }));
+  const listing = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  expect(await listing()).toEqual(users); // The old snapshot during refresh.
+  await expect.poll(listing).toContainEqual(expect.objectContaining({ username: "fern", matches: 2, wins: 0 }));
 });
 
 it("coalesces concurrent scans and fails both callers without returning partial rows on deadline", async () => {
@@ -133,6 +135,55 @@ it("shares one completed listing across GET and HEAD until its one-minute expiry
   expect(scan).toHaveBeenCalledTimes(1); expect(leaderboard).toHaveBeenCalledTimes(1);
   ++now;
   expect((await read(0)).status).toBe(200); expect(scan).toHaveBeenCalledTimes(2);
+});
+
+it("serves GET and HEAD during one blocked refresh, then publishes the new snapshot", async () => {
+  let now = 0, builds = 0;
+  const resume = Promise.withResolvers<void>();
+  const scan = async function* () {
+    if (++builds === 1) yield [oneMatch()];
+    else { await resume.promise; yield []; }
+  };
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => now,
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  const first = await read(); expect(first).toHaveLength(2);
+  now += 60_000;
+  try {
+    for (const rows of await Promise.all([read(), read()])) expect(rows).toEqual(first);
+    const head = await fetch(url + "/matches/users", { method: "HEAD" });
+    expect(head.status).toBe(200); expect(await head.text()).toBe(""); expect(builds).toBe(2);
+  } finally { resume.resolve(); }
+  await expect.poll(read).toEqual([]); expect(builds).toBe(2);
+});
+
+it("drops stale success after a refresh failure and retries only after the backoff", async () => {
+  let now = 0, builds = 0;
+  const scan = async function* () { if (++builds === 2) throw new Error("refresh failed"); yield []; };
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => now });
+  const status = async () => (await fetch(url + "/matches/users")).status;
+  expect(await status()).toBe(200); now += 60_000;
+  expect(await status()).toBe(200); await expect.poll(status).toBe(503);
+  now += 9_999; expect(await status()).toBe(503); expect(builds).toBe(2);
+  ++now; expect(await status()).toBe(200); expect(builds).toBe(3);
+});
+
+it("discards an expired snapshot and drains its refresh if the policy changes", async () => {
+  let now = 0, digest = "original", builds = 0;
+  const cancelled = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const scan = async function* (signal: AbortSignal) {
+    if (++builds === 1) yield [oneMatch()];
+    else if (builds === 2) { await once(signal, "abort"); cancelled.resolve(); await resume.promise; yield [oneMatch()]; }
+    else yield [];
+  };
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => now, usersPolicy: () => ({ digest }),
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  const first = await read(); expect(first).toHaveLength(2); now += 60_000;
+  expect(await read()).toEqual(first); digest = "changed";
+  const changed = read();
+  try { await cancelled.promise; expect(builds).toBe(2); } finally { resume.resolve(); }
+  expect(await changed).toEqual([]); expect(builds).toBe(3);
 });
 
 it("keeps an unfinished ranking read in its build slot after disconnect and deadline", async () => {
@@ -419,10 +470,10 @@ it("joins recordings to the original seat identity, never to a later claimant wi
   const links = (kind: string, key: string) => get(`/matches/users/links/${kind}/${key}`);
   expect(await listed()).toContainEqual(expect.objectContaining({ username: name, matches: 1 }));
   docs.set(`identities/${old}`, { ...docs.get(`identities/${old}`), nameState: "released" }); now += 60_001;
-  expect((await listed()).map((u: {username: string}) => u.username)).toEqual([other]);
+  await expect.poll(async () => (await listed()).map((u: {username: string}) => u.username)).toEqual([other]);
   expect(await links("replay", past.id)).toEqual({ handles: [[other, other]] });
   claim(later, name); rows.push(fresh); now += 60_001;
-  expect((await listed()).find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
+  await expect.poll(async () => (await listed()).find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
   expect(await links("replay", past.id)).toEqual({ handles: [[other, other]] });
   expect(await links("replay", fresh.id)).toEqual({ handles: [[name, name], [other, other]] });
   // A current first-time public player links even before their first recording is complete.
@@ -434,6 +485,7 @@ it("joins recordings to the original seat identity, never to a later claimant wi
   }
   const renamed = "sample-arc";
   claim(old, renamed); now += 60_001;
+  await expect.poll(listed).toContainEqual(expect.objectContaining({ username: renamed }));
   const byOwner = await listed();
   expect(byOwner.find((u: {username: string}) => u.username === renamed)).toMatchObject({ matches: 1, agents: [renamed], recent: [{id: past.id}] });
   expect(byOwner.find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
