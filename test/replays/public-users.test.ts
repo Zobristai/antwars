@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import { createPublicVisibility, usersOwnerPolicy } from "../../src/identity/publicVisibility.ts";
-import { historyRoutes, type RecordingLobbyLookup } from "../../src/replays/history-routes.ts";
+import { historyRoutes, type RecordingLobby, type RecordingLobbyLookup } from "../../src/replays/history-routes.ts";
 import type { HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
 import { createRatings, encodeRating, type LeaderboardEntry } from "../../src/rating/ratings.ts";
 import { createTestRecordings } from "../../src/replays/test-recordings.ts";
@@ -17,10 +17,37 @@ import { wakingStore } from "../../src/slots/wake.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
+import { currentRosterSeats } from "../../src/replays/roster-ownership.ts";
+
+// Tally and cancellation fixtures have their own lobby seats and a current claim for each synthetic owner.
+function fixtureRoutes(source: HistorySource, lookup?: RecordingLobbyLookup, options: Parameters<typeof historyRoutes>[2] = {}) {
+  if (options.currentRosterSeats || !source.scan) return historyRoutes(source, lookup, options);
+  const { store, docs } = memoryWatchStore(), lobbies = new Map<string, RecordingLobby>();
+  const ids = new Map<string, string>();
+  function id(name: string) { if (!ids.has(name)) ids.set(name, randomUUID()); return ids.get(name)!; }
+  const scan = source.scan.bind(source);
+  return historyRoutes({ ...source, async *scan(signal) {
+    for await (const rows of scan(signal)) {
+      for (const row of rows) {
+        const colonies: { id: string; displayName: string }[][] = [[], [], [], []];
+        for (const { colony, handle } of row.seats) if (handle) {
+          const user = handle.split("/", 1)[0]!, canonical = user.toLowerCase();
+          docs.set(`identities/${id(user)}`, { kind: "username", displayName: user, canonical, claimedAt: "0" });
+          docs.set(`usernames/${canonical}`, { identityId: id(user) });
+          if (handle !== user) docs.set(`identities/${id(handle)}`, { kind: "handle", displayName: handle, ownerId: id(user) });
+          colonies[colony]!.push({ id: id(handle), displayName: handle });
+        }
+        lobbies.set(row.id, { kind: "public", mode: null, size: 1, colonies: colonies.slice(0, Math.max(2, ...row.seats.map(s => s.colony + 1))) });
+      }
+      yield rows;
+    }
+  } }, async (key, signal) => await lookup?.(key, signal) ?? lobbies.get(key) ?? null,
+  { ...options, currentRosterSeats: currentRosterSeats(store, () => 1) });
+}
 const clean: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of clean.splice(0)) await fn(); });
 const listen = async (...args: Parameters<typeof historyRoutes>) => {
-  const handler = historyRoutes(...args);
+  const handler = fixtureRoutes(...args);
   const server = createServer((req, res) => { void handler(req, res, undefined as never); });
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   clean.push(async () => { server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); });
@@ -270,7 +297,7 @@ it("holds the build until every lobby read returns even when its marker read can
   let active = 0, peak = 0;
   const starts: number[] = [];
   const scan = async function* (signal: AbortSignal) { starts.push(active); buildSignals.push(signal); yield page; };
-  const handler = historyRoutes(sourceWith(scan), async (id, signal) => {
+  const handler = fixtureRoutes(sourceWith(scan), async (id, signal) => {
     lookupSignals.push(signal); peak = Math.max(peak, ++active);
     try { await gates[page.findIndex(row => row.id === id)]!.promise; return null; } finally { --active; }
   }, { testRecordings: { async mark() {}, async marked(_ids, signal) {
@@ -314,7 +341,7 @@ it("joins a ranking sibling's rollback before returning the failure or retrying"
   const ratings = createRatings(store); await ratings.houseBackfill;
   const starts: number[] = [];
   const scan = async function* () { starts.push(active); yield [oneMatch()]; };
-  const handler = historyRoutes(sourceWith(scan), undefined, { usersNow: () => now, ratings });
+  const handler = fixtureRoutes(sourceWith(scan), undefined, { usersNow: () => now, ratings });
   let returned = false;
   const first = visitor(handler).done.then(status => { returned = true; return status; });
   await nextTurn(); expect(active).toBe(1); expect(returned).toBe(false);
@@ -362,4 +389,41 @@ it("puts each own agent on its side, counts each agent only once, and never list
     agentDetails: [{ handle: "sample-wing/blue", matches: 1, models: [] }, { handle: "sample-wing/red", matches: 2, models: ["Sample one", "Sample two"] }],
     recent: [{ id: second.id, agents: ["sample-wing/red"], result: "Won", opponents: [{ handle: null }] },
       { id: first.id, agents: ["sample-wing/red"], result: "Own match", opponents: [{ handle: "sample-wing/blue" }] }] });
+});
+
+it("joins recordings to the original seat identity, never to a later claimant with the same name", async () => {
+  const { store, docs } = memoryWatchStore();
+  const old = randomUUID(), later = randomUUID(), peer = randomUUID(), lobbyId = randomUUID();
+  const name = "sample-orbit", other = "sample-ray";
+  let now = 1;
+  function claim(id: string, displayName: string) {
+    docs.set(`identities/${id}`, { kind: "username", canonical: displayName, displayName, claimedAt: String(now) });
+    docs.set(`usernames/${displayName}`, { identityId: id });
+  }
+  claim(old, name); claim(peer, other);
+  const past = match(1, [name, other]), fresh = match(2, [name, other]);
+  const rows = [past]; let test = false;
+  const newcomer = randomUUID(); claim(newcomer, "sample-rush");
+  const lobby = (id: string): RecordingLobby => ({ kind: "public", mode: null, size: 1, ...(test ? {test: true} : {}),
+    colonies: [[{id, displayName: name}], [{id: peer, displayName: other}]] });
+  const markers = createTestRecordings(store);
+  const url = await listen(sourceWith(async function* () { yield rows; }), async key => lobby(key === past.id ? old : later), {
+    usersNow: () => now, lobbyById: async () => { const live = lobby(later); return { ...live, colonies: [...live.colonies, [{id: newcomer, displayName: "sample-rush"}]] }; },
+    testRecordings: markers, currentRosterSeats: currentRosterSeats(store, () => now),
+    ratings: { async leaderboard() { return { ok: true, value: {entries: []} }; } },
+  });
+  const get = async (path: string) => { const r = await fetch(url + path); expect(r.status).toBe(200); return r.json(); };
+  const listed = async () => (await get("/matches/users")).users;
+  const links = (kind: string, key: string) => get(`/matches/users/links/${kind}/${key}`);
+  expect(await listed()).toContainEqual(expect.objectContaining({ username: name, matches: 1 }));
+  docs.set(`identities/${old}`, { ...docs.get(`identities/${old}`), nameState: "released" }); now += 60_001;
+  expect((await listed()).map((u: {username: string}) => u.username)).toEqual([other]);
+  expect(await links("replay", past.id)).toEqual({ handles: [other] });
+  claim(later, name); rows.push(fresh); now += 60_001;
+  expect((await listed()).find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
+  expect(await links("replay", past.id)).toEqual({ handles: [other] });
+  expect(await links("replay", fresh.id)).toEqual({ handles: [name, other] });
+  expect(await links("lobby", lobbyId)).toEqual({ handles: [name, other] });
+  test = true; expect(await links("lobby", lobbyId)).toEqual({ handles: [] });
+  test = false; await markers.mark(fresh.id); expect(await links("replay", fresh.id)).toEqual({ handles: [] });
 });

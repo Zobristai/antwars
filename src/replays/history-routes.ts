@@ -1,3 +1,5 @@
+import { attributeRoster, type CurrentRosterSeats } from "./roster-ownership.js";
+import { isValidId } from "../rating/ratings.js";
 import { joinReads } from "../store/join-reads.js";
 import { publicUsers } from "./public-users.js";
 import type { Ratings } from "../rating/ratings.js";
@@ -216,6 +218,8 @@ const LIST_DEADLINE_MS = 60_000;
 const RECORD_IDLE_MS = 30_000;
 
 export interface HistoryRouteOptions {
+  readonly currentRosterSeats?: CurrentRosterSeats;
+  readonly lobbyById?: RecordingLobbyLookup;
   readonly ratings?: Pick<Ratings, "leaderboard">;
   readonly usersDeadlineMs?: number;
   readonly usersNow?: () => number;
@@ -373,7 +377,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
       return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
     }
-    return { serve, serveVisible };
+    return { serve, serveVisible, cached };
   }
   const { serve, serveVisible } = projection(options.publicVisibility);
   const continuations = listingContinuations();
@@ -384,21 +388,30 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     if (!source.scan) throw new Error("History scan unavailable");
     const stop = new AbortController(), reading = AbortSignal.any([signal, stop.signal]);
     const iterator = source.scan(reading)[Symbol.asyncIterator]();
-    let next = iterator.next();
+    // Two pages at most, including the next body read. Its owner checks can start as soon as the
+    // bodies arrive while the current page finishes checking claims. Yield in discovery order.
+    const pages: Promise<TypedHistorySummary[]>[] = [];
+    async function project(matches: HistorySummary[]) {
+      const page = projection(policy, reading);
+      const served = await page.serveVisible({ matches, nextPageToken: null }, reading);
+      if (!served.matches.length) return [];
+      if (!options.currentRosterSeats) throw new Error("Roster ownership unavailable");
+      return attributeRoster(options.currentRosterSeats)(served.matches, page.cached, reading);
+    }
     try {
       for (;;) {
-        const batch = await next;
+        const batch = await iterator.next();
         if (batch.done) break;
         reading.throwIfAborted();
-        // A source can reuse its batch's row objects on the next pull.
-        const matches = structuredClone(batch.value);
-        next = iterator.next();
-        void next.catch(() => {}); // observed below, even if projection fails first
-        yield (await projection(policy, reading).serveVisible({ matches, nextPageToken: null }, reading)).matches;
+        const work = project(structuredClone(batch.value));
+        pages.push(work);
+        void work.catch(error => stop.abort(error)); // cancel the sibling; both are drained below
+        if (pages.length === 2) yield await pages.shift()!;
       }
+      if (pages.length) yield await pages.shift()!;
     } finally {
       stop.abort();
-      await next.catch(() => {});
+      await Promise.allSettled(pages);
       await iterator.return?.();
     }
   }
@@ -484,11 +497,13 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   }
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+    // The HUD needs only currently listed usernames for its own confirmed seats, not the whole directory.
+    const hud = /^\/matches\/users\/links\/(replay|lobby)\/([^/]+)$/.exec(url.pathname);
     const list = url.pathname === "/matches";
     const usersList = url.pathname === "/matches/users";
     const topList = url.pathname === TOP_PATH;
     const id = url.pathname.startsWith("/matches/") && !topList ? url.pathname.slice("/matches/".length) : "";
-    if (!list && !topList && !usersList && !isReplayId(id)) { res.writeHead(404).end(); return; }
+    if (!list && !topList && !usersList && !hud && !isReplayId(id)) { res.writeHead(404).end(); return; }
     if (req.method !== "GET" && req.method !== "HEAD") { res.writeHead(405, { allow: "GET, HEAD" }).end(); return; }
     const token = url.searchParams.get("pageToken") ?? undefined;
     if ((!list && url.search.length > 0) || [...url.searchParams.keys()].some(key => key !== "pageToken") ||
@@ -499,12 +514,35 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     // A listing is bounded as a whole as well as each upstream read: a progressing
     // page must not accumulate twenty independent network/worker deadlines.
     // A record download is bounded only by no progress: refreshed on each step below.
-    const deadline = setTimeout(() => abort.abort(), usersList ? usersDeadline : list || topList ? LIST_DEADLINE_MS : recordIdleMs);
+    const deadline = setTimeout(() => abort.abort(), usersList || hud ? usersDeadline : list || topList ? LIST_DEADLINE_MS : recordIdleMs);
     deadline.unref();
-    const cancel = () => abort.abort(usersList ? readerLeft : undefined);
+    const cancel = () => abort.abort(usersList || hud ? readerLeft : undefined);
     res.once("close", cancel);
     try {
-      if (usersList) {
+      if (hud) {
+        const [, kind, key] = hud;
+        if (!(kind === "replay" ? isReplayId(key!) : isValidId(key))) { res.writeHead(404).end(); return; }
+        const signal = abort.signal, policy = policyNow();
+        let handles: string[] = [];
+        const visible = !policy.visibility || (kind === "replay" ? await policy.visibility.replayVisible(key!, signal) : await policy.visibility.lobbyVisible(key!));
+        if (visible && options.currentRosterSeats) {
+          const marked = kind === "replay" && (await options.testRecordings?.marked([key!], signal, true))?.has(key!);
+          const lobby = !marked && await (kind === "replay" ? lobbies : options.lobbyById)?.(key!, signal);
+          if (lobby && lobby !== "pending" && !lobby.test && lobby.kind === "public") {
+            const seats = lobby.colonies.flat();
+            const current = await options.currentRosterSeats(seats, signal);
+            if (current.size) {
+              const roster: { users: {username: string}[] } = JSON.parse((await users(signal)).toString());
+              const listed = new Set(roster.users.map(user => user.username));
+              handles = [...new Set(seats.filter(s => current.get(s.id) === s.displayName && listed.has(s.displayName.split("/", 1)[0]!)).map(s => s.displayName))];
+            }
+          }
+        }
+        if (policy.digest !== policyNow().digest) throw new Error("Roster policy changed");
+        const body = Buffer.from(JSON.stringify({ handles }));
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
+        res.end(req.method === "HEAD" ? undefined : body);
+      } else if (usersList) {
         const body = await users(abort.signal);
         if (res.destroyed) return;
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });

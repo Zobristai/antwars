@@ -1,6 +1,18 @@
 {
  "note": "Responses the public site cannot give on demand, each named for the state it stands for. The report lists every fixture a render used. Replay excerpts are cut from the public recordings by excerpt.ts and committed as readable text (replay-text.ts) in files of at most 64 KB, read in order; the server packs them into the bytes the site serves and checks those bytes against sha256.",
  "fixtures": {
+  "/matches/users/links/replay/2026-11-17T08-55-08-583Z-151632020035470": {
+   "label": "Confirmed roster seats in the sample replay",
+   "body": { "handles": ["SampleIris", "SampleMoth", "SampleReed"] }
+  },
+  "/matches/users/links/replay/2026-11-16T09-21-43-735Z-11240848029112": {
+   "label": "Confirmed roster seats in the sample replay",
+   "body": { "handles": [] }
+  },
+  "/matches/users/links/replay/2026-11-18T09-37-33-466Z-22423161369746": {
+   "label": "Confirmed roster seats in the sample replay",
+   "body": { "handles": [] }
+  },
   "/watch/catalog": {
    "label": "no live match: the public match catalog is empty",
    "body": {

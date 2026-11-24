@@ -16,3 +16,20 @@ export function userName(doc: Document, identity: string | null | undefined, lab
   a.href = href; a.title = label;
   return a;
 }
+
+/** Only confirmed seats link from a directly addressed match; never infer membership from display text. */
+export function rosterHandle(handles: ReadonlySet<string> | undefined, label: string | null | undefined): string | null {
+  const handle = label?.replace(/ #\d+$/, "");
+  return handle && handles?.has(handle) ? handle : null;
+}
+
+export async function readRosterHandles(share: string, request: typeof fetch, signal: AbortSignal): Promise<ReadonlySet<string>> {
+  const query = new URL(share).searchParams;
+  const kind = query.has("replay") ? "replay" : "lobby", key = query.get(kind);
+  if (!key) return new Set();
+  const response = await request(`/matches/users/links/${kind}/${encodeURIComponent(key)}`, { signal, credentials: "omit", redirect: "error", cache: "no-store" });
+  if (!response.ok) return new Set();
+  const data: unknown = await response.json();
+  return new Set(data && typeof data === "object" && "handles" in data && Array.isArray(data.handles)
+    && data.handles.every((name): name is string => typeof name === "string") ? data.handles : []);
+}

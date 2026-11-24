@@ -1,4 +1,5 @@
 /// <reference types="node" />
+import { currentRosterSeats } from "./replays/roster-ownership.js";
 import { DEFAULT_MCP_CONFIG, houseIdleSecondsFromEnv } from "./mcp/config.js";
 import { damagePerTick, firstHatchTicks, hatchIntervalOf, rulesVersionOf, type SimConfig } from "./sim/config.js";
 import { comparisonOptions, lobbySlotOptions, SHUTDOWN_SAVE_MS, slotOptions, type GameServer, type SlotWiring } from "./server.js";
@@ -129,7 +130,7 @@ export async function startMain(options: { readonly startPickWindowMs?: number }
   const ownVersion = process.env.ANTWAR_CODE_VERSION;
   const postMortemVersions = slotSettings === undefined && comparison.match === undefined && ownVersion
     ? createVersionSource({ post: httpUploadPack(), ownVersion, log: (line) => console.log(line) }) : undefined;
-  const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, storedHistorySource: storedHistory, privateArchive, recordHandoff, watchRegistry, publicVisibility, usersPolicy: usersOwnerPolicy(() => publicExcludedOwnerIdsFromEnv(process.env), store, watchRegistry), testRecordings, postMortemVersions, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
+  const server = await startSpectatedServer({ port, dataDir, ...comparison, mcpConfig: { ...DEFAULT_MCP_CONFIG, ...comparison.mcpConfig, houseIdleSeconds }, replayStore, replaySource, historySource, storedHistorySource: storedHistory, privateArchive, recordHandoff, watchRegistry, publicVisibility, currentRosterSeats: store && currentRosterSeats(store), usersPolicy: usersOwnerPolicy(() => publicExcludedOwnerIdsFromEnv(process.env), store, watchRegistry), testRecordings, postMortemVersions, relayKey, operatorToken: process.env.ANTWAR_OPERATOR_TOKEN, slot, accounts, startPickWindowMs: options.startPickWindowMs,
     // Every match a deployed server plays reports its tick times to Cloud Run logs.
     tickReport: { log: (line) => console.log(line) } });
   console.log(`antwar listening on port ${server.port} (spectator at /, agents at /mcp)${slot !== undefined || comparison.match !== undefined ? `; match logs in ${dataDir}` : "; entry point does not host matches"}`);

@@ -34,7 +34,7 @@ function mounted() {
   const economy = [port.doc.createElement("div"), port.doc.createElement("div")] as unknown as [HTMLElement, HTMLElement];
   const teams = mountTeams(port.doc, actions, { search: () => "", economy });
   for (const team of teams.teams) port.body.append(team as unknown as ElementPort);
-  const update = (frame: Frame) => teams.update({ frame, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView, false);
+  const update = (frame: Frame, rosterHandles: ReadonlySet<string> | undefined = new Set(["kite"])) => teams.update({ frame, rosterHandles, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView, false);
   const team = (colony: 0 | 1) => teams.teams[colony] as unknown as ElementPort;
   /** A part's visible words: hidden parts and screen-reader-only text left out. */
   const parts = (node: ElementPort): string => node.hidden ? "" : node.tag === "#text" ? node.textContent
@@ -48,6 +48,15 @@ const kite = { displayName: "kite", elo: 1540.4, rd: 87.2 };
 const house = { displayName: "antwars/gpt-6-luna", elo: 1979 };
 
 describe("a colony panel's player line", () => {
+  it("keeps unconfirmed public-looking names as plain text, then links only the confirmed seat", () => {
+    const m = mounted(), frame = frameOf([agent(0, {displayName: "sample-orbit"}, ""), agent(1, {displayName: "sample-ray"}, "")]);
+    m.update(frame, new Set());
+    expect(m.team(0).byClass("aw-user-link")).toHaveLength(0);
+    m.update(frame, new Set(["sample-ray"]));
+    expect(m.team(0).byClass("aw-user-link")).toHaveLength(0);
+    expect(m.team(1).byClass("aw-user-link").map(a => a.href)).toContain("/?page=users&user=sample-ray");
+  });
+
   it("reads name, model, level and Fast, then the cyan figure alone, in each agent row; no Rating word, no quiet level", () => {
     const m = mounted();
     m.update(frameOf([agent(0, house, "openai/gpt-6-luna"), agent(1, kite, "openai/gpt-6.1-terra", { thinkingLevel: "high", serviceTier: "fast" })]));

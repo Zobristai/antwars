@@ -1,3 +1,4 @@
+import type { CurrentRosterSeats } from "./replays/roster-ownership.js";
 import type { PublicVisibility } from "./identity/publicVisibility.js";
 import type { TestRecordings } from "./replays/test-recordings.js";
 /// <reference types="node" />
@@ -69,6 +70,7 @@ export interface SpectatedServer extends GameServer {
 
 export interface SpectatedServerOptions extends ServerOptions {
   readonly publicVisibility?: PublicVisibility;
+  readonly currentRosterSeats?: CurrentRosterSeats;
   readonly usersPolicy?: HistoryRouteOptions["usersPolicy"];
   /** The recording-level test markers (src/replays/test-recordings.ts): written for a test match, read by public lists. */
   readonly testRecordings?: TestRecordings;
@@ -149,13 +151,16 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
   if (options.historySource !== undefined) {
     // Older recordings carry no seat handle: each one's lobby supplies its colonies' handles.
     const lobbies = options.accounts?.lobbies, registry = options.watchRegistry;
-    const lookup = lobbies && registry ? async (replayId: string, signal?: AbortSignal) => {
+    const lobbyById = lobbies ? async (id: string, signal?: AbortSignal) => {
+      const read = await lobbies.readLobby(id, signal); return read.ok ? read.value : null;
+    } : undefined;
+    const lookup = lobbyById && registry ? async (replayId: string, signal?: AbortSignal) => {
       const found = await registry.replayLobby(replayId, signal);
       if (found.state !== "found") return found.state === "pending" ? "pending" as const : null;
-      const read = await lobbies.readLobby(found.lobbyId, signal);
-      return read.ok ? read.value : null;
+      return lobbyById(found.lobbyId, signal);
     } : undefined;
-    server.mount("/matches", historyRoutes(options.historySource, lookup, { usersPolicy: options.usersPolicy, ratings: options.accounts?.ratings, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
+    server.mount("/matches", historyRoutes(options.historySource, lookup, { lobbyById, currentRosterSeats: options.currentRosterSeats,
+      usersPolicy: options.usersPolicy, ratings: options.accounts?.ratings, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
   }
   server.mount("/rules", (req, res, game) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;

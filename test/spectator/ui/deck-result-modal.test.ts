@@ -63,6 +63,17 @@ function mount() {
 const closeButton = (dialog: ElementPort) => dialog.byClass("d1-close")[0]!;
 
 describe("the match result as a modal over the screen", () => {
+  it("links only roster-confirmed seats in the result, including when proof arrives after it opens", () => {
+    const { doc } = dom(), modal = mountResultModal(doc), frame = frameOf({ ended: true, name: "sample-orbit" });
+    const dialog = modal.dialog as unknown as ElementPort;
+    modal.update(frame, null);
+    expect(dialog.byClass("aw-user-link")).toHaveLength(0);
+    modal.update(frame, null, new Set(["sample-orbit"]));
+    expect(dialog.byClass("aw-user-link").map(a => a.href)).toEqual(["/?page=users&user=sample-orbit"]);
+    modal.update(frame, null, new Set());
+    expect(dialog.byClass("aw-user-link")).toHaveLength(0);
+  });
+
   it("opens a modal dialog at the end with the winner in team colour, how it ended and the rating line, named by its headline", () => {
     const { dialog, show } = mount();
     show(frameOf({ ended: false }));

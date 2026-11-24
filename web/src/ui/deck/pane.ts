@@ -9,7 +9,7 @@ import type { AgentLineModel } from "../hud-model.ts";
 import { tps } from "../hud-model.ts";
 import { ICON, crownIcon, markIcon, orderIcon } from "../icons.ts";
 import { h, setAttr, setHidden, setMarkup, setText } from "../dom.ts";
-import { userName } from "../user-link.ts";
+import { userName, rosterHandle } from "../user-link.ts";
 import { keep } from "../format.ts";
 import { OFFER_TEXT } from "../../replay.ts";
 import { SCORE_COPY } from "../../story.ts";
@@ -77,6 +77,7 @@ interface RowNode {
 }
 
 export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks): Teams {
+  let eligible: ReadonlySet<string> | undefined;
   const colonies = hooks.economy.map((_, c) => c);
   const win = doc.defaultView!;
   const listeners: (() => void)[] = [];
@@ -323,13 +324,14 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
 
   const writeRow = (node: RowNode, row: Row) => {
     const isSelected = row.index === selectedAgent;
-    const written = [row.handle, row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.elo, row.rd, row.result, row.label, isSelected].join("|");
+    const handle = rosterHandle(eligible, row.handle);
+    const written = [handle, row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.elo, row.rd, row.result, row.label, isSelected].join("|");
     if (node.written === written) return;
     node.written = written;
     node.item.className = `d1-agent-item c${row.colony}${isSelected ? " is-selected" : ""}`;
     setAttr(node.button, "aria-current", isSelected ? "true" : null);
     setMarkup(node.badge, row.badge);
-    node.title.replaceChildren(userName(doc, row.handle, row.title));
+    node.title.replaceChildren(userName(doc, handle, row.title));
     node.title.title = row.title;
     // Provider text is set as text, never markup.
     node.tags.replaceChildren(...row.badges.map(text => h(doc, "span", "d1-tag", text)));
@@ -404,14 +406,15 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
 
   /** The one player's line in its colony's head, in the Matches order; none hides it. */
   const writePlayer = (team: (typeof teamNodes)[number], p: Player | null) => {
-    const key = p === null ? "" : JSON.stringify(p);
+    const handle = rosterHandle(eligible, p?.handle);
+    const key = p === null ? "" : JSON.stringify([p, handle]);
     if (key === team.playerKey) return;
     team.playerKey = key;
     setHidden(team.player, p === null);
     team.playerRd = p?.rd ?? "";
     if (tipFor === team.playerElo && !team.playerRd) hideTip();
     if (p === null) return;
-    team.playerTitle.replaceChildren(userName(doc, p.handle, p.name));
+    team.playerTitle.replaceChildren(userName(doc, handle, p.name));
     team.playerTitle.title = p.name;
     setText(team.playerModel, p.model);
     team.playerModel.title = p.model;
@@ -615,12 +618,13 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       return;
     }
     if (sel.kind !== "agent") return;
-    const keyNow = [sel.key, sel.handle, sel.title, sel.model, sel.badges.join(" "), sel.asterisk, sel.sub, sel.order, sel.target, sel.lines.join("\n")].join("|");
+    const handle = rosterHandle(eligible, sel.handle);
+    const keyNow = [sel.key, handle, sel.title, sel.model, sel.badges.join(" "), sel.asterisk, sel.sub, sel.order, sel.target, sel.lines.join("\n")].join("|");
     if (keyNow !== cardKey) {
       cardKey = keyNow;
       card.style.setProperty("--d1-side", COLONY_CSS[sel.colony]);
       setMarkup(cardBadge, sel.badge);
-      cardName.replaceChildren(userName(doc, sel.handle, sel.title));
+      cardName.replaceChildren(userName(doc, handle, sel.title));
       setText(cardModel, sel.model);
       setHidden(cardModel, sel.model === "");
       cardTags.replaceChildren(...sel.badges.map(text => h(doc, "span", "d1-tag", text)));
@@ -729,6 +733,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     result: resultModal.dialog,
     offer,
     update(view, connecting) {
+      if (eligible !== view.rosterHandles) { eligible = view.rosterHandles; lastSecond = -1; }
       const frame: Frame | null = view.frame;
       const b = frame?.board ?? null;
       writeNames(b?.setup ?? null);
@@ -796,7 +801,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         if (subject !== "" && focusCard) selectedEl.focus();
         focusCard = false;
       }
-      resultModal.update(frame, view.share ?? null);
+      resultModal.update(frame, view.share ?? null, eligible);
     },
     destroy() {
       for (const off of listeners.splice(0)) off();

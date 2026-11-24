@@ -9,7 +9,7 @@
 import type { Frame } from "../../buffer.ts";
 import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
-import { userName } from "../user-link.ts";
+import { userName, rosterHandle } from "../user-link.ts";
 import { rowName, agentHandle } from "../../compose.ts";
 import { D1_ICON } from "./icons.ts";
 import { PAGE_WORDS, resultView, shareHref, type ResultView } from "./model.ts";
@@ -20,7 +20,7 @@ export interface ResultModal {
   /** The dialog, for the page to place at its root. */
   readonly dialog: HTMLDialogElement;
   /** Show the frame's result, or none; null closes it. share is the public link to what plays (source.ts watchUrl), null for none. */
-  update(frame: Frame | null, share?: string | null): void;
+  update(frame: Frame | null, share?: string | null, eligible?: ReadonlySet<string>): void;
   destroy(): void;
 }
 
@@ -93,10 +93,10 @@ export function mountResultModal(doc: Document): ResultModal {
    * drawn: the match's drawn colony names (unrated), else undefined. A drawn name is shown in its colony's colour with
    * its one-line source as its tooltip wherever the result names it; the rated names are shown as they always were.
    */
-  const writeBody = (r: ResultView | null, frame: Frame | null) => {
+  const writeBody = (r: ResultView | null, frame: Frame | null, eligible?: ReadonlySet<string>) => {
     const drawn = frame?.board?.setup.colonyNames;
     const board = frame?.board;
-    const keyNow = r ? JSON.stringify([r, drawn ?? null, board?.setup.queens.length, board?.agents.map(agent => [agent.colony, agent.identity?.displayName])]) : "";
+    const keyNow = r ? JSON.stringify([r, drawn ?? null, board?.setup.queens.length, board?.agents.map(agent => [agent.colony, agent.identity?.displayName, rosterHandle(eligible, agent.identity?.displayName)])]) : "";
     if (keyNow === bodyKey) return;
     bodyKey = keyNow;
     setHidden(result, r === null);
@@ -125,7 +125,7 @@ export function mountResultModal(doc: Document): ResultModal {
       const identity = h(doc, "div", "rd-identity");
       const colony = h(doc, "span", "rd-colony", colonyNamesOf(board.setup)[agent.colony].replace(/ Colony$/, ""));
       setAttr(colony, "title", drawn ? colonyNameNote(drawn[agent.colony]) : null);
-      const name = userName(doc, agent.identity?.displayName, named.name, "d1-rating-name");
+      const name = userName(doc, rosterHandle(eligible, agent.identity?.displayName), named.name, "d1-rating-name");
       const badgeLine = h(doc, "span", "rd-player");
       badgeLine.append(name);
       named.badges.forEach(text => badgeLine.append(" ", h(doc, "span", "d1-tag", text)));
@@ -167,7 +167,7 @@ export function mountResultModal(doc: Document): ResultModal {
 
   return {
     dialog,
-    update(frame, share = null) {
+    update(frame, share = null, eligible) {
       const shown = resultView(frame);
       const href = shareHref(frame, share);
       if (href === null) shareLink.removeAttribute("href");
@@ -177,7 +177,7 @@ export function mountResultModal(doc: Document): ResultModal {
       shownEnd = shown ? end : "";
       const open = shown !== null && end !== closedEnd;
       if (!open && dialog.open) dialog.close();
-      writeBody(shown, frame);
+      writeBody(shown, frame, eligible);
       if (open && !dialog.open && dialog.isConnected) dialog.showModal();
     },
     destroy() {

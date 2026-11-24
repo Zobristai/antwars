@@ -4,6 +4,7 @@ import { createServer, get } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { expect, it } from "vitest";
+import { currentRosterSeats } from "../../src/replays/roster-ownership.ts";
 import { createPublicVisibility } from "../../src/identity/publicVisibility.ts";
 import { createGcsHistorySource } from "../../src/replays/history-source.ts";
 import { historyRoutes } from "../../src/replays/history-routes.ts";
@@ -16,10 +17,16 @@ it("builds the five-match listing with bounded reads, including cold and expired
   const ids = Array.from({ length: 512 }, (_, i) => `2026-11-01T00-00-00-000Z-${i + 1}`).sort();
   const { store, docs } = memoryWatchStore();
   const owner = randomUUID(), excluded = randomUUID(), lobbyId = randomUUID();
-  docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify([{ id: owner }]) });
-  docs.set(`identities/${owner}`, { kind: "username" });
+  const amber = "sample-amber-wing", blue = "sample-blue-mound", opponent = randomUUID(), child = randomUUID();
+  const seats = [{ id: child, displayName: `${amber}/leaf`, colony: 0 }, { id: opponent, displayName: blue, colony: 1 }];
+  docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify(seats) });
+  for (const [id, name] of [[owner, amber], [opponent, blue]] as const) {
+    docs.set(`identities/${id}`, { kind: "username", displayName: name, canonical: name, claimedAt: "0" });
+    docs.set(`usernames/${name}`, { identityId: id });
+  }
+  docs.set(`identities/${child}`, { kind: "handle", displayName: `${amber}/leaf`, ownerId: owner });
   const legacy = new Set(ids.filter((_, i) => i % 10 === 0));
-  for (const id of ids) if (!legacy.has(id)) docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([owner]) });
+  for (const id of ids) if (!legacy.has(id)) docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([owner, opponent]) });
   docs.set(`testRecordings/${ids[0]}`, { version: "1" });
   let bodyReads = 0, active = 0, peak = 0, dbReads = 0;
   const latency = async () => { ++dbReads; await sleep(25); };
@@ -39,7 +46,8 @@ it("builds the five-match listing with bounded reads, including cold and expired
     ? Response.json({ access_token: "sample" }) : Response.json({ items: ids.map(id => ({ name: `${id}.json`, generation: "1" })) }),
     (url, options, cb) => get(local + url.pathname + url.search, options, cb));
   let now = 0;
-  const handler = historyRoutes(source, async () => { await latency(); return null; }, { publicVisibility: visibility,
+  const handler = historyRoutes(source, async () => { await latency(); return { kind: "public", mode: null, size: 1, colonies: seats.map(s => [s]) }; }, { publicVisibility: visibility,
+    currentRosterSeats: currentRosterSeats(store, () => 1),
     testRecordings: createTestRecordings(store), usersNow: () => now, ratings: { async leaderboard() { await latency(); return { ok: true, value: { entries: [] } }; } } });
   const site = createServer((req, res) => { void handler(req, res, undefined as never); });
   site.listen(0, "127.0.0.1"); await once(site, "listening");
