@@ -53,7 +53,7 @@ export function createTestRecordings(store: Store, options: { readonly unmarkedM
         const before = (await read([testRecordingPath(replayId)])).get(testRecordingPath(replayId));
         return { result: !before, writes: before ? [] : [{ op: "create" as const, path: testRecordingPath(replayId), fields: { version: "1" } }] };
       });
-      if (changed) invalidateUsers();
+      if (changed) invalidateUsers(replayId);
       cache.set(replayId, true);
     },
   };

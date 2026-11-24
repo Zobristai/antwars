@@ -82,6 +82,10 @@ it("builds the five-match listing with bounded reads, including cold and expired
         expect(rows[0].recent.map((r: { id: string }) => r.id)).toEqual(ids.slice(-5).reverse());
       }
       if (build === "expired") {
+        const arrived = performance.now();
+        const late = await read();
+        console.info(`Synthetic Users late visitor: ${Math.round(performance.now() - arrived)} ms after arriving just after the expiry response`);
+        expect([509, 510]).toContain(late[0].matches); // Next body-free check or verified full build.
         await expect.poll(async () => (await read())[0].matches, { timeout: 15_000 }).toBe(510);
         console.info(`Synthetic Users refreshed response: ${Math.round(performance.now() - start)} ms from expiry request`);
       }

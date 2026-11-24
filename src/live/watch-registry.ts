@@ -250,7 +250,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
         }
         return { result: !before, writes: before ? [] : [{ op: "create" as const, path: key, fields }] };
       });
-      if (changed) invalidateUsers();
+      if (changed) invalidateUsers(replayId);
     },
     async register(match) { await put(match, false); },
     resumed: match => put(match, true),

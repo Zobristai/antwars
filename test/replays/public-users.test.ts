@@ -137,7 +137,7 @@ it("shares one completed listing across GET and HEAD until its one-minute expiry
   expect((await read(0)).status).toBe(200); expect(scan).toHaveBeenCalledTimes(2);
 });
 
-it("shares one admitted expiry check; later visitors wait for publication without rechecking", async () => {
+it("shares each admitted expiry check, lets late visitors recheck after cooldown, and limits the whole refresh", async () => {
   let now = 0, builds = 0, checks = 0;
   const checking = Promise.withResolvers<void>(), checked = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
   const scan = async function* () { if (++builds === 1) yield [oneMatch()]; else { await resume.promise; yield []; } };
@@ -151,11 +151,14 @@ it("shares one admitted expiry check; later visitors wait for publication withou
   const others = [visitor(handler), visitor(handler, "HEAD"), visitor(handler)];
   try {
     checked.resolve(); expect(await Promise.all([first, ...others].map(v => v.done))).toEqual([200, 200, 200, 200]);
-    // These 124 requests exhaust the same flight's remaining admissions without new checks.
+    // All late visitors arrive after the first check has settled. They share a new check
+    // after the cooldown and receive its answer while the full scan remains blocked.
+    const start = performance.now();
     const late = Array.from({ length: 124 }, () => visitor(handler).done);
     expect(await visitor(handler).done).toBe(503); expect(checks).toBe(1);
-    resume.resolve(); expect(new Set(await Promise.all(late))).toEqual(new Set([200]));
-    expect(builds).toBe(2); expect(checks).toBe(1);
+    expect(new Set(await Promise.all(late))).toEqual(new Set([200]));
+    expect(performance.now() - start).toBeGreaterThanOrEqual(950);
+    expect(builds).toBe(2); expect(checks).toBe(2);
   } finally { checked.resolve(); resume.resolve(); }
 });
 
@@ -230,21 +233,28 @@ it("invalidates a warm listing immediately when this process marks a recording",
   expect(await read()).toHaveLength(2); await markers.mark(row.id); expect(await read()).toEqual([]);
 });
 
-it("retries a cold listing for its waiting visitors when recording ownership commits", async () => {
+it("rechecks contributors without restarting the storage scan under steady match publication", async () => {
   const { store, docs } = memoryWatchStore(), owner = randomUUID(), lobbyId = randomUUID(), row = oneMatch();
-  const registry = createWatchRegistry(store);
+  const registry = createWatchRegistry(store), markers = createTestRecordings(store);
   docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify([{ id: owner }]) });
   docs.set(`identities/${owner}`, { kind: "username" });
   const entered = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
   let scans = 0;
-  const source = sourceWith(async function* () { if (++scans === 1) yield [row]; else yield []; });
-  const url = await listen(source, undefined, { ratings: { async leaderboard() {
+  const source = sourceWith(async function* () { ++scans; yield [row]; });
+  const url = await listen(source, undefined, { testRecordings: markers, usersDeadlineMs: 2500, ratings: { async leaderboard() {
     entered.resolve(); await resume.promise; return { ok: true, value: { entries: [] } };
   } } });
+  const started = performance.now();
   const visitors = Promise.all([fetch(url + "/matches/users"), fetch(url + "/matches/users")]);
-  try { await entered.promise; await registry.recordOwners(lobbyId, row.id); } finally { resume.resolve(); }
+  try {
+    await entered.promise;
+    for (let n = 1; n <= 10; n++) await registry.recordOwners(lobbyId, match(n, []).id);
+    await markers.mark(row.id); // A relevant write during the final check must affect the answer.
+  } finally { resume.resolve(); }
   for (const res of await visitors) { expect(res.status).toBe(200); expect(await res.json()).toEqual({ users: [] }); }
-  expect(scans).toBe(2);
+  expect(performance.now() - started).toBeLessThan(2500); expect(scans).toBe(1);
+  await registry.recordOwners(lobbyId, match(20, []).id);
+  expect((await fetch(url + "/matches/users")).status).toBe(200); expect(scans).toBe(1);
 });
 
 it("drops stale success after a refresh failure and retries only after the backoff", async () => {
@@ -353,6 +363,7 @@ it("verifies all 6,000 records before publication but does not retain oversized 
     testRecordings: { async mark() {}, async marked(ids) { checked += ids.length; return new Set(); } },
     ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
   const read = async () => { const r = await fetch(url + "/matches/users"); expect(r.status).toBe(200); return (await r.json()).users; };
+  using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const users = await read(); expect(users).toHaveLength(2);
   for (const user of users) expect(user).toMatchObject({ matches: 6000, wins: 3000, losses: 3000, latest: { id: page[19]!.id } });
   expect(checked).toBe(12_000); // Every id checked in the scan and again at publication.
@@ -360,6 +371,7 @@ it("verifies all 6,000 records before publication but does not retain oversized 
   const expired = read();
   try { await vi.waitFor(() => expect(builds).toBe(2)); expect(checked).toBe(12_000); } finally { resume.resolve(); }
   expect(await expired).toEqual([]);
+  expect(warn.mock.calls).toEqual([["Users listing exceeds the contribution limit; expiry will wait for a full build"]]);
 });
 
 it("invalidates a warm response when the configured owner set changes", async () => {

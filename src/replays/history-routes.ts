@@ -1,11 +1,12 @@
 import { agreedHandles, attributeRoster, type CurrentRosterSeats } from "./roster-ownership.js";
 import { isValidId } from "../rating/ratings.js";
 import { joinReads } from "../store/join-reads.js";
-import { snapshotContributions, usersRevision } from "./users-snapshot.js";
+import { needsUsersCheck, snapshotContributions, usersRevision } from "./users-snapshot.js";
 import { neverJoined } from "./listed-colonies.js";
 import { publicUsers } from "./public-users.js";
 import type { Ratings } from "../rating/ratings.js";
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
+import { setTimeout as sleep } from "node:timers/promises";
 import { addAbortListener } from "node:events";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { pipeline } from "node:stream/promises";
@@ -433,14 +434,14 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       await iterator.return?.();
     }
   }
-  const configuredPolicy = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));
-  const policyNow = () => { const policy = configuredPolicy(); return { ...policy, digest: `${usersRevision()}:${policy.digest}` }; };
+  const policyNow = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));
   const usersDeadline = options.usersDeadlineMs ?? 120_000, usersNow = options.usersNow ?? Date.now;
   type Facts = ReturnType<typeof snapshotContributions>;
   type Policy = ReturnType<typeof policyNow>;
-  type Snapshot = { body?: Buffer; expires: number; digest: string; facts?: Facts };
+  type Answer = { body: Buffer; revision: number };
+  type Snapshot = { answer?: Answer; expires: number; digest: string; facts?: Facts };
   let snapshot: Snapshot | undefined;
-  type Flight = { reply: Promise<Buffer>; checking?: Promise<Buffer | undefined>; background: boolean; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
+  type Flight = { answer(): Promise<Buffer>; background: boolean; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
   const readerLeft = new Error("Users reader disconnected");
   const invalidated = new Error("Users listing invalidated");
   let flight: Flight | undefined;
@@ -448,6 +449,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   // Use the same fresh database reads for both an expired answer and publication. An ownership
   // write or hide on another instance doesn't advance our process-local revision.
   async function checked(facts: Facts, policy: Policy, signal: AbortSignal) {
+    const revision = usersRevision();
     const page = projection(policy.visibility, signal);
     async function* batches() {
       for (const rows of facts.batches()) {
@@ -461,32 +463,61 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       }
     }
     const users = await publicUsers(batches(), options.ratings, signal);
-    return Buffer.from(JSON.stringify({ users }));
+    return { body: Buffer.from(JSON.stringify({ users })), revision };
   }
 
   function begin(policy: Policy, prior?: Facts): Flight {
     const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
     const started = usersNow();
-    // Only arrivals during this one in-flight expiry check can use its answer. Later arrivals
-    // join publication instead of rechecking again or reusing a no-longer-verified answer.
-    let checking = prior && checked(prior, policy, signal).catch(() => undefined);
+    // One admitted check at a time, shared even while waiting out the cooldown. When the
+    // full scan finishes, give its verification the next slot rather than extending the build.
+    const earlyStop = new AbortController(), earlySignal = AbortSignal.any([signal, earlyStop.signal]);
+    let closing = false, nextCheck = 0, early: Promise<Answer | undefined> | undefined;
+    function checkPrior() {
+      if (!prior || closing) return early;
+      return early ??= (async () => {
+        const delay = nextCheck - performance.now();
+        if (delay > 0) await sleep(delay, undefined, { signal: earlySignal });
+        return checked(prior, policy, earlySignal);
+      })().catch(() => { closing = true; return undefined; }).finally(() => {
+        nextCheck = performance.now() + 1000; early = undefined;
+      });
+    }
     const work = (async () => {
-      if (checking) { await checking; checking = undefined; }
-      signal.throwIfAborted();
       const facts = snapshotContributions();
       await scanContributions(signal, policy.visibility, facts);
-      const body = await checked(facts, policy, signal);
+      closing = true;
+      // An active early check may still give its visitors a faster answer; a waiting timer
+      // must not hold up publication. Drain its reads before starting the final check.
+      if (nextCheck > performance.now()) earlyStop.abort();
+      await early;
+      let answer: Answer;
+      do {
+        signal.throwIfAborted();
+        answer = await checked(facts, policy, signal);
+      } while (needsUsersCheck(answer.revision, facts)); // retry the database check, never the storage scan
       signal.throwIfAborted();
       const published = usersNow();
       if (policy.digest !== policyNow().digest) throw invalidated;
       if (published - started >= usersDeadline) throw new Error("Listing expired");
-      snapshot = { body, facts: facts.retainable ? facts : undefined, digest: policy.digest, expires: published + 60_000 };
-      return body;
+      if (!facts.retainable) console.warn("Users listing exceeds the contribution limit; expiry will wait for a full build");
+      snapshot = { answer, facts: facts.retainable ? facts : undefined, digest: policy.digest, expires: published + 60_000 };
+      return answer;
     })().catch(error => {
       if (error !== invalidated && signal.reason !== invalidated && signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
       throw error;
-    }).finally(() => { flight = undefined; });
-    const build: Flight = { reply: work, get checking() { return checking; }, background: !!prior, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
+    }).finally(async () => { closing = true; earlyStop.abort(); await early; flight = undefined; });
+    async function answer(): Promise<Buffer> {
+      const pending = checkPrior();
+      if (pending) {
+        const first = await Promise.race([pending, work]);
+        if (first && !needsUsersCheck(first.revision, prior)) return first.body;
+      }
+      const final = await work;
+      if (needsUsersCheck(final.revision, snapshot?.facts)) throw invalidated;
+      return final.body;
+    }
+    const build: Flight = { answer, background: !!prior, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
     return build;
   }
   async function users(signal: AbortSignal): Promise<Buffer> {
@@ -495,8 +526,8 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       const policy = policyNow();
       if (snapshot?.digest !== policy.digest) snapshot = undefined;
       if (snapshot && usersNow() < snapshot.expires) {
-        if (snapshot.body) return snapshot.body;
-        throw new Error("Users listing temporarily unavailable");
+        if (!snapshot.answer) throw new Error("Users listing temporarily unavailable");
+        if (!needsUsersCheck(snapshot.answer.revision, snapshot.facts)) return snapshot.answer.body;
       }
       const build = flight ??= begin(policy, snapshot?.facts);
       if (++build.admissions > 128) throw new Error("Listing busy");
@@ -511,8 +542,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       build.waiters++;
       try {
         const waiting = AbortSignal.any([build.signal, signal]);
-        const early = build.checking && await untilAborted(build.checking, waiting);
-        const body = early ?? await untilAborted(build.reply, waiting);
+        const body = await untilAborted(build.answer(), waiting);
         if (build.digest === policyNow().digest) return body;
       } catch (error) {
         // Rejoin under the new revision, keeping this visitor's original deadline/disconnect signal.
@@ -582,7 +612,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (hud) {
         const [, kind, key] = hud;
         if (!(kind === "replay" ? isReplayId(key!) : isValidId(key))) { res.writeHead(404).end(); return; }
-        const signal = abort.signal, policy = configuredPolicy();
+        const signal = abort.signal, policy = policyNow();
         let handles: [string, string][] = [];
         const visible = !policy.visibility || (kind === "replay" ? await policy.visibility.replayVisible(key!, signal) : await policy.visibility.lobbyVisible(key!));
         if (visible && options.currentRosterSeats) {
@@ -594,7 +624,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
             handles = [...agreedHandles(seats, current)].flatMap(([label, handle]) => handle ? [[label, handle]] : []);
           }
         }
-        if (policy.digest !== configuredPolicy().digest) throw new Error("Roster policy changed");
+        if (policy.digest !== policyNow().digest) throw new Error("Roster policy changed");
         const body = Buffer.from(JSON.stringify({ handles }));
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
         res.end(req.method === "HEAD" ? undefined : body);

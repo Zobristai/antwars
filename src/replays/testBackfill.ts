@@ -45,7 +45,7 @@ export async function backfillTestRecordings(store: Store, registry: Pick<WatchR
       .map(id => ({ op: "create", path: testRecordingPath(id), fields: { version: "1" } }));
     return { result: writes.length, writes };
   });
-  if (marked) invalidateUsers();
+  if (marked) for (const id of unique) invalidateUsers(id);
   return { listed: unique.length, marked, alreadyMarked: unique.length - marked, rated, withoutLobby };
 }
 
