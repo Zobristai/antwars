@@ -1,6 +1,6 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
-import { setImmediate as nextTurn } from "node:timers/promises";
+import { setImmediate as nextTurn, setTimeout as sleep } from "node:timers/promises";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
@@ -119,6 +119,46 @@ it("coalesces concurrent scans and fails both callers without returning partial 
 
 const oneMatch = () => match(0, ["fern", "river"]);
 const sourceWith = (scan: NonNullable<HistorySource["scan"]>): HistorySource => ({ scan, async list() { throw Error(); }, async open() { throw Error(); } });
+
+it("serves the first visitor after startup verification without rescanning or changing the cold answer", async () => {
+  // Same in-memory rows and 200 ms per simulated storage window in both runs; no real network storage.
+  const rows = Array.from({ length: 512 }, (_, i) => match(i, ["sample-sage", "sample-amber"]));
+  const scan = vi.fn(async function* () {
+    for (let i = 0; i < rows.length; i += 48) { await sleep(200); yield rows.slice(i, i + 48); }
+  });
+  const ratings = { leaderboard: async () => ({ ok: true as const, value: { entries: [] } }) };
+  async function timed(url: string, label: string) {
+    const start = performance.now(), res = await fetch(url + "/matches/users"), body = await res.text();
+    expect(res.status).toBe(200);
+    console.info(`Synthetic Users ${label}: ${Math.round(performance.now() - start)} ms`);
+    return body;
+  }
+  const cold = await timed(await listen(sourceWith(scan), undefined, { ratings }), "on-demand cold read");
+  expect(JSON.parse(cold).users[0].matches).toBe(rows.length);
+  const verified = Promise.withResolvers<void>();
+  const url = await listen(sourceWith(scan), undefined, { ratings, warmUsersOnStart: true,
+    usersPolicy: () => { if (scan.mock.calls.length === 2) verified.resolve(); return { digest: "public" }; },
+  });
+  // No request to the new route until its final policy check and synchronous publication finish.
+  await verified.promise;
+  expect(await timed(url, "first read after startup warm")).toBe(cold);
+  expect(await timed(url, "subsequent hit")).toBe(cold);
+  expect(scan).toHaveBeenCalledTimes(2);
+}, 15_000);
+
+it("keeps the failure cooldown and retries on demand after an unsuccessful startup scan", async () => {
+  let now = 0;
+  const scan = vi.fn(async function* () { yield []; }).mockImplementationOnce(() => { throw Error("scan unavailable"); });
+  const url = await listen(sourceWith(scan), undefined, { warmUsersOnStart: true, usersNow: () => now });
+  await nextTurn();
+  expect(scan).toHaveBeenCalledTimes(1);
+  now = 9_999;
+  expect((await fetch(url + "/matches/users")).status).toBe(503);
+  expect(scan).toHaveBeenCalledTimes(1);
+  now++;
+  expect(await (await fetch(url + "/matches/users")).json()).toEqual({ users: [] });
+  expect(scan).toHaveBeenCalledTimes(2);
+});
 
 it("shares one completed listing across GET and HEAD until its one-minute expiry", async () => {
   let now = 1000;
