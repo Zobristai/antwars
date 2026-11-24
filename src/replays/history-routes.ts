@@ -224,6 +224,8 @@ export interface HistoryRouteOptions {
   readonly currentRosterSeats?: CurrentRosterSeats;
   readonly lobbyById?: RecordingLobbyLookup;
   readonly ratings?: Pick<Ratings, "leaderboard">;
+  /** Build the entry server's first listing without waiting for a visitor. */
+  readonly warmUsersOnStart?: boolean;
   readonly usersDeadlineMs?: number;
   readonly usersNow?: () => number;
   readonly usersPolicy?: () => { digest: string; visibility?: PublicVisibility };
@@ -491,7 +493,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     return { body: Buffer.from(JSON.stringify({ users })), revision, expires, ids };
   }
 
-  function begin(policy: Policy, prior?: Snapshot): Flight {
+  function begin(policy: Policy, prior?: Snapshot, background = !!prior?.facts): Flight {
     const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
     const started = usersNow();
     // One admitted check at a time, shared even while waiting out the cooldown. When the
@@ -545,9 +547,15 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (usersNow() >= final.expires || needsUsersCheck(final.revision, final.ids)) throw invalidated;
       return final.body;
     }
-    const build: Flight = { answer: sharedRead(answer), background: !!prior?.facts, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0 };
+    const build: Flight = { answer: sharedRead(answer), background, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0 };
     return build;
   }
+  if (options.warmUsersOnStart) setImmediate(() => {
+    // A visitor may already have started (or finished) the first build. Never start a second one.
+    if (flight || snapshot) return;
+    try { flight = begin(policyNow(), undefined, true); }
+    catch { console.warn("Users listing warmup could not start"); }
+  });
   async function users(signal: AbortSignal, admit: () => void): Promise<Buffer> {
     for (;;) {
       signal.throwIfAborted();
