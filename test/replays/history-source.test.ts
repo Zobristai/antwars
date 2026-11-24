@@ -821,3 +821,46 @@ it("summarises one record by id as a listing page does, and answers null for a m
   expect(await f.source.summary!(emptyId, signal)).toBeNull();
   await expect(f.source.summary!("../x", signal)).rejects.toThrow("invalid match id");
 });
+
+it("streams bounded batches without caching every summary in a scan", async () => {
+  const ids = Array.from({ length: 21 }, (_, i) => `2026-10-20T02-00-00-000Z-${i + 1}`).sort();
+  const f = await fixture((req, res) => { const match = ids.find(value => req.url!.includes(`${value}.json`))!; res.end(JSON.stringify(record(match))); },
+    cursor => ({ items: (cursor ? ids.slice(10) : ids.slice(0, 10)).map(value => ({ name: `${value}.json`, generation: "1" })), nextPageToken: cursor ? undefined : "more" }));
+  const scan = async () => { const batches: string[][] = []; for await (const rows of f.source.scan!(signal())) batches.push(rows.map(row => row.id)); return batches; };
+  expect(await scan()).toEqual([ids.slice(0,20), ids.slice(20)]);
+  expect(await scan()).toEqual([ids.slice(0,20), ids.slice(20)]);
+  expect(f.objects.length).toBe(42);
+  expect(f.calls.filter(c => !c.url.includes("metadata.google.internal"))).toHaveLength(4);
+});
+
+it("follows empty metadata pages without a page-count ceiling", async () => {
+  let page = 0;
+  const f = await fixture(() => { throw Error("no record expected"); }, () => ++page < 12 ? { nextPageToken: String(page) } : {});
+  for await (const _ of f.source.scan!(signal())) throw Error("unexpected rows");
+  expect(page).toBe(12);
+});
+
+it("uses one parser across a full scan, including a bad record, then shuts it down", async () => {
+  const ids = Array.from({ length: 23 }, (_, i) => `2026-10-20T02-00-00-000Z-${i + 1}`).sort();
+  const f = await fixture((req, res) => res.end(pathId(req) === ids[1] ? "invalid" : JSON.stringify(record(pathId(req)))),
+    () => ({ items: ids.map(id => ({ name: `${id}.json` })) }));
+  const messages = vi.spyOn(Worker.prototype, "postMessage");
+  try {
+    const listed = [];
+    for await (const batch of f.source.scan!(signal())) listed.push(...batch.map(row => row.id));
+    expect(listed).toEqual(ids.filter(id => id !== ids[1]));
+    expect(messages).toHaveBeenCalledTimes(23);
+    const workers = new Set(messages.mock.contexts);
+    expect(workers.size).toBe(1); expect([...workers][0]).toMatchObject({ threadId: -1 });
+  } finally { messages.mockRestore(); }
+});
+
+it("terminates the scan parser when its build is cancelled", async () => {
+  const started = nextParserWorker(), controller = new AbortController();
+  const f = await fixture((_req, res) => { res.writeHead(200); res.flushHeaders(); }, () => ({ items: [{ name: `${id}.json` }] }));
+  const iterator = f.source.scan!(controller.signal)[Symbol.asyncIterator]();
+  const failure = expect(iterator.next()).rejects.toThrow();
+  const worker = await started, exited = once(worker, "exit");
+  controller.abort(); await failure; await exited;
+  expect(worker.threadId).toBe(-1);
+});
