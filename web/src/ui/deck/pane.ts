@@ -148,6 +148,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const head = h(doc, "header", "d1-team-head");
     const name = h(doc, "h2", `d1-name c${colony}`, colonyName(colony));
     name.id = `d1-team-${colony}`;
+    name.title = colonyName(colony);
     section.setAttribute("aria-labelledby", name.id);
     // One icon per member, then the one player's name, which gives way before its Elo, always shown in full.
     const members = h(doc, "span", "d1-team-members"), player = h(doc, "span", "d1-team-player");
@@ -187,7 +188,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     identity.append(head, rows);
     const historyButton = h(doc, "button", "sb-history");
     historyButton.type = "button";
-    historyButton.textContent = "≡";
+    historyButton.innerHTML = D1_ICON.history;
     historyButton.setAttribute("aria-label", `${colonyName(colony)} history`);
     line.id = `colony-history-${colony}`;
     historyButton.setAttribute("aria-controls", line.id);
@@ -631,6 +632,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       card.style.setProperty("--d1-side", COLONY_CSS[sel.colony]);
       setMarkup(cardBadge, sel.badge);
       cardName.replaceChildren(userName(doc, handle, sel.title));
+      cardName.title = sel.title;
       setText(cardModel, sel.model);
       setHidden(cardModel, sel.model === "");
       cardTags.replaceChildren(...sel.badges.map(text => h(doc, "span", "d1-tag", text)));
@@ -706,7 +708,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       const node = teamNodes[colony]!, named = colonyName(colony, setup), note = colonyNote(colony, setup);
       node.name.textContent = named;
       node.colName.textContent = named;
-      if (note) node.name.title = note; else node.name.removeAttribute("title");
+      node.name.title = note ? `${named} · ${note}` : named;
       node.rows.setAttribute("aria-label", `${named} agents`);
       node.line.setAttribute("aria-label", `${named} ${D1_COPY.history.toLowerCase()}`);
       node.historyButton.setAttribute("aria-label", `${named} history`);

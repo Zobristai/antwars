@@ -161,7 +161,8 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
   const fitList = () => {
     const board = el.closest?.(BOARD_AREA)?.getBoundingClientRect().top ?? 0;
     const room = el.getBoundingClientRect().top - Math.max(0, board) - LIST_GAP - LIST_MARGIN;
-    const least = px("--aw-mark-row", 28) * 2.5 + LIST_PADDING;
+    const row = list.children[0] as HTMLElement;
+    const least = row.offsetHeight * 2.5 + LIST_PADDING;
     list.style.maxHeight = `${Math.floor(Math.max(least, room))}px`;
   };
   const words = (node: HTMLElement, e: ReplayEvent) => {
@@ -247,9 +248,9 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
       row.onclick = () => { const at = openItem ?? item; closeList(); at.button.focus(); jump(e, at.x); };
       list.append(row);
     }
+    list.hidden = false;
     fitList();
     list.scrollTop = 0;
-    list.hidden = false;
     place(list, item.x);
   };
   const laterClose = () => { if (closeTimer) clearTimeout(closeTimer); closeTimer = setTimeout(() => closeList(), 200); };
@@ -281,7 +282,6 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     const focused = items.find(item => item.button === doc.activeElement)?.events ?? null;
     // The glyph fills 12 of its 16-unit box; the thumb covers a mark (or a group's count) its own half width overlaps.
     const glyphReach = THUMB_INSET + px("--aw-mark-size", 16) * 0.375;
-    const countReach = THUMB_INSET + px("--aw-mark-count-width", 19) / 2;
     layer.style.left = `${seek.offsetLeft}px`;
     layer.style.top = `${seek.offsetTop}px`;
     layer.style.width = `${width}px`;
@@ -308,7 +308,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
         count.textContent = String(group.events.length);
         button.append(count);
       }
-      const item = { ...group, button, reach: group.events.length === 1 ? glyphReach : countReach };
+      const item = { ...group, button, reach: glyphReach };
       if (group.events.length === 1) {
         button.onclick = () => jump(first, group.x);
         button.onpointerenter = (event: PointerEvent) => { if (mouse(event)) showChip(first, group.x, null); };
@@ -336,6 +336,10 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
       return item;
     });
     el.append(layer, chip, list);
+    // Read the laid-out badges together, after insertion: their em size and digit count both affect the reach.
+    for (const item of items) if (item.events.length > 1) {
+      item.reach = THUMB_INSET + (item.button.children[0] as HTMLElement).offsetWidth / 2;
+    }
     const same = (a: readonly ReplayEvent[], b: readonly ReplayEvent[]) => a.length === b.length && a.every((e, i) => e === b[i]);
     if (focused) {
       relaying = true;

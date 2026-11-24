@@ -41,6 +41,8 @@
   --aw-text-lead: 0.875rem;     --aw-lh-lead: 1.25rem;        /* 14 / 20 */
   --aw-text-title: 0.9375rem;   --aw-lh-title: 1.25rem;       /* 15 / 20 */
   --aw-text-mast: 1.125rem;                                   /* 18: the front page's wordmark */
+  --aw-text-display: 1.875rem;   /* 30: compact winner */
+  --aw-text-display-lg: 3rem;    /* 48: compact outcome */
   /* Type: weights and tracking */
   --aw-regular: 400; --aw-strong: 600; --aw-bold: 700;
   --aw-track-title: 0.04em; --aw-track-label: 0.09em; --aw-track-badge: 0.08em;

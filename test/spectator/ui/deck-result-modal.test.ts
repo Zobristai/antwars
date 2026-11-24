@@ -3,6 +3,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { chromium } from "playwright-core";
+import { markup } from "./port-markup.ts";
+import { applyTextSize } from "../../../web/render-check/fonts.ts";
 import { Frame, type Board, type StoryEntry } from "../../../web/src/buffer.ts";
 import { colonyNameNote } from "../../../src/sim/colonyNames.ts";
 import { SUB_TILE, type StreamAgent, type StreamQueen } from "../../../src/live/format.ts";
@@ -212,13 +214,37 @@ describe("the match result as a modal over the screen", () => {
     expect(dialog.byClass("rd-outcome")).toHaveLength(0);
   });
 
-  it("bounds decisive text to two wrapping lines rather than an unshrinkable column", () => {
-    expect(CSS).toContain("grid-template-columns: 36px minmax(0,max-content) minmax(max-content,1fr)");
-    const rule = CSS.match(/\.d1-result-dialog \.d1-moment-what \{([^}]+)\}/)![1];
-    expect(rule).toContain("white-space: normal");
-    expect(rule).toContain("min-width: 0");
-    expect(rule).toContain("-webkit-line-clamp: 2");
-    expect(rule).toContain("overflow: hidden");
+  it("shows every word of a long decisive moment with enlarged text, including the lines after the second", async () => {
+    const { doc } = dom(), modal = mountResultModal(doc), f = frameOf({ ended: true });
+    f.board!.setup = { ...f.board!.setup, colonyNames: ["Sweetwater Colony", "Lake Skinner Colony"] };
+    f.story = [{ id: 2, kind: "overrun", queenId: 0, tick: END - 50, endTick: END - 10, colony: 0, agent: -1, x: 50, y: 20, outcome: "took", peak: 100, required: 100 }];
+    modal.update(f);
+    const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 } });
+      await applyTextSize(page, 32);
+      await page.setContent(`<style>${tokens}${CSS}</style><main class="d1 score-band">${markup(modal.dialog as unknown as ElementPort)}</main>`);
+      await page.locator("dialog").evaluate(el => (el as HTMLDialogElement).showModal());
+      const text = page.locator(".d1-moment-what");
+      await text.scrollIntoViewIfNeeded();
+      expect(await text.innerText()).toBe("Overrun attempt on the Lake Skinner Colony queen — took the queen");
+      const seen = await text.evaluate(el => {
+        const tree = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), lines = new Set<number>();
+        let visible = true;
+        for (let n = tree.nextNode(); n; n = tree.nextNode()) for (const word of n.textContent!.matchAll(/\S+/g)) {
+          const range = document.createRange(); range.setStart(n, word.index); range.setEnd(n, word.index + word[0].length);
+          const rects = [...range.getClientRects()];
+          visible &&= rects.length === 1 && rects.every(r => r.width > 0 && r.height > 0 &&
+            el.contains(document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2)));
+          rects.forEach(r => lines.add(Math.round(r.top)));
+        }
+        return { visible, lines: lines.size, timeWidth: el.previousElementSibling!.getBoundingClientRect().width };
+      });
+      expect(seen.lines).toBeGreaterThan(2);
+      expect(seen.visible).toBe(true);
+      expect(seen.timeWidth).toBeCloseTo(72);
+    } finally { await browser.close(); }
   });
 
   it("shows one final Rating column with signed changes between rounded displayed ratings", () => {

@@ -481,7 +481,12 @@ describe("Score Band side-by-side History ledger", () => {
     show(makeFrame(2));
     const team0 = teams.teams[0] as unknown as ElementPort;
     const btn0 = team0.byClass("sb-history")[0]!;
+    expect(btn0.html).toContain("<svg");
+    expect(btn0.html).toContain('aria-hidden="true"');
+    expect(btn0.getAttribute("aria-label")).toBe("Very Large Colony history");
+    expect(team0.byClass("d1-name")[0]!.title).toBe("Very Large Colony");
     btn0.click();
+    expect(btn0.getAttribute("aria-expanded")).toBe("true");
 
     // First contact event row has no agent badge SVG.
     const rows = team0.byClass("d1-tl-entry");
