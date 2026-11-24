@@ -266,7 +266,8 @@ export function createHistorySummaryCache(readRecord: SummaryReader) {
 }
 
 class LargeRecordHead extends Error {}
-const SCAN_READS = 20, SMALL_HEAD_BYTES = 256 * 1024;
+// Overlap more storage round trips without growing the small-head budget (48 × 96 KiB).
+const SCAN_READS = 48, SMALL_HEAD_BYTES = 96 * 1024;
 
 const LABELS = { failed: "match record read failed", headers: "match record headers timed out", idle: "match record read idle timeout" };
 
@@ -377,7 +378,7 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
         let batch: Stored[] = [];
         for await (const object of metadata(token, signal, undefined, true)) {
           batch.push(object);
-          if (batch.length === 20) { yield await readBatch(batch, fromScan, token, signal, SCAN_READS); batch = []; }
+          if (batch.length === SCAN_READS) { yield await readBatch(batch, fromScan, token, signal, SCAN_READS); batch = []; }
         }
         if (batch.length) yield await readBatch(batch, fromScan, token, signal, SCAN_READS);
       } finally { await parser.close(); }

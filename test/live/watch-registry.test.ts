@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createWatchRegistry, readReplayOwners } from "../../src/live/watch-registry.ts";
+import { usersRevision } from "../../src/replays/users-snapshot.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { spectatorDelaySeconds } from "../../src/live/match-access.ts";
 
@@ -257,12 +258,15 @@ describe("private recording ownership", () => {
     docs.set(`identities/${id}`, { kind: "username", nameState: "purged" });
     docs.set(`identities/${nextId}`, { kind: "handle", ownerId: id });
     expect(await readReplayOwners(store, replayId)).toBeNull();
+    const revision = usersRevision();
     await registry.recordOwners(id, replayId);
+    expect(usersRevision()).toBe(revision + 1);
     expect(await readReplayOwners(store, replayId)).toEqual([id]);
     expect(await registry.replayLobby(replayId)).toEqual({ state: "none" });
     expect(await registry.publicMatches()).toEqual([]);
     const before = structuredClone([...docs]);
     await createWatchRegistry(store).recordOwners(id, replayId);
+    expect(usersRevision()).toBe(revision + 1);
     expect([...docs]).toEqual(before);
     docs.set(`identities/${nextId}`, { kind: "username" });
     await expect(registry.recordOwners(id, replayId)).rejects.toThrow("Recording ownership changed");

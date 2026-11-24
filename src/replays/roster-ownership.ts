@@ -3,7 +3,7 @@ import { identityDisplay, nameState } from "../identity/retention.js";
 import { readMany, type Store } from "../store/firestore.js";
 import type { RecordingLobby, RecordingLobbyLookup, TypedHistorySummary } from "./history-routes.js";
 import { isHouseHandle } from "./recorded-match-type.js";
-import { joinReads } from "../store/join-reads.js";
+import { boundedReads } from "../store/join-reads.js";
 
 type Seat = RecordingLobby["colonies"][number][number];
 export type CurrentRosterSeats = (seats: readonly Seat[], signal: AbortSignal) => Promise<ReadonlyMap<string, string>>;
@@ -48,8 +48,8 @@ export function agreedHandles(seats: readonly Seat[], current: ReadonlyMap<strin
 
 /** Seat order in a stream is join order, not lobby order. Match the historical label inside its colony.
  * The directory counts the current handle; the archive retains the historical text with a separate destination. */
-export async function attributeRoster(rows: TypedHistorySummary[], lookup: RecordingLobbyLookup | undefined,
-  current: CurrentRosterSeats, signal: AbortSignal, mode: "directory" | "archive"): Promise<TypedHistorySummary[]> {
+export async function attributeRoster<Row extends { id: string; seats: readonly Pick<TypedHistorySummary["seats"][number], "handle" | "colony">[] }>(rows: Row[], lookup: RecordingLobbyLookup | undefined,
+  current: CurrentRosterSeats, signal: AbortSignal, mode: "directory" | "archive", lobbyLimit = 20): Promise<Row[]> {
   // Only the archive can serve a recording without its optional roster link. Never turn a
   // cancellation into a successful response or publish an incomplete directory.
   function noProof(error: unknown): undefined {
@@ -57,7 +57,7 @@ export async function attributeRoster(rows: TypedHistorySummary[], lookup: Recor
     if (mode === "directory") throw error;
     return undefined;
   }
-  const lobbies = await joinReads(rows.map(row => lookup?.(row.id, signal).catch(noProof)));
+  const lobbies = await boundedReads(rows, Math.min(lobbyLimit, 20), async row => lookup?.(row.id, signal).catch(noProof), signal);
   const eligible = lobbies.map(lobby => lobby && lobby !== "pending" && !lobby.test ? lobby.colonies : []);
   const names = await current(eligible.flat(2), signal).catch(noProof);
   return rows.map((row, i) => {

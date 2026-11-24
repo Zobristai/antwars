@@ -1,3 +1,4 @@
+import { invalidateUsers } from "./users-snapshot.js";
 import type { Fields, Store, TransactionStep, Write } from "../store/firestore.js";
 import type { WatchRegistry } from "../live/watch-registry.js";
 import { testRecordingPath } from "./test-recordings.js";
@@ -44,6 +45,7 @@ export async function backfillTestRecordings(store: Store, registry: Pick<WatchR
       .map(id => ({ op: "create", path: testRecordingPath(id), fields: { version: "1" } }));
     return { result: writes.length, writes };
   });
+  if (marked) for (const id of unique) invalidateUsers(id);
   return { listed: unique.length, marked, alreadyMarked: unique.length - marked, rated, withoutLobby };
 }
 

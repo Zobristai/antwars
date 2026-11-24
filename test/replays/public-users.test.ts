@@ -17,6 +17,7 @@ import { wakingStore } from "../../src/slots/wake.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
+import { createWatchRegistry } from "../../src/live/watch-registry.ts";
 import { currentRosterSeats } from "../../src/replays/roster-ownership.ts";
 
 // Tally and cancellation fixtures have their own lobby seats and a current claim for each synthetic owner.
@@ -101,7 +102,8 @@ it("agrees with the entire visible Matches list, including ownership, markers, l
   expect(leaderboard).toHaveBeenCalledWith(expect.objectContaining({ cursor: "more", mode: "1v1", scope: "everyone", limit: 50 }));
   now += 60_000;
   docs.set(`replayOwnership/${team.id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([excluded]) });
-  expect((await (await fetch(url + "/matches/users")).json()).users).toContainEqual(expect.objectContaining({ username: "fern", matches: 2, wins: 0 }));
+  const listing = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  expect(await listing()).toContainEqual(expect.objectContaining({ username: "fern", matches: 2, wins: 0 }));
 });
 
 it("coalesces concurrent scans and fails both callers without returning partial rows on deadline", async () => {
@@ -133,6 +135,201 @@ it("shares one completed listing across GET and HEAD until its one-minute expiry
   expect(scan).toHaveBeenCalledTimes(1); expect(leaderboard).toHaveBeenCalledTimes(1);
   ++now;
   expect((await read(0)).status).toBe(200); expect(scan).toHaveBeenCalledTimes(2);
+});
+
+it("shares each admitted expiry check, lets late visitors recheck after cooldown, and releases finished and disconnected admissions", async () => {
+  let now = 0, builds = 0, checks = 0;
+  const checking = Promise.withResolvers<void>(), checked = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const scan = async function* () { if (++builds === 1) yield [oneMatch()]; else { await resume.promise; yield []; } };
+  const handler = fixtureRoutes(sourceWith(scan), undefined, { usersNow: () => now,
+    testRecordings: { async mark() {}, async marked() {
+      if (now && ++checks === 1) { checking.resolve(); await checked.promise; }
+      return new Set();
+    } }, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  expect(await visitor(handler).done).toBe(200); now += 60_000;
+  const first = visitor(handler); await checking.promise;
+  const others = Array.from({ length: 127 }, () => visitor(handler, "HEAD"));
+  try {
+    expect(await visitor(handler).done).toBe(503); // 128 unfinished responses.
+    const departed = others.pop()!; departed.leave(); await departed.done;
+    others.push(visitor(handler));
+    checked.resolve(); expect(await Promise.all([first, ...others].map(v => v.done))).toEqual(Array(128).fill(200));
+    // All late visitors arrive after the first check has settled. They share a new check
+    // after the cooldown and receive its answer while the full scan remains blocked.
+    const start = performance.now();
+    const late = [visitor(handler).done, visitor(handler).done]; // 129th completed request doesn't wait for a new build.
+    expect(checks).toBe(1);
+    expect(new Set(await Promise.all(late))).toEqual(new Set([200]));
+    expect(performance.now() - start).toBeGreaterThanOrEqual(950);
+    expect(builds).toBe(2); expect(checks).toBe(2);
+  } finally { checked.resolve(); resume.resolve(); }
+});
+
+it("checks old contributors on expiry and does not republish rows hidden on another instance during the refresh", async () => {
+  const { store, docs } = memoryWatchStore(), owner = randomUUID(), hidden = randomUUID(), lobbyId = randomUUID();
+  const rows = Array.from({ length: 8 }, (_, i) => match(i, ["sample-fern", "sample-river"]));
+  const owners = (index: number, id: string) => docs.set(`replayOwnership/${rows[index]!.id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([id]) });
+  rows.forEach((_, i) => owners(i, owner));
+  const policy = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [hidden]);
+  let builds = 0, now = 0;
+  const scanned = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const url = await listen(sourceWith(async function* () {
+    ++builds; yield rows; yield [];
+    // The first page's projection has drained before the generator is asked for its third page.
+    if (builds === 2) { scanned.resolve(); await resume.promise; }
+  }), undefined, { usersNow: () => now, publicVisibility: policy, testRecordings: createTestRecordings(store),
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const first = async () => (await (await fetch(url + "/matches/users")).json()).users[0];
+  const before = await first(); expect(before.matches).toBe(8);
+  expect(before.recent.map((r: {id: string}) => r.id)).not.toContain(rows[0]!.id);
+  now += 60_000; docs.set(`testRecordings/${rows[0]!.id}`, { version: "1" });
+  try {
+    expect((await first()).matches).toBe(7); await scanned.promise;
+    owners(1, hidden); owners(7, hidden);
+    docs.set(`testRecordings/${rows[2]!.id}`, { version: "1" });
+  } finally { resume.resolve(); }
+  const updated = await first(); expect(updated.matches).toBe(4);
+  expect(updated.recent.map((r: {id: string}) => r.id)).not.toContain(rows[7]!.id);
+  expect(await first()).toEqual(updated); expect(builds).toBe(2);
+});
+
+it("expires a remote write missed during verification 60 seconds from the check's first read", async () => {
+  const row = oneMatch(), { store, docs } = memoryWatchStore();
+  let now = 0, scans = 0;
+  const url = await listen(sourceWith(async function* () {
+    ++scans; yield [row];
+    if (scans === 1) now = 15_000; // Storage scan started at zero; final verification starts later.
+  }), undefined, { usersNow: () => now, testRecordings: createTestRecordings(store), ratings: { async leaderboard() {
+    // This independent write doesn't touch the local revision. The final marker read already finished.
+    docs.set(`testRecordings/${row.id}`, { version: "1" }); now = 45_000;
+    return { ok: true, value: { entries: [] } };
+  } } });
+  const read = async () => { const r = await fetch(url + "/matches/users"); expect(r.status).toBe(200); return (await r.json()).users; };
+  expect(await read()).toHaveLength(2);
+  now = 74_999; expect(await read()).toHaveLength(2); expect(scans).toBe(1);
+  now = 75_000; expect(await read()).toEqual([]); // Neither 60 s from build start nor 60 s from publication.
+});
+
+it("does not publish a listing when its final visibility check fails", async () => {
+  let now = 0, reads = 0;
+  const url = await listen(sourceWith(async function* () { yield [oneMatch()]; }), undefined, {
+    usersNow: () => now, testRecordings: { async mark() {}, async marked() {
+      if (++reads === 2) throw new Error("final marker read unavailable");
+      return new Set();
+    } }, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } },
+  });
+  const read = () => fetch(url + "/matches/users");
+  const failed = await read(); expect(failed.status).toBe(503); expect(await failed.json()).not.toHaveProperty("users");
+  expect((await read()).status).toBe(503); expect(reads).toBe(2);
+  now += 10_000; const retry = await read(); expect(retry.status).toBe(200); expect((await retry.json()).users).toHaveLength(2);
+});
+
+it("joins all four final verification batches after one fails and never publishes a partial listing", async () => {
+  const rows = Array.from({ length: 501 }, (_, i) => match(i, ["fern", "river"]));
+  const allStarted = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  let started = 0, finished = 0;
+  const url = await listen(sourceWith(async function* () { yield rows; }), undefined, {
+    testRecordings: { async mark() {}, async marked(ids) {
+      if (ids.length === 100) { // Scan reads at most 20; final verification checks 100 at a time.
+        const first = ++started === 1;
+        if (started === 4) allStarted.resolve();
+        try {
+          await allStarted.promise;
+          if (first) throw new Error("marker read failed");
+          await resume.promise;
+        } finally { ++finished; }
+      }
+      return new Set();
+    } },
+  });
+  let returned = false;
+  const read = fetch(url + "/matches/users").then(r => { returned = true; return r; });
+  try { await allStarted.promise; await nextTurn(); expect(returned).toBe(false); expect(finished).toBe(1); }
+  finally { resume.resolve(); }
+  const r = await read; expect(r.status).toBe(503); expect(await r.json()).not.toHaveProperty("users");
+  expect(started).toBe(4); expect(finished).toBe(4);
+});
+
+it("waits for a cold result if the expired listing cannot be checked", async () => {
+  let now = 0, failCheck = false, builds = 0;
+  const entered = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const url = await listen(sourceWith(async function* () {
+    if (++builds === 1) yield [oneMatch()];
+    else { entered.resolve(); await resume.promise; yield []; }
+  }), undefined, { usersNow: () => now, testRecordings: { async mark() {}, async marked() {
+    if (failCheck) throw new Error("marker read unavailable");
+    return new Set();
+  } }, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  expect(await read()).toHaveLength(2); now += 60_000; failCheck = true;
+  let returned = false;
+  const next = read().then(rows => { returned = true; return rows; });
+  try { await entered.promise; await nextTurn(); expect(returned).toBe(false); }
+  finally { resume.resolve(); }
+  expect(await next).toEqual([]);
+});
+
+it("invalidates a warm listing immediately when this process marks a recording", async () => {
+  const { store } = memoryWatchStore(), markers = createTestRecordings(store), row = oneMatch();
+  const url = await listen(sourceWith(async function* () { yield [row]; }), undefined, {
+    testRecordings: markers, usersNow: () => 0,
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } },
+  });
+  const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  expect(await read()).toHaveLength(2); await markers.mark(row.id); expect(await read()).toEqual([]);
+});
+
+it("rechecks contributors without restarting the storage scan under steady match publication", async () => {
+  const { store, docs } = memoryWatchStore(), owner = randomUUID(), lobbyId = randomUUID(), row = oneMatch();
+  const registry = createWatchRegistry(store), markers = createTestRecordings(store);
+  docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify([{ id: owner }]) });
+  docs.set(`identities/${owner}`, { kind: "username" });
+  const entered = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  let scans = 0;
+  const source = sourceWith(async function* () { ++scans; yield [row]; });
+  const url = await listen(source, undefined, { testRecordings: markers, usersDeadlineMs: 2500, ratings: { async leaderboard() {
+    entered.resolve(); await resume.promise; return { ok: true, value: { entries: [] } };
+  } } });
+  const started = performance.now();
+  const visitors = Promise.all([fetch(url + "/matches/users"), fetch(url + "/matches/users")]);
+  try {
+    await entered.promise;
+    for (let n = 1; n <= 10; n++) await registry.recordOwners(lobbyId, match(n, []).id);
+    await markers.mark(row.id); // A relevant write during the final check must affect the answer.
+  } finally { resume.resolve(); }
+  for (const res of await visitors) { expect(res.status).toBe(200); expect(await res.json()).toEqual({ users: [] }); }
+  expect(performance.now() - started).toBeLessThan(2500); expect(scans).toBe(1);
+  await registry.recordOwners(lobbyId, match(20, []).id);
+  expect((await fetch(url + "/matches/users")).status).toBe(200); expect(scans).toBe(1);
+});
+
+it("drops stale success after a refresh failure and retries only after the backoff", async () => {
+  let now = 0, builds = 0;
+  const scan = async function* () { if (++builds === 2) throw new Error("refresh failed"); yield []; };
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => now });
+  const status = async () => (await fetch(url + "/matches/users")).status;
+  expect(await status()).toBe(200); now += 60_000;
+  expect(await status()).toBe(200); await expect.poll(status).toBe(503);
+  now += 9_999; expect(await status()).toBe(503); expect(builds).toBe(2);
+  ++now; expect(await status()).toBe(200); expect(builds).toBe(3);
+});
+
+it("discards an expired snapshot and drains its refresh if the policy changes", async () => {
+  let now = 0, digest = "original", builds = 0;
+  const cancelled = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const scan = async function* (signal: AbortSignal) {
+    if (++builds === 1) yield [oneMatch()];
+    else if (builds === 2) { await once(signal, "abort"); cancelled.resolve(); await resume.promise; yield [oneMatch()]; }
+    else yield [];
+  };
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => now, usersPolicy: () => ({ digest }),
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  const first = await read(); expect(first).toHaveLength(2); now += 60_000;
+  expect(await read()).toEqual(first); digest = "changed";
+  const changed = read();
+  try { await cancelled.promise; expect(builds).toBe(2); } finally { resume.resolve(); }
+  expect(await changed).toEqual([]); expect(builds).toBe(3);
 });
 
 it("keeps an unfinished ranking read in its build slot after disconnect and deadline", async () => {
@@ -181,36 +378,91 @@ it("waits for the last reader's cancelled build to stop, then starts a fresh bui
   } finally { finish.resolve(); }
 });
 
-it("applies public visibility as each page arrives", async () => {
+it("applies the latest visibility once, after all pages arrive", async () => {
   const earlier = oneMatch(), later = match(1, ["fern", "spruce"]);
   earlier.seats[0]!.modelLabel = "earlier"; later.seats[0]!.modelLabel = "later";
   const { store, docs } = memoryWatchStore(), lobbyId = randomUUID(), owner = randomUUID(), excluded = randomUUID();
   const ownership = (id: string, who: string) => docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([who]) });
   ownership(earlier.id, owner); ownership(later.id, owner);
-  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [excluded]);
+  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [excluded])!;
+  const checks = vi.spyOn(visibility, "replaysVisibleEach");
   const source = sourceWith(async function* () { yield [earlier]; ownership(later.id, excluded); yield [later]; });
   const leaderboard = async () => { return { ok: true as const, value: { entries: [score("spruce")] } }; };
   const origin = await listen(source, undefined, { publicVisibility: visibility, ratings: { leaderboard } });
   const { users } = await (await fetch(origin + "/matches/users")).json();
+  expect(checks.mock.calls.map(([ids]) => ids)).toEqual([[earlier.id, later.id]]);
   expect(users.map((u: { username: string }) => u.username).sort()).toEqual(["fern", "river"]);
   expect(users[0]).toMatchObject({ username: "fern", matches: 1, wins: 1, latest: { id: earlier.id }, model: "earlier", moreModels: 0 });
 });
 
-it("streams many pages into two user totals without retaining the input rows", async () => {
-  // The producer reuses a single page's row objects. Buffering the rows (or their ids) is not needed.
+it("verifies all 6,000 records before publication but does not retain oversized contributions for expiry", async () => {
   const page = Array.from({ length: 20 }, (_, i) => match(i, ["fern", "river"]));
-  const scan = vi.fn(async function* () {
+  let now = 0, builds = 0, checked = 0;
+  const resume = Promise.withResolvers<void>();
+  const scan = async function* () {
+    if (++builds > 1) { await resume.promise; yield []; return; }
     for (let i = 0; i < 300; i++) {
-      for (let j = 0; j < page.length; j++) Object.assign(page[j]!, match(i * 20 + j, ["fern", "river"], { winner: i % 2 }));
+      for (let j = 0; j < page.length; j++) {
+        const row = match(i * 20 + j, ["fern", "river"], { winner: i % 2 });
+        // With the narrower tally encoding, include real display fields so this fixture still crosses 2 MiB.
+        for (const seat of row.seats) seat.modelLabel = "Example model used for a historical match";
+        Object.assign(page[j]!, row);
+      }
       yield page;
     }
     for (const row of page) row.seats = [];
-  });
-  const origin = await listen(sourceWith(scan), undefined, { ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
-  const r = await fetch(origin + "/matches/users"); expect(r.status).toBe(200);
-  const { users } = await r.json(); expect(users).toHaveLength(2);
+  };
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => now,
+    testRecordings: { async mark() {}, async marked(ids) { checked += ids.length; return new Set(); } },
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const read = async () => { const r = await fetch(url + "/matches/users"); expect(r.status).toBe(200); return (await r.json()).users; };
+  using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const users = await read(); expect(users).toHaveLength(2);
   for (const user of users) expect(user).toMatchObject({ matches: 6000, wins: 3000, losses: 3000, latest: { id: page[19]!.id } });
-  expect(scan).toHaveBeenCalledTimes(1);
+  expect(checked).toBe(12_000); // Every id checked in the scan and again at publication.
+  now += 60_000;
+  const expired = read();
+  try { await vi.waitFor(() => expect(builds).toBe(2)); expect(checked).toBe(12_000); } finally { resume.resolve(); }
+  expect(await expired).toEqual([]);
+  expect(warn.mock.calls).toEqual([["Users listing exceeds the contribution limit; expiry will wait for a full build"]]);
+});
+
+it("keeps a large warm listing across writes to unlisted ids but rebuilds when a contributor changes", async () => {
+  const { store, docs } = memoryWatchStore(), markers = createTestRecordings(store);
+  const rows = Array.from({ length: 200 }, (_, i) => match(i, ["fern", "river"]));
+  for (const row of rows) row.seats[0]!.modelLabel = "M".repeat(12 * 1024); // Contributions alone exceed 2 MiB.
+  const hidden = rows[0]!.id, listed = rows[1]!.id, anotherTime = listed.replace("T01-", "T02-");
+  const owner = randomUUID(), excluded = randomUUID(), lobbyId = randomUUID();
+  for (const { id } of rows) docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([id === hidden ? excluded : owner]) });
+  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [excluded]);
+  const scan = vi.fn(async function* () { yield rows; });
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => 0, publicVisibility: visibility, testRecordings: markers,
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const count = async () => { const r = await fetch(url + "/matches/users"); expect(r.status).toBe(200); return (await r.json()).users[0].matches; };
+  using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  expect(await count()).toBe(199); expect(warn.mock.calls).toEqual([["Users listing exceeds the contribution limit; expiry will wait for a full build"]]);
+  await markers.mark(hidden); await markers.mark(anotherTime); // Scanned but excluded; unknown with the same sequence as a contributor.
+  expect(await count()).toBe(199); expect(scan).toHaveBeenCalledTimes(1);
+  await markers.mark(listed); expect(await count()).toBe(198); expect(scan).toHaveBeenCalledTimes(2);
+});
+
+it("warns once and fails the build without publishing a partial listing at the 32 MiB limit", async () => {
+  // Wide tally inputs reach the byte cap without creating a very large store fixture.
+  const label = "M".repeat(16 * 1024), ratings = { leaderboard: vi.fn() };
+  let scanned = 0;
+  const url = await listen(sourceWith(async function* () {
+    for (let i = 0; i < 3000; i += 20) {
+      const rows = Array.from({ length: 20 }, (_, j) => match(i + j, ["fern", "river"]));
+      for (const row of rows) row.seats[0]!.modelLabel = label;
+      scanned += rows.length; yield rows;
+    }
+  }), undefined, { ratings, usersNow: () => 0 });
+  using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const read = () => fetch(url + "/matches/users");
+  const result = await read(); expect(result.status).toBe(503); expect(await result.json()).not.toHaveProperty("users");
+  const stoppedAt = scanned; expect(stoppedAt).toBeLessThan(3000);
+  expect((await read()).status).toBe(503); expect(scanned).toBe(stoppedAt); expect(ratings.leaderboard).not.toHaveBeenCalled();
+  expect(warn.mock.calls.filter(([message]) => message === "Users listing exceeds the 32 MiB build limit")).toHaveLength(1);
 });
 
 it("invalidates a warm response when the configured owner set changes", async () => {
@@ -283,10 +535,11 @@ it.each(["upstream failure", "deadline"])("retries after 10 seconds and logs a d
 });
 
 // Drive request lifetimes in-process: no listener, external service or timing-dependent client disconnect.
-function visitor(handler: ReturnType<typeof historyRoutes>) {
-  const req = new IncomingMessage(new Socket()); req.url = "/matches/users"; req.method = "GET";
+function visitor(handler: ReturnType<typeof historyRoutes>, method = "GET") {
+  const req = new IncomingMessage(new Socket()); req.url = "/matches/users"; req.method = method;
   const res = new ServerResponse(req);
-  return { done: Promise.resolve(handler(req, res, undefined as never)).then(() => res.statusCode),
+  // There is no connected socket to flush this synthetic response and signal finish for us.
+  return { done: Promise.resolve(handler(req, res, undefined as never)).then(() => { if (res.writableEnded) res.emit("finish"); return res.statusCode; }),
     leave() { res.destroy(); res.emit("close"); } };
 }
 
@@ -419,10 +672,10 @@ it("joins recordings to the original seat identity, never to a later claimant wi
   const links = (kind: string, key: string) => get(`/matches/users/links/${kind}/${key}`);
   expect(await listed()).toContainEqual(expect.objectContaining({ username: name, matches: 1 }));
   docs.set(`identities/${old}`, { ...docs.get(`identities/${old}`), nameState: "released" }); now += 60_001;
-  expect((await listed()).map((u: {username: string}) => u.username)).toEqual([other]);
+  await expect.poll(async () => (await listed()).map((u: {username: string}) => u.username)).toEqual([other]);
   expect(await links("replay", past.id)).toEqual({ handles: [[other, other]] });
   claim(later, name); rows.push(fresh); now += 60_001;
-  expect((await listed()).find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
+  await expect.poll(async () => (await listed()).find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
   expect(await links("replay", past.id)).toEqual({ handles: [[other, other]] });
   expect(await links("replay", fresh.id)).toEqual({ handles: [[name, name], [other, other]] });
   // A current first-time public player links even before their first recording is complete.
@@ -434,6 +687,7 @@ it("joins recordings to the original seat identity, never to a later claimant wi
   }
   const renamed = "sample-arc";
   claim(old, renamed); now += 60_001;
+  await expect.poll(listed).toContainEqual(expect.objectContaining({ username: renamed }));
   const byOwner = await listed();
   expect(byOwner.find((u: {username: string}) => u.username === renamed)).toMatchObject({ matches: 1, agents: [renamed], recent: [{id: past.id}] });
   expect(byOwner.find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });

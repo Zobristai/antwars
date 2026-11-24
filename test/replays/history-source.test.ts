@@ -823,13 +823,13 @@ it("summarises one record by id as a listing page does, and answers null for a m
 });
 
 it("streams bounded batches without caching every summary in a scan", async () => {
-  const ids = Array.from({ length: 21 }, (_, i) => `2026-10-20T02-00-00-000Z-${i + 1}`).sort();
+  const ids = Array.from({ length: 49 }, (_, i) => `2026-10-20T02-00-00-000Z-${i + 1}`).sort();
   const f = await fixture((req, res) => { const match = ids.find(value => req.url!.includes(`${value}.json`))!; res.end(JSON.stringify(record(match))); },
     cursor => ({ items: (cursor ? ids.slice(10) : ids.slice(0, 10)).map(value => ({ name: `${value}.json`, generation: "1" })), nextPageToken: cursor ? undefined : "more" }));
   const scan = async () => { const batches: string[][] = []; for await (const rows of f.source.scan!(signal())) batches.push(rows.map(row => row.id)); return batches; };
-  expect(await scan()).toEqual([ids.slice(0,20), ids.slice(20)]);
-  expect(await scan()).toEqual([ids.slice(0,20), ids.slice(20)]);
-  expect(f.objects.length).toBe(42);
+  expect(await scan()).toEqual([ids.slice(0, 48), ids.slice(48)]);
+  expect(await scan()).toEqual([ids.slice(0, 48), ids.slice(48)]);
+  expect(f.objects.length).toBe(98);
   expect(f.calls.filter(c => !c.url.includes("metadata.google.internal"))).toHaveLength(4);
 });
 
@@ -838,6 +838,27 @@ it("follows empty metadata pages without a page-count ceiling", async () => {
   const f = await fixture(() => { throw Error("no record expected"); }, () => ++page < 12 ? { nextPageToken: String(page) } : {});
   for await (const _ of f.source.scan!(signal())) throw Error("unexpected rows");
   expect(page).toBe(12);
+});
+
+it("retries medium-sized record heads one at a time in a Users scan", async () => {
+  const ids = [1, 2, 3].map(i => `2026-10-20T02-00-00-000Z-${i}`);
+  const bodies = new Map(ids.map((key, i) => [key, JSON.stringify({ padding: "x".repeat(i === 1 ? 0 : 128 * 1024), ...record(key) })]));
+  const reads = new Map<string, number>();
+  let activeRetries = 0, peakRetries = 0;
+  const f = await fixture((req, res) => {
+    const key = pathId(req), bytes = bodies.get(key);
+    if (!bytes) { res.writeHead(404).end(); return; }
+    const n = (reads.get(key) ?? 0) + 1; reads.set(key, n);
+    if (n === 1) { res.end(bytes); return; }
+    peakRetries = Math.max(peakRetries, ++activeRetries);
+    // Keep the retry in flight long enough for both small-head attempts to finish.
+    setTimeout(() => { --activeRetries; res.end(bytes); }, 50);
+  }, () => ({ items: ids.map(key => ({ name: `${key}.json`, generation: "1" })) }));
+  const listed: HistorySummary[] = [];
+  for await (const batch of f.source.scan!(signal())) listed.push(...batch);
+  expect(listed.map(row => row.id)).toEqual(ids);
+  expect(ids.map(key => reads.get(key))).toEqual([2, 1, 2]);
+  expect(peakRetries).toBe(1);
 });
 
 it("uses one parser across a full scan, including a bad record, then shuts it down", async () => {
