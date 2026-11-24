@@ -91,7 +91,11 @@
  *   version 32: extends version 30 with event 25, a queen's bites this tick: u8 colony | v queenId | v biter count |
  *            the biters' ant ids ascending (the first as is, each later one as its difference from the one before)
  *            | v target id + 1 (0: she bit no ant). Only messages carrying one select 32; every other message keeps its
- *            version and bytes. Version 31 is left to queen kills, added separately.
+ *            version and bytes. Version 31 is not used.
+ *   version 33: extends version 32 with optional per-colony queen kills after the kill totals (presence byte, one varint
+ *            per colony, two or four colonies), and event 24 with u8 colony count then one cumulative varint per colony.
+ *            Only messages carrying queen kills select it, with or without queen bites; every other message keeps its
+ *            version and bytes, so a version 32 snapshot holds no queen-kills presence byte.
  *   version 29: extends version 28 with flyers. Ant bits gain bit 5 (flyer); after the agent bytes, each flyer in
  *            ant order has u8 state (0 grounded, 1 flying, 2 hovering, 3 locked out), then v takeOffTick when locked
  *            out, or u16 destX | u16 destY (sub-tile units) when flying or hovering. There is no lifetime field.
@@ -163,6 +167,8 @@ export const FLYER_STREAM_VERSION = 29;
 export const KILLS_STREAM_VERSION = 30;
 /** A queen's biters and her own target each tick, for the board's bite cues; older recordings retain their bytes. */
 export const QUEEN_BITES_STREAM_VERSION = 32;
+/** Optional per-colony queen kills credited by the simulation; older recordings retain their bytes and carry none. */
+export const QUEEN_KILLS_STREAM_VERSION = 33;
 /** Append-only count-mark caste wire indexes; flyer is carried only by a flyer mark (version 29). */
 export const STREAM_COUNT_CASTES = ["any", "worker", "soldier", "flyer"] as const;
 /** A flyer's state on the wire (index). */
@@ -411,6 +417,8 @@ export interface StreamFull {
   deaths: number[];
   /** Authoritative last-hit totals, absent in recordings that did not carry them. */
   kills?: number[];
+  /** Queen kills credited to each colony, absent in recordings that did not carry them; never derived. */
+  queenKills?: number[];
   /** Present only once playback has reached the final tick. */
   result: StreamResult | null;
   /** Food on each tile, row-major. Optional for senders; decode always sets it. */
@@ -425,6 +433,8 @@ export interface StreamFull {
 
 export type StreamEvent =
   | { kind: "kills"; totals: number[] }
+  /** Cumulative queen kills of every colony (version 33). */
+  | { kind: "queenKills"; totals: number[] }
   | { kind: "territoryWin"; progress: StreamTerritoryWin | null }
   | { kind: "birth"; antId: number }
   | { kind: "death"; antId: number; colony: Colony; x: number; y: number }
@@ -464,8 +474,8 @@ export interface StreamMessage {
   events: StreamEvent[];
 }
 
-/** Live query parameters (value "1") by which an updated page opts into newer wire content: kill totals, then queen bites. */
-export const LIVE_OPT_INS = ["kills", "queenBites"] as const;
+/** Live query parameters (value "1") by which an updated page opts into newer wire content: kill totals, queen kills, queen bites. */
+export const LIVE_OPT_INS = ["kills", "queenKills", "queenBites"] as const;
 
 /** Preserve the earlier wire format for live viewers that have not opted into queen bites. */
 export function withoutQueenBites(message: StreamMessage): StreamMessage {
@@ -478,6 +488,14 @@ export function withoutKillTotals(message: StreamMessage): StreamMessage {
   const events = message.events.filter(event => event.kind !== "kills");
   if (message.full?.kills === undefined) return { ...message, events };
   const { kills: _kills, ...full } = message.full;
+  return { ...message, full, events };
+}
+
+/** Preserve the earlier wire format for live viewers that have not opted into queen kills. */
+export function withoutQueenKills(message: StreamMessage): StreamMessage {
+  const events = message.events.filter(event => event.kind !== "queenKills");
+  if (message.full?.queenKills === undefined) return { ...message, events };
+  const { queenKills: _queenKills, ...full } = message.full;
   return { ...message, full, events };
 }
 
@@ -513,6 +531,7 @@ const EVENT_CODES = {
   takeoff: 21,
   landing: 22,
   kills: 23,
+  queenKills: 24,
   queenBites: 25,
 } as const satisfies Record<StreamEvent["kind"], number>;
 
@@ -841,9 +860,20 @@ function killTotals(totals: readonly number[]): void {
   }
 }
 
+function queenKillTotals(totals: readonly number[]): void {
+  if ((totals.length !== 2 && totals.length !== 4) || totals.some(n => !Number.isSafeInteger(n) || n < 0 || n > 0xffff_ffff)) {
+    throw new Error("queen kills need two or four unsigned integers");
+  }
+}
+
 function writeEvent(w: Writer, e: StreamEvent, version: number) {
   w.u8(EVENT_CODES[e.kind]);
   switch (e.kind) {
+    case "queenKills":
+      queenKillTotals(e.totals);
+      w.u8(e.totals.length);
+      for (const total of e.totals) w.v(total);
+      return;
     case "queenBites": {
       if (!isColony(e.colony, 4)) throw new Error("invalid queen-bites colony");
       if (e.biters.length === 0 && e.targetId === null) throw new Error("queen bites need a biter or a target");
@@ -982,6 +1012,14 @@ function readEvent(r: Reader, version: number): StreamEvent {
       const totals = Array.from({ length: 4 }, () => r.v());
       killTotals(totals);
       return { kind: "kills", totals };
+    }
+    case EVENT_CODES.queenKills: {
+      if (version < QUEEN_KILLS_STREAM_VERSION) throw new Error("queen kills need version 33");
+      const count = r.u8();
+      if (count !== 2 && count !== 4) throw new Error("queen kills need two or four colonies");
+      const totals = Array.from({ length: count }, () => r.v());
+      queenKillTotals(totals);
+      return { kind: "queenKills", totals };
     }
     case EVENT_CODES.queenBites: {
       if (version < QUEEN_BITES_STREAM_VERSION) throw new Error("queen bites need version 32");
@@ -1160,8 +1198,9 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
   const flyer = m.ants.flyers?.some((f) => f !== null) === true || m.full?.marks.some(mark => mark.caste === "flyer") === true ||
     m.events.some(e => e.kind === "takeoff" || e.kind === "landing" || (e.kind === "fight" && e.air === true) || (e.kind === "mark" && e.mark.caste === "flyer"));
   const kills = m.full?.kills !== undefined || m.events.some(e => e.kind === "kills");
+  const queenKills = m.full?.queenKills !== undefined || m.events.some(e => e.kind === "queenKills");
   const queenBites = m.events.some(e => e.kind === "queenBites");
-  const version = queenBites ? QUEEN_BITES_STREAM_VERSION : kills ? KILLS_STREAM_VERSION : flyer ? FLYER_STREAM_VERSION : m.full?.setup.rules28 === true ? RULES28_STREAM_VERSION : carriesFourColonies(m) ? FOUR_COLONY_STREAM_VERSION : m.full?.setup.colonyNames !== undefined ? COLONY_NAMES_STREAM_VERSION : deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
+  const version = queenKills ? QUEEN_KILLS_STREAM_VERSION : queenBites ? QUEEN_BITES_STREAM_VERSION : kills ? KILLS_STREAM_VERSION : flyer ? FLYER_STREAM_VERSION : m.full?.setup.rules28 === true ? RULES28_STREAM_VERSION : carriesFourColonies(m) ? FOUR_COLONY_STREAM_VERSION : m.full?.setup.colonyNames !== undefined ? COLONY_NAMES_STREAM_VERSION : deviation ? RATING_DEVIATION_STREAM_VERSION : serviceTier ? SERVICE_TIER_STREAM_VERSION : idleEnd || outsideIndexClock ? IDLE_STREAM_VERSION : lineEnds ? LINE_MARK_STREAM_VERSION : thinkingLevel ? THINKING_LEVEL_STREAM_VERSION : houseIdle ? HOUSE_IDLE_STREAM_VERSION : abandoned ? ABANDONED_STREAM_VERSION : m.full?.setup.gridScale !== undefined ? GRID_SCALE_STREAM_VERSION : spectator ? SPECTATOR_STREAM_VERSION : hasStartingLayout ? START_LAYOUT_STREAM_VERSION : caste ? CASTE_STREAM_VERSION : m.full?.setup.terrain?.rocks !== undefined ? ROCK_STREAM_VERSION : territoryWin ? TERRITORY_WIN_STREAM_VERSION : m.full?.setup.terrain !== undefined ? TERRAIN_STREAM_VERSION : earlyWin ? EARLY_WIN_STREAM_VERSION : commandIdle ? COMMAND_IDLE_STREAM_VERSION : counted ? COUNT_MARK_STREAM_VERSION : variant ? VARIANT_STREAM_VERSION : m.full?.queens !== undefined || m.events.some((e) => e.kind === "queenFounded" || e.kind === "queenLost" || e.kind === "queenOverrun" || (e.kind === "call" && e.call === "found_queen")) ? QUEEN_STREAM_VERSION : STREAM_VERSION;
   w.u8(version);
   const queenEnd = m.events.some(e => e.kind === "end" && e.result.decidedBy === "queen_kills");
   if (queenEnd && m.events.some(e => e.kind === "end" && e.result.decidedBy !== "queen_kills")) {
@@ -1340,6 +1379,14 @@ export function encodeMessage(m: StreamMessage): Uint8Array {
         for (const total of f.kills) w.v(total);
       }
     }
+    if (version >= QUEEN_KILLS_STREAM_VERSION) {
+      w.u8(f.queenKills === undefined ? 0 : 1);
+      if (f.queenKills !== undefined) {
+        if (f.queenKills.length !== colonies) throw new Error("queen kills need one total per colony");
+        queenKillTotals(f.queenKills);
+        for (const total of f.queenKills) w.v(total);
+      }
+    }
   }
 
   w.v(m.events.length);
@@ -1379,7 +1426,7 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
   const r = new Reader(bytes);
   if (r.u16() !== SNAPSHOT_MAGIC) throw new Error("not a stream message");
   const version = r.u8();
-  if (version !== QUEEN_BITES_STREAM_VERSION && version !== KILLS_STREAM_VERSION && version !== FLYER_STREAM_VERSION && version !== RULES28_STREAM_VERSION && version !== FOUR_COLONY_STREAM_VERSION && version !== COLONY_NAMES_STREAM_VERSION && version !== RATING_DEVIATION_STREAM_VERSION && version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
+  if (version !== QUEEN_KILLS_STREAM_VERSION && version !== QUEEN_BITES_STREAM_VERSION && version !== KILLS_STREAM_VERSION && version !== FLYER_STREAM_VERSION && version !== RULES28_STREAM_VERSION && version !== FOUR_COLONY_STREAM_VERSION && version !== COLONY_NAMES_STREAM_VERSION && version !== RATING_DEVIATION_STREAM_VERSION && version !== SERVICE_TIER_STREAM_VERSION && version !== IDLE_STREAM_VERSION && version !== LINE_MARK_STREAM_VERSION && version !== THINKING_LEVEL_STREAM_VERSION && version !== HOUSE_IDLE_STREAM_VERSION && version !== ABANDONED_STREAM_VERSION && version !== STREAM_VERSION && version !== QUEEN_STREAM_VERSION && version !== VARIANT_STREAM_VERSION && version !== COUNT_MARK_STREAM_VERSION && version !== COMMAND_IDLE_STREAM_VERSION && version !== EARLY_WIN_STREAM_VERSION && version !== TERRAIN_STREAM_VERSION && version !== TERRITORY_WIN_STREAM_VERSION && version !== ROCK_STREAM_VERSION && version !== CASTE_STREAM_VERSION && version !== START_LAYOUT_STREAM_VERSION && version !== GRID_SCALE_STREAM_VERSION && version !== SPECTATOR_STREAM_VERSION) throw new Error(`unsupported stream message version ${version}`);
   const flags = r.u8();
   const tick = r.v();
 
@@ -1570,6 +1617,11 @@ export function decodeMessage(bytes: Uint8Array): StreamMessage {
       const present = r.u8();
       if (present > 1 || (present && colonies !== 4)) throw new Error("invalid kill totals presence");
       if (present) { full.kills = perColonyRead(() => r.v()); killTotals(full.kills); }
+    }
+    if (version >= QUEEN_KILLS_STREAM_VERSION) {
+      const present = r.u8();
+      if (present > 1) throw new Error("invalid queen kills presence");
+      if (present) { full.queenKills = perColonyRead(() => r.v()); queenKillTotals(full.queenKills); }
     }
   }
 

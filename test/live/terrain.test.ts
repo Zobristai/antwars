@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GRID_SCALE_STREAM_VERSION, decodeMessage, encodeMessage, encodeReplayMessage, type StreamMessage } from "../../src/live/format.js";
+import { GRID_SCALE_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, decodeMessage, encodeMessage, encodeReplayMessage, type StreamMessage } from "../../src/live/format.js";
 import { LiveHub } from "../../src/live/hub.js";
 import { SpectatorRecorder, SpectatorState } from "../../src/live/model.js";
 import { playScripted, recordLog } from "../../src/live/record.js";
@@ -41,7 +41,8 @@ describe("map stream metadata", () => {
       const live: StreamMessage = { ...recorder.initial(), full: recorder.initialFull() };
       const originalSetup = structuredClone(live.full!.setup);
       const replayBytes = encodeReplayMessage(live), replay = decodeMessage(replayBytes).full!;
-      expect(replayBytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
+      // Where the rules credit queen kills, the opening carries them, zero included, at the queen-kills version.
+      expect(replayBytes[2]).toBe(config.queenKillsFirst === true ? QUEEN_KILLS_STREAM_VERSION : GRID_SCALE_STREAM_VERSION);
       expect(replay.setup.terrain).toEqual(originalSetup.terrain);
       for (const field of ["rules", "seed", "players"]) expect(replay.setup).not.toHaveProperty(field);
       expect(replay.queens).toEqual(live.full!.queens);
@@ -57,7 +58,8 @@ describe("map stream metadata", () => {
     const { lines } = playScripted({ seed: 17, config: playable(config), agents: 2, ticks: 5 });
     const bytes = recordLog(lines);
     const [first, ...rest] = bytes.map(decodeMessage);
-    expect(bytes[0]![2]).toBe(GRID_SCALE_STREAM_VERSION);
+    // A public match's opening carries its queen kills, zero included, so it is written at the queen-kills version.
+    expect(bytes[0]![2]).toBe(QUEEN_KILLS_STREAM_VERSION);
     const expected = { mapId: map.id, mapName: map.name, water: map.water.map(r => [r.x * 2, r.y * 2, r.width * 2, r.height * 2]) };
     expect(first!.full!.setup.terrain).toEqual(expected);
     expect(first!.full!.setup).not.toHaveProperty("rules");

@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG, PUBLIC_CONFIG, SUB } from "../../src/sim/config.js";
 import { createMatch } from "../../src/sim/map.js";
 import { step } from "../../src/sim/step.js";
 import { SpectatorRecorder, SpectatorState } from "../../src/live/model.js";
-import { decodeMessage, encodeMessage, encodePublicMessage, GRID_SCALE_STREAM_VERSION, SUB_TILE, type StreamMessage } from "../../src/live/format.js";
+import { decodeMessage, encodeMessage, encodePublicMessage, GRID_SCALE_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, SUB_TILE, type StreamMessage } from "../../src/live/format.js";
 import { PRE_FRONTLINE_PUBLIC_CONFIG } from "../sim/fixtures.js";
 
 import { playable } from "../playable.ts";
@@ -42,7 +42,8 @@ describe("grid-scale stream metadata (every match plays at grid scale 2)", () =>
     source.full.result = { winner: 0, reason: "time_up", decidedBy: "territory", tick: 10,
       nextStartMs: null, ratingChanges: [{ agent: 0, before: 1200.5, after: 1216.5 }] };
     const bytes = encodeMessage(source);
-    expect(bytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
+    // A public match's opening carries its queen kills, zero included, so it is written at the queen-kills version.
+    expect(bytes[2]).toBe(QUEEN_KILLS_STREAM_VERSION);
     const decoded = decodeMessage(bytes), full = decoded.full!;
     expect(full.setup.gridScale).toBe(2);
     expect(full.setup.rated).toBe(true);

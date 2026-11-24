@@ -1,7 +1,8 @@
 /**
  * Current-format four-colony saves keep the same event history as uninterrupted recording, and a post-mortem compares
- * kill totals and queen bites only where the stored record carries them: an older-format recording (made before either
- * was streamed) re-runs cleanly, while a current-format one still catches a kill-total or queen-bite difference.
+ * kill totals, queen bites and queen kills only where the stored record carries them: an older-format recording (made
+ * before any of them, or before queen kills alone, was streamed) re-runs cleanly, while a current-format one still
+ * catches a difference in any of them.
  */
 import { Readable } from "node:stream";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -9,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { rerunRecord } from "../../src/accounts/postMortemChild.ts";
 import { scanRecord } from "../../src/accounts/postMortemRecord.ts";
 import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.ts";
-import { decodeMessage, encodeMessage, KILLS_STREAM_VERSION, withoutKillTotals, withoutQueenBites, type StreamMessage } from "../../src/live/format.ts";
+import { decodeMessage, encodeMessage, KILLS_STREAM_VERSION, QUEEN_BITES_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, withoutKillTotals, withoutQueenBites, withoutQueenKills, type StreamMessage } from "../../src/live/format.ts";
 import { LiveHub } from "../../src/live/hub.ts";
 import { packMessages, unpackMessages } from "../../src/live/snapshot.ts";
 import { createRecordHandoff } from "../../src/records/handoff.ts";
@@ -38,10 +39,13 @@ async function rerun(record: MatchRecord) {
   return rerunRecord(scanned.reduced);
 }
 
-/** The recording as a stream from before kill totals and queen bites were carried wrote it: each message in its older format. */
-function olderFormat(binary: Uint8Array): Uint8Array {
-  return gzipSync(packMessages(unpackMessages(gunzipSync(binary)).map(bytes =>
-    encodeMessage(withoutQueenBites(withoutKillTotals(decodeMessage(bytes)))))));
+/** The recording as an earlier stream wrote it, each message in that stream's format: before any of the three kinds was carried, or before queen kills alone. */
+const EARLIER_FORMATS = {
+  kills: (message: StreamMessage) => withoutQueenKills(withoutQueenBites(withoutKillTotals(message))),
+  queenKills: withoutQueenKills,
+} as const;
+function earlierFormat(binary: Uint8Array, before: keyof typeof EARLIER_FORMATS): Uint8Array {
+  return gzipSync(packMessages(unpackMessages(gunzipSync(binary)).map(bytes => encodeMessage(EARLIER_FORMATS[before](decodeMessage(bytes))))));
 }
 
 interface Options {
@@ -49,13 +53,16 @@ interface Options {
   readonly matchTicks?: number;
   /** Every colony breeds soldiers from tick 1, so kills are credited. */
   readonly fight?: boolean;
-  /** Build the record from the recording re-encoded in the format used before kill totals and queen bites were streamed. */
-  readonly older?: boolean;
+  /** Queens unshielded and frail enough for the fight to kill some, so queen kills are credited. */
+  readonly queensFall?: boolean;
+  /** Build the record from the recording re-encoded in the format used before kill totals (and all since), or queen kills, were streamed. */
+  readonly before?: keyof typeof EARLIER_FORMATS;
 }
 
 async function recorded(delaySeconds: number, handovers: readonly number[], options: Options = {}) {
   const live = newMatchConfig(rulesConfig("redesign"));
-  const config = { ...live, matchTicks: options.matchTicks ?? 40, terrain: { ...live.terrain!, maps: [QUADRANTS] } };
+  const config = { ...live, matchTicks: options.matchTicks ?? 40,
+    ...(options.queensFall === true ? { queenHp: { ...live.queenHp!, shieldTicks: 0, hp: 1000 } } : {}), terrain: { ...live.terrain!, maps: [QUADRANTS] } };
   let state = createMatch(404, config);
   expect(state.colonies).toHaveLength(4);
   const clock = new ManualClock(), inputs = new Map<string, Uint8Array>(), published = new Map<string, Uint8Array>();
@@ -98,13 +105,13 @@ async function recorded(delaySeconds: number, handovers: readonly number[], opti
     const input = decodeInput([...inputs.values()][0]!);
     const liveQueenBites = unpackMessages(gunzipSync(input.binary)).map(decodeMessage)
       .some(message => message.events.some(event => event.kind === "queenBites"));
-    const binary = options.older === true ? olderFormat(input.binary) : input.binary;
+    const binary = options.before === undefined ? input.binary : earlierFormat(input.binary, options.before);
     const versions = unpackMessages(gunzipSync(binary)).map(bytes => bytes[2]!);
     const messages = unpackMessages(gunzipSync(binary)).map(decodeMessage);
     const record = { ...matchRecord({ id: input.id, binary, logLines: input.logLines, endedAt: input.endedAt, rerun: true }), codeVersion: CODE };
     expect(record.status).toBe("complete");
     return { answer: await rerun(record), record, messages, versions, released, liveQueenBites,
-      kills: state.colonies.map(colony => colony.kills ?? 0) };
+      kills: state.colonies.map(colony => colony.kills ?? 0), queenKills: state.colonies.map(colony => colony.queenKills ?? 0) };
   } finally { hubs.forEach(hub => hub.close()); }
 }
 
@@ -150,7 +157,7 @@ describe("post-mortem of a four-colony match that credited kills", () => {
   const queenBiteEvents = (record: MatchRecord) => record.events.filter(({ event }) => event.kind === "queenBites");
 
   it("re-runs an older-format recording, which carries no kill totals or queen bites, without a mismatch", async () => {
-    const older = await recorded(0, [], { matchTicks: KILL_MATCH_TICKS, fight: true, older: true });
+    const older = await recorded(0, [], { matchTicks: KILL_MATCH_TICKS, fight: true, before: "kills" });
     expect(older.kills.some(n => n > 0)).toBe(true);
     // Queens were bitten in the live match, but the older-format record stores none of those bites.
     expect(older.liveQueenBites).toBe(true);
@@ -186,5 +193,46 @@ describe("post-mortem of a four-colony match that credited kills", () => {
     const event = altered.events.find(e => e.tick === first.tick && e.event.kind === "queenBites")!.event as { kind: "queenBites"; targetId: number | null };
     event.targetId = event.targetId === null ? 0 : event.targetId + 1;
     expect(await rerun(altered)).toEqual({ kind: "mismatch", tick: (Math.floor(first.tick / 100) + 1) * 100 });
+  }, 120_000);
+});
+
+describe("post-mortem of a match that credited queen kills", () => {
+  const ofKind = (record: MatchRecord, kind: string) => record.events.filter(({ event }) => event.kind === kind);
+  const match = { matchTicks: KILL_MATCH_TICKS, fight: true, queensFall: true } as const;
+
+  it("re-runs a recording from before queen kills, which carries kill totals and queen bites but none of them, without a mismatch", async () => {
+    const earlier = await recorded(0, [], { ...match, before: "queenKills" });
+    expect(earlier.queenKills.some(n => n > 0)).toBe(true);
+    expect(earlier.versions).toContain(QUEEN_BITES_STREAM_VERSION);
+    expect(earlier.versions.every(version => version <= QUEEN_BITES_STREAM_VERSION)).toBe(true);
+    expect(earlier.messages[0]!.full).not.toHaveProperty("queenKills");
+    expect(ofKind(earlier.record, "kills").length).toBeGreaterThan(0);
+    expect(ofKind(earlier.record, "queenBites").length).toBeGreaterThan(0);
+    expect(ofKind(earlier.record, "queenKills")).toEqual([]);
+    expect(earlier.answer).toMatchObject({ kind: "done", undecided: [] });
+  }, 120_000);
+
+  it("re-runs a recording from before kill totals, which carries none of the three, without a mismatch", async () => {
+    const older = await recorded(0, [], { ...match, before: "kills" });
+    expect(older.queenKills.some(n => n > 0)).toBe(true);
+    for (const kind of ["kills", "queenBites", "queenKills"]) expect(ofKind(older.record, kind)).toEqual([]);
+    expect(older.answer).toMatchObject({ kind: "done", undecided: [] });
+  }, 120_000);
+
+  it("still compares a current-format recording's queen kills", async () => {
+    const current = await recorded(0, [], match);
+    const stored = ofKind(current.record, "queenKills");
+    expect(stored.length).toBeGreaterThan(0);
+    // The bite that killed the queen and the kill it credited are in one message, at the queen-kill version.
+    const both = current.messages.findIndex(m => m.events.some(e => e.kind === "queenKills") && m.events.some(e => e.kind === "queenBites"));
+    expect(both).toBeGreaterThan(0);
+    expect(current.versions[both]).toBe(QUEEN_KILLS_STREAM_VERSION);
+    expect(current.answer).toMatchObject({ kind: "done", undecided: [] });
+    // One stored queen kill altered: the re-run's block holding it no longer matches.
+    const first = stored[0]!;
+    const altered = structuredClone(current.record);
+    const event = altered.events.find(e => e.tick === first.tick && e.event.kind === "queenKills")!.event as { kind: "queenKills"; totals: number[] };
+    event.totals[0] = event.totals[0]! + 1;
+    expect(await rerun(altered)).toEqual({ kind: "mismatch", tick: Math.min((Math.floor(first.tick / 100) + 1) * 100, KILL_MATCH_TICKS) });
   }, 120_000);
 });
