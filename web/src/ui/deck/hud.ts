@@ -14,6 +14,7 @@ import { STEPPE_LOOK } from "../steppe-look.ts";
 import { navigation } from "../nav.ts";
 import { boardHref, keep } from "../format.ts";
 import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
+import { OFFER_TEXT } from "../../replay.ts";
 import { INSPIRED_BY_URL, PAGE_COPY } from "../../story.ts";
 import { ZOOM_STEP } from "../../camera.ts";
 import { D2_COPY, OVERVIEW_LABEL } from "../hud.ts";
@@ -26,7 +27,7 @@ import { mountDeck } from "./deck.ts";
 import { deckBrand } from "./brand.ts";
 import { mountTeams } from "./pane.ts";
 import { mountAgentDialog } from "./dialog.ts";
-import { caption, colonyCount, legend, type Caption, type Legend } from "./model.ts";
+import { caption, colonyCount, D1_COPY, legend, type Caption, type Legend } from "./model.ts";
 
 /** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end.
  * In em, so it grows with the browser's text size: 520 px at default text. */
@@ -36,6 +37,31 @@ const BUTTON_IN_BAR = "(min-width: 32.5em)";
 const DECK_FIRST = "(min-width: 75em)";
 /** On short narrow screens (phones at doubled text or 200% zoom), the board window joins the scroller at full height. */
 const WINDOW_IN_SCROLLER = "(max-width: 19.99em) and (max-height: 24.99em)";
+
+interface LegendLine {
+  legend: HTMLElement; mode: HTMLElement; rest: HTMLElement; metadata: HTMLElement;
+  back: HTMLElement | null; wait: HTMLElement | null;
+  full: string; withoutWaiting: string; noFacts: boolean;
+}
+
+/** Fit one line at its current width: preserve the connection, then spend spacing, not type size. */
+export function fitLegendLine({ legend, mode, rest, metadata, back, wait, full, withoutWaiting, noFacts }: LegendLine): void {
+  // At phone zoom the detail can wrap instead of overflowing horizontally; LIVE is one line.
+  const overflows = () => rest.scrollWidth > rest.clientWidth || rest.offsetHeight > mode.offsetHeight;
+  legend.classList.remove("is-compact");
+  if (rest.textContent !== full) rest.textContent = full;
+  const separate = wait !== null && withoutWaiting !== "" && overflows();
+  if (separate) rest.textContent = withoutWaiting;
+  if (overflows()) legend.classList.add("is-compact");
+  const move = separate || (wait !== null && overflows());
+  if (move && wait) {
+    if (!withoutWaiting) { rest.textContent = ""; legend.classList.remove("is-compact"); }
+    if (!wait.parentElement) metadata.insertBefore(wait, back);
+  } else {
+    wait?.remove();
+  }
+  metadata.hidden = noFacts && !move;
+}
 
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;
@@ -189,6 +215,15 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // One Bring your agent button: in the top bar from 32.5em (520 px at default text); narrower, at the deck's end before the footer.
   const mq = (query: string) => (typeof win.matchMedia === "function" ? win.matchMedia(query) : null);
+  // At doubled text the 390 px row gives the full label 386 px: 8 px beyond its measured width.
+  const compactOffer = mq("(width < 12.1875em)");
+  const fitOffer = () => {
+    const label = compactOffer?.matches ? "Watch an agent replay" : OFFER_TEXT;
+    setText(teams.offer, label);
+    setAttr(teams.offer, "aria-label", label === OFFER_TEXT ? null : `${label}: ${OFFER_TEXT}`);
+  };
+  fitOffer();
+  if (compactOffer) listen(compactOffer, "change", fitOffer);
   const wide = mq(BUTTON_IN_BAR);
   const placeButton = () => {
     const inBar = wide === null || wide.matches;
@@ -325,6 +360,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // ---------------------------------------------------------------- painting
   let legendKey = "";
+  let fitLegend: (() => void) | undefined;
   /** Keep connection state intact; other mode facts retain individual, unbroken metadata cells. */
   const paintLegend = (l: Legend, four: boolean) => {
     const keyNow = `${four}|${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
@@ -335,11 +371,24 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     setHidden(dot, l.dot === null);
     dot.dataset.kind = l.dot ?? "";
     setText(mode, l.words[0] ?? "");
-    const isState = (word: string) => /waiting for new data|connect/i.test(word);
+    const isState = (word: string) => word === D1_COPY.waiting || /connect/i.test(word);
     const state = l.words.slice(1).filter(isState);
-    setText(rest, state.length ? `\u00a0· ${state.join(" · ")}` : "");
-    metadata.replaceChildren(...l.words.slice(1).filter(word => !isState(word)).map(word => h(doc, "span", "sb-meta-item", word)), back);
-    setHidden(metadata, metadata.childElementCount === 1 && l.back === null);
+    const full = state.length ? `\u00a0· ${state.join(" · ")}` : "";
+    setText(rest, full);
+    const facts = l.words.slice(1).filter(word => !isState(word));
+    const noFacts = !facts.length && !l.back;
+    metadata.replaceChildren(...facts.map(word => h(doc, "span", "sb-meta-item", word)), back);
+    setHidden(metadata, noFacts);
+    legendEl.classList.remove("is-compact");
+    fitLegend = undefined;
+    if (state.length) {
+      const wait = state.includes(D1_COPY.waiting) ? h(doc, "span", "sb-meta-item", D1_COPY.waiting) : null;
+      const other = state.filter(word => word !== D1_COPY.waiting);
+      const withoutWaiting = other.length ? `\u00a0· ${other.join(" · ")}` : "";
+      const line = { legend: legendEl, mode, rest, metadata, back, wait, full, withoutWaiting, noFacts };
+      fitLegend = () => fitLegendLine(line);
+      fitLegend();
+    }
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
   };
@@ -407,12 +456,15 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let metadataH = -1;
   let footerH = -1;
   let laneH = -1;
-  const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+  const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(entries => {
+    if (entries.some(e => e.target === frameEl || e.target === mode)) fitLegend?.();
     const next = legendEl.offsetHeight;
     const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight, nextLane = lane.offsetHeight;
     if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH || nextLane !== laneH)) scheduleRefit();
     legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter; laneH = nextLane;
   });
+  watch?.observe(frameEl);
+  watch?.observe(mode);
   watch?.observe(legendEl);
   watch?.observe(deckEl);
   watch?.observe(metadata);

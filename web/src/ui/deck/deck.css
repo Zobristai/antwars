@@ -701,7 +701,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* Score Band: shared comparison, aligned colony rows, then the unchanged board window.
    At narrow widths the clock/map lead colony cards and comparison follows them. */
-.score-band { --d1-legend-half: 8px; }
+.score-band { --d1-legend-half: calc(var(--aw-lh-meta) / 2); }
 .score-band.d1-hud { grid-template-rows: auto 4px auto 16px minmax(244px, 1fr) minmax(36px, auto); overflow-y: auto; }
 .score-band .d1-below { display: contents; }
 .score-band .d1-deck {
@@ -714,9 +714,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 }
 .sb-band { grid-column: 1 / -1; display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; padding: 0 0 12px; }
 .sb-clock-map { display: flex; flex-direction: column; gap: 10px; padding: 2px 10px 0 2px; border-right: 1px solid var(--aw-line); }
-.score-band .d1-clock { align-self: start; }
+.score-band .d1-clock { align-self: start; font-size: var(--aw-text-title); line-height: var(--aw-lh-title); white-space: normal; }
 .score-band .d1-map { padding: 0; justify-content: start; min-height: 0; }
-.score-band .d1-map-name { overflow: visible; text-overflow: clip; }
+.score-band .d1-map-name { overflow: visible; text-overflow: clip; font-size: var(--aw-text-lead); }
+.sb-clock-map .d1-glabel, .sb-comparison .d1-ml { font-size: var(--aw-text-label); }
+.sb-comparison .d1-ml { line-height: var(--aw-lh-badge-sm); }
 .score-band .d1-score { grid-area: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(150px, .7fr); gap: 20px; width: 100%; padding: 0; border: 0; overflow: visible; }
 .sb-gauge { display: grid; grid-template-rows: auto 12px auto; align-content: start; gap: 10px; min-width: 0; }
 .sb-bar { position: relative; display: flex; height: 12px; background: var(--d1-ground); }
@@ -725,12 +727,13 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-segment + .sb-segment { box-shadow: inset 1px 0 0 var(--aw-surface); }
 .sb-lead { position: absolute; top: -3px; bottom: -3px; border-left: 2px dotted var(--aw-ink-bright); }
 .sb-values { display: grid; grid-template-columns: repeat(var(--sb-count, 2), minmax(0, 1fr)); gap: 6px; }
-.sb-figure { display: flex; align-items: center; gap: 4px; color: var(--aw-ink-bright); font-size: 13px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sb-figure { display: flex; align-items: center; gap: 4px; color: var(--aw-ink-bright); font-size: var(--aw-text-body); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sb-figure::before, .score-band .d1-name::before { content: ''; flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--sb-ink, currentColor); }
-.sb-unavailable, .sb-rule { color: var(--aw-ink-3); font-size: 12px; white-space: nowrap; }
+.sb-figure::before { width: .5rem; height: .5rem; }
+.sb-unavailable, .sb-rule { color: var(--aw-ink-3); font-size: var(--aw-text-meta); white-space: nowrap; }
 .sb-hold { display: flex; flex-direction: column; align-items: start; gap: 5px; padding-left: 12px; border-left: 1px solid var(--aw-line); min-width: 0; }
-.sb-holder { color: var(--sb-ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
-.sb-hold-value { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--sb-ink); white-space: nowrap; }
+.sb-holder { color: var(--sb-ink); font-size: var(--aw-text-meta); font-weight: 700; white-space: nowrap; }
+.sb-hold-value { display: flex; align-items: center; gap: 6px; font-size: var(--aw-text-lead); font-weight: 700; color: var(--sb-ink); white-space: nowrap; }
 .sb-columns { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; padding: 6px 0; border-block: 1px solid var(--d1-hair); }
 .score-band .d1-team { display: grid; grid-column: 1 / -1; grid-row: auto; grid-template-columns: subgrid; grid-template-areas: none; gap: 0 8px; align-items: center; min-height: auto; padding: 6px 0; border-top: 0; border-bottom: 1px solid var(--d1-hair); overflow: visible; container-type: normal; }
 .score-band .d1-team:last-of-type { border-bottom: 0; }
@@ -854,15 +857,20 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-ml { overflow: visible; text-overflow: clip; }
 .score-band .d1-frame { grid-template-rows: auto minmax(0, 1fr) minmax(var(--d1-lane), auto); }
 .score-band .d1-frame > :not(.d1-legend) { grid-column: 1; }
-.sb-metadata { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px 4px; background: var(--aw-bg); z-index: 1; color: var(--aw-ink-2); font-size: 12px; pointer-events: auto; }
+.sb-metadata { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 12px 4px; background: var(--aw-bg); z-index: 1; color: var(--aw-ink-2); font-size: var(--aw-text-meta); pointer-events: auto; }
 .sb-meta-item { white-space: nowrap; }
 .score-band .d1-window { grid-row: 2; }
 .score-band .d1-lane { grid-row: 3; }
 .score-band .d1-frame > .d1-lane:has(.aw-replay-state:not(:empty)) { padding-block: var(--aw-space-1); }
 .score-band .d1-back { margin-left: auto; }
-.score-band .d1-legend { display: flex; white-space: nowrap; letter-spacing: .02em; }
+.score-band .d1-legend { display: flex; top: calc(-1 * var(--d1-legend-half)); font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); white-space: nowrap; letter-spacing: .02em; }
 .score-band .d1-legend-rest { overflow: visible; white-space: nowrap; text-overflow: clip; }
-.score-band .d1-foot { flex-wrap: wrap; min-height: 36px; align-content: center; }
+.score-band .d1-frame > .d1-legend.is-compact { left: 0; max-width: 100%; padding-inline: 0; letter-spacing: normal; }
+.score-band .d1-legend.is-compact .d1-dot { margin-right: 2px; }
+.score-band .d1-foot { flex-wrap: wrap; min-height: 36px; align-content: center; font-size: var(--aw-text-meta); }
+.score-band .d1-foot-credit { font-size: inherit; }
+.score-band .d1-offer { font-size: var(--aw-text-body); }
+.score-band .d1-deck-end > .d1-agent-button { font-size: var(--aw-text-lead); padding-block: .5em; }
 .sb-rules-key { display: inline-flex; align-items: center; gap: 12px; flex: none; white-space: nowrap; }
 .sb-key-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
 .sb-key-toggle:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
@@ -949,7 +957,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-below > .d1-lane > .d1-caption:not([data-kind="none"]) { flex: 1 0 100%; }
   .score-band .d1-below > .d1-lane > .d1-controls { flex: 1 1 100%; }
   .score-band .d1-name { font-size: 14px; letter-spacing: .02em; }
-  .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; font-size: 12px; }
+  .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; }
   .score-band :is(.d1-title, .d1-model) { font-size: 13px; }
   .score-band .d1-dot { margin-right: 5px; }
   .sb-metadata { padding: 8px 8px 4px; }
@@ -1002,6 +1010,17 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1 .d1-top > .d1-pages { margin-left: calc(-1 * var(--aw-space-2)); }
 }
 
+/* Give the no-agent offer the full row before shortening its label; leave room on either side. */
+@media (width < 13.5em) {
+  .score-band .d1-foot:has(> .d1-offer:not([hidden])) { padding-inline: 2px; }
+  .score-band .d1-offer { flex: 1 0 100%; padding-inline: 0; }
+}
+
+/* At 320 px with doubled text the footer credit needs more than the 304 px between its usual insets. */
+@media (width < 12em) {
+  .score-band .d1-foot { padding-inline: var(--aw-space-1); }
+}
+
 /* Below the ordinary phone width, page zoom leaves less room than a one-line label.
    Keep whole words and controls, let existing groups take the space they need. */
 @media (max-width: 319px) {
@@ -1038,7 +1057,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 /* From 320 CSS px, allow these labels to wrap between words when needed, including at the page's own spacing.
    Gauge figures move to another row when measured content no longer fits. */
 @media (min-width: 320px) {
-  .score-band :is(.d1-clock, .d1-map-name, .d1-agent-button) { white-space: normal; }
+  .score-band :is(.d1-map-name, .d1-agent-button) { white-space: normal; }
   .score-band .aw-replay-state { white-space: normal; overflow-wrap: normal; word-break: normal; }
   .score-band .d1-agent-button { text-align: center; }
   .score-band .sb-key .sb-key-term { display: inline-block; max-width: 100%; }

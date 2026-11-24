@@ -21,7 +21,7 @@ import { markup } from "./port-markup.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
-const STYLES = [TOKENS, ...["ui/ui.css", "ui/deck/deck.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
+const STYLES = [TOKENS, ...["ui/ui.css", "design-system/tokens.css", "ui/deck/deck.css"].map(path => read(`../../../web/src/${path}`))].join("\n");
 /** A four-colony setup's names: the shared table's, by colony number. */
 const NAMES = SUPERCOLONY_NAMES.map(n => n.label);
 const TICK = 4000;

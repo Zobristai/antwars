@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { createServer } from "vite";
 import { chromium } from "playwright-core";
+import { applyTextSize, fontconfigFor } from "../../../web/render-check/fonts.ts";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
+import { fitLegendLine } from "../../../web/src/ui/deck/hud.ts";
+import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
+import { dom, type ElementPort } from "../pages/dom.ts";
+import { markup } from "./port-markup.ts";
 import { roster } from "../../../web/src/ui/deck/model.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
@@ -83,6 +89,26 @@ describe("scrolling HUD fit evidence", () => {
           await page.setViewportSize({ width, height: 900 });
           await page.setContent(`<style>body{margin:0}:root{--aw-sans:'${font}',sans-serif}${tokens}${css}.d1{position:relative;inset:auto}.d1-frame{margin-top:8px;--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="d1-window"></div></section><div class="d1-below"><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-lane"></div><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></div></main>`);
           await page.evaluate(() => document.fonts.ready);
+          const line = await page.evaluateHandle(() => {
+            const node = (selector: string) => document.querySelector<HTMLElement>(selector)!;
+            const wait = document.createElement("span"); wait.className = "sb-meta-item"; wait.textContent = "Waiting for new data";
+            return { legend: node(".d1-legend"), mode: node(".d1-mode"), rest: node(".d1-legend-rest"),
+              metadata: node(".sb-metadata"), wait, full: "\u00a0· Waiting for new data", withoutWaiting: "", back: null, noFacts: false };
+          });
+          // Measure the unwrapped words with the maximum allowed space, independently of the fitter.
+          const fits = await line.evaluate(({ legend, rest, full }) => {
+            legend.classList.add("is-compact"); rest.style.whiteSpace = "nowrap"; rest.textContent = full;
+            const range = new Range(); range.selectNodeContents(rest);
+            // A fraction of a pixel over the available width can wrap a whole word.
+            const fits = range.getBoundingClientRect().width <= rest.getBoundingClientRect().width;
+            rest.style.removeProperty("white-space"); legend.classList.remove("is-compact");
+            return fits;
+          });
+          await page.evaluate(fitLegendLine, line);
+          const copies = await line.evaluate(({ legend, metadata }) => [legend, metadata].map(el =>
+            (el.textContent?.match(/Waiting for new data/g) ?? []).length));
+          expect(copies, `${width}px ${font} default${defaultFontSize}: waiting placement`).toEqual(fits ? [1, 0] : [0, 1]);
+          await line.dispose();
           const items = await page.evaluate(measureLabels, ".d1-name,.d1-title,.d1-model,.d1-ml,.d1-mv,.d1-clock,.d1-map-name,.d1-glabel,.d1-mode,.d1-legend-rest,.sb-meta-item,.sb-history");
           const visible = items.filter(i => i.target);
           expect(visible.filter(i => i.clipped || i.outside), `${width}px ${font} default${defaultFontSize}: cut`).toEqual([]);
@@ -106,6 +132,40 @@ describe("scrolling HUD fit evidence", () => {
       } finally { await browser.close(); }
     }
   }, 60_000);
+  it.each([16, 32])("scales comparison type at a %i px browser default without splitting four-colony figures or showing unavailable values", async size => {
+    const css = ["design-system/tokens.css", "ui/deck/deck.css"].map(path =>
+      readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");
+    const deck = mountDeck(dom().doc), frame = scoreFrame(4);
+    frame.board!.held = [10, 10, 60, 20];
+    frame.board!.territoryWin = { colony: 2, startTick: 5900, winTick: 6100 };
+    deck.update(frame);
+    const band = [deck.header, deck.score].map(el => markup(el as unknown as ElementPort)).join("");
+    const sizes = { ".d1-clock": 15, ".sb-comparison h3": 11, ".sb-value": 13, ".sb-unavailable": 12,
+      ".sb-holder": 12, ".sb-rule": 12, ".sb-hold-words": 14 };
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox", `--blink-settings=defaultFontSize=${size}`] });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(`<style>${css} body{margin:0}</style><main class="d1 score-band"><div class="d1-deck"><div class="sb-band">${band}</div></div></main>`);
+      for (const width of [320, 390, 1280]) {
+        await page.setViewportSize({ width, height: 844 });
+        for (const [selector, base] of Object.entries(sizes)) {
+          const actual = await page.locator(selector).evaluateAll(els => els.filter(e => e.checkVisibility()).map(e => getComputedStyle(e).fontSize));
+          expect(new Set(actual), selector).toEqual(new Set([`${base * size / 16}px`]));
+        }
+        expect(await page.locator(".sb-unavailable:visible").first().textContent()).toBe("Not recorded");
+        expect(await page.locator(".sb-gauge").first().locator(".sb-figure:visible").count()).toBe(0);
+        const figures = page.locator(".sb-gauge").nth(1).locator(".sb-figure:visible");
+        const boxes = await figures.evaluateAll(els => els.map(e => {
+          const value = e.querySelector(".sb-value")!.getBoundingClientRect();
+          return { left: e.getBoundingClientRect().left, right: value.right, top: value.top };
+        }));
+        expect(boxes).toHaveLength(4);
+        expect(new Set(boxes.map(b => b.top)).size).toBe(1);
+        boxes.forEach((b, i) => expect(b.right).toBeLessThanOrEqual(boxes[i + 1]?.left ?? width));
+      }
+    } finally { await browser.close(); }
+  });
   it("keeps metric cells inside the deck across the narrow-to-desktop boundary", async () => {
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
@@ -215,6 +275,109 @@ describe("scrolling HUD fit evidence", () => {
       const selected = await page.locator(".d1-member").evaluate(e => ({ button: getComputedStyle(e).backgroundColor,
         badge: getComputedStyle(e.querySelector(".sb-seat-badge")!).outlineStyle, idle: getComputedStyle(e.querySelector(".sb-idle")!).outlineStyle }));
       expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
+    } finally { await browser.close(); }
+  });
+  it("moves only the waiting message when the legend cannot fit, at default or enlarged text", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/legend-test") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end(`<meta name="viewport" content="width=device-width, initial-scale=1"><main class="aw-hud"></main>`);
+    });
+    await server.listen();
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor("Liberation Sans") } });
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      for (const size of [16, 32] as const) {
+        const page = await browser.newPage({ viewport: { width: 320, height: 844 }, isMobile: true, deviceScaleFactor: 2 });
+        await applyTextSize(page, size);
+        await page.goto(`http://127.0.0.1:${addr.port}/legend-test`);
+        await page.addStyleTag({ content: readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8") });
+        await page.addScriptTag({ type: "module", content: `
+          import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+          import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+          const hud = mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions: {} });
+          const view = { frame: scoreFrame(2, 0), connection: 'Reconnecting…', mode: { label: 'LIVE', detail: '', link: null }, board: '2d', selected: null, selectedAgent: -1, stalled: true };
+          hud.update(view);
+          window.addEventListener('online', () => hud.update({...view, connection:''}));
+        ` });
+        const rest = page.locator(".d1-legend-rest"), moved = page.locator(".sb-meta-item:visible").filter({ hasText: "Waiting for new data" });
+        await rest.waitFor();
+        // In the wider font even the default-size combined legend overflows at 320px.
+        await moved.waitFor();
+        expect(await rest.textContent()).not.toContain("Waiting for new data");
+        expect(await rest.textContent()).toContain("Reconnecting");
+        expect(await rest.evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+        expect(await rest.evaluate(e => getComputedStyle(e).textTransform)).toBe("uppercase");
+        const compact = page.locator(".d1-legend.is-compact");
+        await expect.poll(() => compact.count()).toBe(size === 32 ? 1 : 0);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await expect.poll(() => compact.count()).toBe(0);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await moved.waitFor({ state: "hidden" });
+        expect(await rest.textContent()).toContain("Waiting for new data");
+        await page.setViewportSize({ width: 320, height: 844 });
+        await moved.waitFor();
+        // Waiting alone still fits at default size; when enlarged it belongs in metadata,
+        // without leaving a separator behind. Wider screens restore it to the legend.
+        await page.evaluate(() => dispatchEvent(new Event("online")));
+        await moved.waitFor({ state: size === 32 ? "visible" : "hidden" });
+        if (size === 32) expect(await rest.textContent()).toBe("");
+        else expect(await rest.textContent()).toContain("Waiting for new data");
+        const waiting = size === 32 ? moved : rest;
+        expect(await waiting.evaluate(e => {
+          const range = new Range(); range.selectNodeContents(e);
+          const rects = [...range.getClientRects()];
+          return { size: getComputedStyle(e).fontSize, lines: rects.length, inside: rects.every(r => r.left >= 0 && r.right <= innerWidth) };
+        })).toEqual({ size: `${12 * size / 16}px`, lines: 1, inside: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await moved.waitFor({ state: "hidden" });
+        expect(await rest.textContent()).toContain("Waiting for new data");
+        expect(await rest.textContent()).not.toContain("Reconnecting");
+        // The same match with no agents offers a replay. Its full name remains available
+        // when only the shorter label fits, including after returning to the narrow layout.
+        const full = "Watch a recorded agent match", short = "Watch an agent replay";
+        const offer = page.getByRole("link", { name: new RegExp(full) });
+        for (const width of [320, 389, 390, 389, 320]) {
+          await page.setViewportSize({ width, height: 844 });
+          const label = width < 390 && size === 32 ? short : full;
+          await expect.poll(() => offer.textContent()).toBe(label);
+          expect(await offer.evaluate(el => {
+            const range = document.createRange(); range.selectNodeContents(el);
+            const rects = [...range.getClientRects()];
+            return { size: getComputedStyle(el).fontSize, lines: rects.length, inside: rects.every(r => r.left >= 0 && r.right <= innerWidth) };
+          })).toEqual({ size: `${13 * size / 16}px`, lines: 1, inside: true });
+          if (size === 32 && width === 390) {
+            const spare = await offer.evaluate(el => {
+              const range = new Range(); range.selectNodeContents(el);
+              return el.clientWidth - range.getBoundingClientRect().width;
+            });
+            expect(spare).toBeGreaterThanOrEqual(8);
+          }
+        }
+        await page.close();
+      }
+    } finally { await browser.close(); await server.close(); }
+  }, 30_000);
+  it("keeps the enlarged footer attribution on one line on a high-density 320 px phone", async () => {
+    const css = ["design-system/tokens.css", "ui/ui.css", "ui/deck/deck.css"].map(path =>
+      readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor("Liberation Sans") } });
+    try {
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+      await applyTextSize(page, 32);
+      await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0}${css}</style>
+        <main class="d1 score-band"><footer class="d1-foot"><span class="sb-rules-key">Rules · Key</span><a class="d2-link">Inspired by @LambethEthan</a></footer></main>`);
+      const link = page.locator(".d1-foot .d2-link");
+      const result = await link.evaluate(el => {
+        const range = document.createRange(); range.selectNodeContents(el);
+        return { font: getComputedStyle(el).fontSize, lines: range.getClientRects().length,
+          inside: [...range.getClientRects()].every(r => r.left >= 0 && r.right <= innerWidth) };
+      });
+      expect(result).toEqual({ font: "24px", lines: 1, inside: true });
     } finally { await browser.close(); }
   });
   it("reserves idle slots and lets the footer Key expand without clipping or breaking its controls", async () => {
