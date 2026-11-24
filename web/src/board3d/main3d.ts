@@ -758,7 +758,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     const cueRects = cues.update(shown, { toScreen, bodyPx: (tx, ty, soldier) => ants.lengthTiles * tilePxAt(tx, ty) * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : [], words.layer.visible ? dots : [], markers.chips);
     words.update(shown, toScreen, blocked, placementView, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront, cueRects);
     squads.updateBadges(shown, toScreen, words.badges);
-    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : []);
+    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : [], words.layer.visible ? words.chipObstacles : []);
     if (board?.result) endedAt ??= now;
     else endedAt = null;
     words.layer.alpha = squads.layer.alpha = cues.layer.alpha = cues.aboveBadges.alpha = endedAt === null ? 1 : Math.max(0, 1 - (now - endedAt) / FINALE_FADE_MS);

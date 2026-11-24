@@ -221,7 +221,6 @@ export class QueenBiteCues {
   readonly aboveBadges = new Container();
   private readonly raisedChips = new Graphics();
   private chips: readonly DamageChip[] = [];
-  private markers: readonly Rect[] = [];
   private readonly normal;
   private readonly raised = labelParts(this.aboveBadges);
   private readonly pool: BitmapText[] = [];
@@ -238,7 +237,6 @@ export class QueenBiteCues {
   /** Lay out and draw this frame's cues; returns the rects the marks' layout keeps clear of. */
   update(frame: Frame, board: CueBoard, screen: { w: number; h: number }, blocked: readonly Rect[], markers: readonly Rect[], chips: readonly DamageChip[] = []): readonly Rect[] {
     this.chips = chips;
-    this.markers = markers;
     this.sparks.clear();
     this.brackets.clear();
     // The contacts of the ants biting her, on her ring, above her emblem so the mob cannot hide them.
@@ -266,11 +264,11 @@ export class QueenBiteCues {
   }
 
   /** Once badges have followed their ants, lift only fallback labels or those a badge still touches. */
-  drawLabels(badges: readonly Rect[]): void {
+  drawLabels(badges: readonly Rect[], chipObstacles: readonly Rect[] = []): void {
     // Keep the original face on its bar unless a fixed marker or a badge with no free spot covers it.
     this.raisedChips.clear();
     for (const c of this.chips) {
-      if (this.markers.some(m => overlaps(m, c)) || badges.some(b => overlaps(grow(b, 1), c))) {
+      if (chipObstacles.some(m => overlaps(m, c)) || badges.some(b => overlaps(grow(b, 1), c))) {
         this.raisedChips.rect(c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0).fill(c.colour);
       }
     }

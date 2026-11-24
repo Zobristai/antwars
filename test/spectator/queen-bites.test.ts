@@ -10,7 +10,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine.js";
 import { Scene } from "@babylonjs/core/scene.js";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh.js";
 import { TICK_MS } from "../../src/live/snapshot.ts";
-import { decodeMessage, encodeMessage, withoutQueenBites, type StreamEvent, type StreamMessage } from "../../src/live/format.ts";
+import { decodeMessage, encodeMessage, withoutQueenBites, type StreamEvent, type StreamMark, type StreamMessage } from "../../src/live/format.ts";
 import { SpectatorState } from "../../src/live/model.ts";
 import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import { SOLDIER_HATCH_TIMING, TERRAIN_RULES, damagePerTick, type SimConfig } from "../../src/sim/config.ts";
@@ -23,7 +23,7 @@ import { colonyTint } from "../../web/src/colony-palette.ts";
 import { EMBLEM_BAR, QUEEN_CHIP, QUEEN_EMBLEM, QUEEN_LIT, QueenHomes, emblemState, mixColour } from "../../web/src/effects.ts";
 import { MarkerSpecs3D, markerParticles } from "../../web/src/board3d/markers3d.ts";
 import { QueenBiteCues, CUE_BRACKETS, bracketBox, cueName, emblemRect, layoutCues, stackSpots } from "../../web/src/queen-bites.ts";
-import { Placer, placeBadges, overlaps } from "../../web/src/words.ts";
+import { AIR_ROUTE, Placer, Words, markerRect, placeBadges, overlaps } from "../../web/src/words.ts";
 import { boardQueenHp } from "../../web/src/variant.ts";
 import { playRedesign } from "./redesign-recording.ts";
 
@@ -387,7 +387,7 @@ describe("the cues' layout", () => {
       expect(chip.x1 - chip.x0).toBeLessThan(EMBLEM_BAR.w);
       expect(chip.y1 - chip.y0).toBe(EMBLEM_BAR.h);
       expect(cues.update(frame, board, screen, [], [chip], [chip])).toContain(chip);
-      cues.drawLabels([]);
+      cues.drawLabels([], [chip]);
       expect(raised.context.instructions).toHaveLength(1);
       cues.update(frame, board, screen, [], [], [chip]);
       cues.drawLabels([chip]);
@@ -400,6 +400,41 @@ describe("the cues' layout", () => {
     tilted.update(none, project, false);
     expect(flat.chips).toEqual([]);
     expect(tilted.chips).toEqual([]);
+  });
+
+  it("raises either board's chip where only the outer stroke of a linked flyer patrol marker touches it", () => {
+    const words = new Words(screen), cues = new QueenBiteCues();
+    const mark = (id: number, tileX: number): StreamMark => ({ id, tileX, tileY: 8, agent: 0, colony: 0,
+      words: [], verb: "PATROL", caste: "flyer", count: 3, answered: 1, claimed: 1, laidTick: id });
+    const marks = [mark(1, 8), mark(2, 6)];
+    const project = (x: number, y: number): [number, number] => [20 * x, 20 * y];
+    const markerFrame = (ms: StreamMark[]) => Object.assign(new Frame(), f, { board: { ...f.board!, setup: { ...f.board!.setup, gridScale: 2 }, marks: ms },
+      chainMarks: ms, marks: ms.map(m => ({ mark: m, ageMs: 5000 })) });
+    words.update(markerFrame(marks), project, [], "linked");
+    expect(words.drawnRoutes()[0]?.ids).toEqual([1, 2]);
+    const { x, y } = words.markers()[0]!;
+    // Place the chip's near end a quarter pixel inside the outer edge, beyond the plain marker box.
+    const px = x + AIR_ROUTE.ringR + AIR_ROUTE.ringW / 2 - 0.25;
+    const q = f.board!.queens![0]!, hp = boardQueenHp(f.board!)!.hp;
+    const frame = Object.assign(new Frame(), f, { board: { ...f.board!, queens: [{ ...q, hp: hp / 2 }] },
+      queenPulse: [{ ...f.queenPulse[0]!, colony: q.colony, queenId: q.id, chip: hp / 8 }] });
+    const point = (): [number, number] => [px, y - 16];
+    const flat = new QueenHomes(20), tilted = new MarkerSpecs3D();
+    flat.update(frame, false, point);
+    tilted.update(frame, (_x, _y, out) => { [out.x, out.y] = point(); }, false);
+    for (const chips of [flat.chips, tilted.chips]) {
+      expect(chips).toHaveLength(1);
+      expect(chips[0]!.x0).toBeCloseTo(px);
+      expect(overlaps(markerRect(x, y), chips[0]!)).toBe(false);
+      const paint = (ms: StreamMark[]) => {
+        words.update(markerFrame(ms), project, [], ms.length);
+        cues.update(frame, board, screen, [], [], chips);
+        cues.drawLabels([], words.chipObstacles);
+        return (cues.aboveBadges.children[0] as Graphics).context.instructions.length;
+      };
+      expect(paint(marks)).toBe(1);
+      expect(paint([marks[0]!])).toBe(0); // unlinked: no outer ring is drawn
+    }
   });
 
   it("raises only the colliding label's drawing, including when a badge cannot step aside", () => {

@@ -688,7 +688,7 @@ async function start(): Promise<void> {
     words.update(shown, camera.toScreen, blocked, placementView, squads.anchors(shown, camera.toScreen), squads.badgeR, camera.toScreen, cueRects);
     lap("words");
     squads.updateBadges(shown, camera.toScreen, words.badges);
-    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : []);
+    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : [], words.layer.visible ? words.chipObstacles : []);
     lap("tags");
     // The finale: once playback has the result, the board's text and badges fade out under it, and the tooltips go.
     if (board?.result) endedAt ??= now;
