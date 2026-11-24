@@ -17,6 +17,7 @@ import { wakingStore } from "../../src/slots/wake.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
+import { createWatchRegistry } from "../../src/live/watch-registry.ts";
 import { currentRosterSeats } from "../../src/replays/roster-ownership.ts";
 
 // Tally and cancellation fixtures have their own lobby seats and a current claim for each synthetic owner.
@@ -210,6 +211,23 @@ it("invalidates a warm listing immediately when this process marks a recording",
   });
   const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
   expect(await read()).toHaveLength(2); await markers.mark(row.id); expect(await read()).toEqual([]);
+});
+
+it("retries a cold listing for its waiting visitors when recording ownership commits", async () => {
+  const { store, docs } = memoryWatchStore(), owner = randomUUID(), lobbyId = randomUUID(), row = oneMatch();
+  const registry = createWatchRegistry(store);
+  docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify([{ id: owner }]) });
+  docs.set(`identities/${owner}`, { kind: "username" });
+  const entered = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  let scans = 0;
+  const source = sourceWith(async function* () { if (++scans === 1) yield [row]; else yield []; });
+  const url = await listen(source, undefined, { ratings: { async leaderboard() {
+    entered.resolve(); await resume.promise; return { ok: true, value: { entries: [] } };
+  } } });
+  const visitors = Promise.all([fetch(url + "/matches/users"), fetch(url + "/matches/users")]);
+  try { await entered.promise; await registry.recordOwners(lobbyId, row.id); } finally { resume.resolve(); }
+  for (const res of await visitors) { expect(res.status).toBe(200); expect(await res.json()).toEqual({ users: [] }); }
+  expect(scans).toBe(2);
 });
 
 it("drops stale success after a refresh failure and retries only after the backoff", async () => {

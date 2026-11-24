@@ -441,6 +441,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   let snapshot: Snapshot | undefined;
   type Flight = { reply: Promise<Buffer>; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
   const readerLeft = new Error("Users reader disconnected");
+  const invalidated = new Error("Users listing invalidated");
   let flight: Flight | undefined;
   function begin(policy: ReturnType<typeof policyNow>): Flight {
     const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
@@ -450,11 +451,12 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       signal.throwIfAborted();
       const body = Buffer.from(JSON.stringify({ users: rows }));
       const published = usersNow();
-      if (published - started >= usersDeadline || policy.digest !== policyNow().digest) throw new Error("Listing expired");
+      if (policy.digest !== policyNow().digest) throw invalidated;
+      if (published - started >= usersDeadline) throw new Error("Listing expired");
       snapshot = { body, facts, digest: policy.digest, expires: published + 60_000 };
       return body;
     }).catch(error => {
-      if (signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
+      if (error !== invalidated && signal.reason !== invalidated && signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
       throw error;
     }).finally(() => { flight = undefined; });
     return { reply: work, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
@@ -495,7 +497,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       const build = flight ??= begin(policy);
       if (++build.admissions > 128) throw new Error("Listing busy");
       if (build.digest !== policy.digest) {
-        build.stop.abort();
+        build.stop.abort(invalidated);
         await untilAborted(build.settled, signal);
         continue;
       }
@@ -503,7 +505,13 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (build.signal.reason === readerLeft) { await untilAborted(build.settled, signal); continue; }
       build.signal.throwIfAborted();
       build.waiters++;
-      try { return await untilAborted(build.reply, AbortSignal.any([build.signal, signal])); }
+      try {
+        const body = await untilAborted(build.reply, AbortSignal.any([build.signal, signal]));
+        if (build.digest === policyNow().digest) return body;
+      } catch (error) {
+        // Rejoin under the new revision, keeping this visitor's original deadline/disconnect signal.
+        if (error !== invalidated) throw error;
+      }
       finally { if (--build.waiters === 0 && flight === build) build.stop.abort(signal.reason); }
     }
   }
