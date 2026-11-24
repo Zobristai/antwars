@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { Frame, Playback, RESULT_BEAT_MS, TickPreparation, type Board } from "../../../web/src/buffer.ts";
 import { SUPERCOLONY_NAMES, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
-import { SUB_TILE, type StreamAgent, type StreamEvent, type StreamFull, type StreamMessage, type StreamQueen, type StreamResult } from "../../../src/live/format.ts";
+import { SUB_TILE, decodeMessage, encodeMessage, type StreamAgent, type StreamEvent, type StreamFull, type StreamMessage, type StreamQueen, type StreamResult } from "../../../src/live/format.ts";
 import { TICK_MS } from "../../../src/live/snapshot.ts";
 import { SCORE_COPY } from "../../../web/src/story.ts";
 import { D1_COPY, QUEEN_KILLS_UNRECORDED, colonyRows, queenKills, resultView } from "../../../web/src/ui/deck/model.ts";
@@ -415,9 +415,10 @@ describe("the Queen kills cell", () => {
     it(`carries recorded queen kills through playback to the end, and keeps them on a frame without a change (${live ? "live" : "replay"})`, () => {
       const messages = recording();
       messages[0]!.full!.queenKills = [0, 0, 0, 0];
+      messages[0]!.full!.setup.gridScale = 2; // every current recording carries it, and the decoder requires it
       messages[1]!.events.push({ kind: "queenKills", totals: [0, 0, 1, 0] });
-      // Decoded as the stream format reads them back (the codec's own round trip is test/live/queen-kills-stream.test.ts).
-      const decoded = messages;
+      // Encoded and decoded as the stream format reads them back (the codec's own round trip is test/live/queen-kills-stream.test.ts).
+      const decoded = messages.map(m => decodeMessage(encodeMessage(m)));
       const playback = new Playback(live ? { live: true } : undefined), preparation = new TickPreparation();
       for (const m of decoded) {
         if (live) playback.pushPrepared(preparation.prepare(m)!, m.tick * TICK_MS);
