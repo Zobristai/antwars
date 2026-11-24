@@ -131,9 +131,11 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-cap-what { font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; }
 .d1-cap-who { margin-left: 7px; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; }
 .d1-cap-when:empty { display: none; }
-/* The fall: the queen lost, large, in the fallen colony's colour. */
-.d1-caption[data-kind="fall"] .d1-cap-what { font-size: 24px; line-height: 30px; letter-spacing: -0.01em; color: currentColor; }
+/* The fall: the queen lost, large, in the fallen colony's colour (the caption's, not the grey run's), with the colony
+   centred beside it. */
+.d1-caption[data-kind="fall"] .d1-cap-what { font-size: 24px; line-height: 30px; letter-spacing: -0.01em; color: var(--d1-side, var(--aw-ink)); }
 .d1-caption[data-kind="fall"] .d1-cap-who { font-size: 14px; }
+.d1-caption[data-kind="fall"] .d1-cap-what, .d1-caption[data-kind="fall"] .d1-cap-who { vertical-align: middle; }
 .d1-controls { flex: none; display: flex; align-items: center; gap: 4px; }
 /* One treatment for every board control: round, its icon or its letters centred. */
 .d1-btn {
