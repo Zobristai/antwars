@@ -8,7 +8,7 @@ export function mountMatchesPage(doc: Document, win: Window): () => void {
   const waiting = doc.getElementById("aw-waiting"), wasHidden = waiting?.hidden;
   if (waiting) waiting.hidden = true;
   const oldTitle = doc.title; doc.title = "Matches — Antwars";
-  const data = createMatchesData(win.fetch.bind(win), view => page.update(view), { waiting: true });
+  const data = createMatchesData(win.fetch.bind(win), view => page.update(view), { waiting: true, users: true });
   const page = mountMatches(doc, host, { refresh: () => data.refresh(), more: () => data.more() });
   page.update(data.view);
   data.refresh();

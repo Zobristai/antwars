@@ -39,6 +39,8 @@ export interface HistorySummary {
 export interface HistoryPage { matches: HistorySummary[]; nextPageToken: string | null }
 export interface HistorySource {
   list(pageToken: string | undefined, signal: AbortSignal): Promise<HistoryPage>;
+  /** Each distinct stored recording once in bounded batches (one traversal, no retained history). */
+  scan?(signal: AbortSignal): AsyncIterable<HistorySummary[]>;
   /** Exclusive continuation after a returned public record, independent of a raw storage page boundary. */
   continuationAfter?(id: string): string;
   /**
@@ -50,7 +52,7 @@ export interface HistorySource {
    * The listing rows as served, where a source changes them: the /matches route applies it last, after it has typed
    * each row and filled its missing seat handles from the lobby, so it sees every value the page will serve.
    */
-  listed?<Row extends HistorySummary>(rows: readonly Row[]): Promise<Row[]>;
+  listed?<Row extends HistorySummary>(rows: readonly Row[], signal?: AbortSignal): Promise<Row[]>;
   /** One record's listing summary, as list() reads it; null where the record is missing or cannot be summarised. */
   summary?(id: string, signal: AbortSignal): Promise<HistorySummary | null>;
 }
@@ -122,26 +124,44 @@ function closedHead(head: Buffer): Buffer {
   return Buffer.concat([head.subarray(0, end), Buffer.from("}")]);
 }
 
-// Parsing runs off the match timer, even for large full records, in a worker that loads
-// only the summary checks (history-summary-worker.ts); never return command/event arrays.
-function summarize(id: string, bytes: Uint8Array, signal: AbortSignal): Promise<HistorySummary> {
+/** One serial, off-thread parser for a listing scan (or a single standalone summary). */
+function summaryParser(signal: AbortSignal) {
   signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL("./history-summary-worker.ts", import.meta.url), {
-      workerData: { kind: "match-summary", id, bytes }, transferList: [bytes.buffer as ArrayBuffer],
-      execArgv: ["--import", new URL("../ts-resolve.mjs", import.meta.url).href],
-    });
-    const stop = () => { void worker.terminate(); reject(new Error("match summary canceled")); };
-    const timer = setTimeout(stop, 15_000);
-    signal.addEventListener("abort", stop, { once: true });
-    const cleanup = () => { clearTimeout(timer); signal.removeEventListener("abort", stop); };
-    worker.once("message", (message: { summary?: HistorySummary; error?: string }) => {
-      cleanup();
-      if (message.summary) resolve(message.summary); else reject(new RecordSummaryError("Invalid match record."));
-    });
-    worker.once("error", error => { cleanup(); reject(error); });
-    worker.once("exit", code => { cleanup(); reject(new Error(`match summary exited ${code} before returning data`)); });
+  const worker = new Worker(new URL("./history-summary-worker.ts", import.meta.url), {
+    workerData: { kind: "match-summary" }, execArgv: ["--import", new URL("../ts-resolve.mjs", import.meta.url).href],
   });
+  let active: ReturnType<typeof Promise.withResolvers<HistorySummary>> | undefined;
+  let failure: Error | undefined, termination: Promise<number> | undefined;
+  const fail = (error: Error) => { failure = error; active?.reject(error); };
+  function close() {
+    signal.removeEventListener("abort", cancel);
+    return termination ??= worker.terminate();
+  }
+  const cancel = () => { fail(new Error("match summary canceled")); void close(); };
+  signal.addEventListener("abort", cancel, { once: true });
+  worker.once("error", fail);
+  worker.once("exit", code => fail(new Error(`match summary exited ${code}`)));
+  worker.on("message", (reply: { summary?: HistorySummary }) => {
+    if (reply.summary) active?.resolve(reply.summary);
+    else active?.reject(new RecordSummaryError("Invalid match record."));
+  });
+  async function parse(id: string, bytes: Uint8Array) {
+    signal.throwIfAborted();
+    if (failure) throw failure;
+    if (active) throw new Error("match parser already in use");
+    active = Promise.withResolvers<HistorySummary>();
+    const timer = setTimeout(cancel, 15_000);
+    try {
+      worker.postMessage({ id, bytes }, [bytes.buffer as ArrayBuffer]);
+      return await active.promise;
+    } finally { clearTimeout(timer); active = undefined; }
+  }
+  return { parse, close };
+}
+async function summarize(id: string, bytes: Uint8Array, signal: AbortSignal) {
+  const parser = summaryParser(signal);
+  try { return await parser.parse(id, bytes); }
+  finally { await parser.close(); }
 }
 
 async function* decodedJson(raw: Readable, signal: AbortSignal): AsyncGenerator<Uint8Array> {
@@ -219,6 +239,13 @@ export function createHistorySummaryCache(readRecord: SummaryReader) {
     });
   }
   return {
+    /** A whole-history scan may reuse a warm page entry, but does not populate the page cache. */
+    scanRead(id: string, generation: string | undefined, token: string, signal: AbortSignal, read: SummaryReader): Promise<HistorySummary> {
+      signal.throwIfAborted();
+      const hit = latest.get(id);
+      if (generation !== undefined && hit?.generation === generation && hit.json !== undefined) return Promise.resolve(JSON.parse(hit.json));
+      return read(id, token, signal, generation);
+    },
     beginPage() {
       // Order by discovery start, not response/worker completion or a numeric
       // ordering of opaque provider generations. Late old pages cannot roll
@@ -244,7 +271,7 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
   const objects = gcsBucket(bucket, request, get);
   // Each source's reuse boundary is scoped to this bucket and transport.
   const summaries = createHistorySummaryCache(readSummary);
-  async function readSummary(id: string, token: string, signal: AbortSignal, generation?: string): Promise<HistorySummary> {
+  async function readSummary(id: string, token: string, signal: AbortSignal, generation?: string, parse = summarize): Promise<HistorySummary> {
     const body = await openWithToken(id, token, signal, generation);
     if (body === null) throw new RecordSummaryError("listed match record disappeared");
     // Read only the record's head: everything before its top-level events key. A record without one is read
@@ -264,7 +291,7 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
     } finally { body.destroy(); }
     const head = cut ? Buffer.concat(chunks).subarray(0, size) : Buffer.concat(chunks);
     // Standalone buffer: never detach a pooled Buffer used by another read.
-    return summarize(id, new Uint8Array(cut ? closedHead(head) : head), signal);
+    return parse(id, new Uint8Array(cut ? closedHead(head) : head), signal);
   }
   async function openWithToken(id: string, token: string, signal: AbortSignal, generation?: string): Promise<Readable | null> {
     const raw = await objects.open(`${id}.json`, token, signal, LABELS, generation);
@@ -277,7 +304,66 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
     body.once("close", () => raw.destroy());
     return body;
   }
+  type Stored = { id: string; generation?: string };
+  async function* metadata(token: string, signal: AbortSignal, before?: string, wholeScan = false): AsyncGenerator<Stored> {
+    const seen = wholeScan ? undefined : new Set<string>();
+    let lastId: string | undefined;
+    let providerToken: string | undefined;
+    // The recording page takes the newest names; the Users scan consumes metadata once.
+    do {
+      signal.throwIfAborted();
+      // Saved records only: "*" never matches "/", so private/v1/*.sealed and .bin replays stay in storage.
+      const response = await objects.call(objects.url(undefined, { maxResults: "1000", matchGlob: "*.json",
+        fields: "items(name,generation),nextPageToken", endOffset: before && `${before}.json`, pageToken: providerToken }), { token, signal });
+      if (!response.ok) { await response.body?.cancel(); throw new Error("match history list failed"); }
+      const page = z.object({ items: z.array(z.object({ name: z.string(), generation: z.string().regex(/^[1-9]\d{0,19}$/).optional() })).max(1000).optional(),
+        nextPageToken: z.string().optional() }).parse(await response.json());
+      signal.throwIfAborted();
+      for (const object of page.items ?? []) {
+        if (!object.name.endsWith(".json")) continue;
+        const id = object.name.slice(0, -5);
+        if (!isReplayId(id) || (before !== undefined && id >= before)) continue;
+        // Storage iterates by object name; a repeated boundary needs only one remembered name.
+        if (wholeScan && lastId !== undefined && id <= lastId) continue;
+        lastId = id;
+        yield { id, generation: object.generation };
+      }
+      const previous = providerToken;
+      providerToken = page.nextPageToken;
+      if (providerToken !== undefined) {
+        if (!validHistoryPageToken(providerToken) || previous === providerToken || seen?.has(providerToken)) throw new Error("invalid match page continuation");
+        seen?.add(providerToken);
+      }
+    } while (providerToken !== undefined);
+  }
+  async function readBatch(batch: Stored[], summaryForPage: ReturnType<typeof summaries.beginPage>, token: string, signal: AbortSignal) {
+    const matches: HistorySummary[] = [];
+    for (const object of batch) {
+      // A record that cannot be summarised is left off the page; transport, deadline and cancellation still fail it.
+      try { matches.push(await summaryForPage(object.id, object.generation, token, signal)); }
+      catch (error) {
+        if (!(error instanceof RecordSummaryError) || signal.aborted) throw error;
+        // Id and the fixed reason only: every RecordSummaryError message is a literal here, never record bytes.
+        console.info(`antwar history record ${object.id} left off listing page: ${error.message}`);
+      }
+      signal.throwIfAborted();
+    }
+    return matches;
+  }
   return {
+    async *scan(signal) {
+      const token = await metadataAccessToken(request, signal), parser = summaryParser(signal);
+      try {
+        const read: SummaryReader = (id, token, signal, generation) => readSummary(id, token, signal, generation, parser.parse);
+        const fromScan: ReturnType<typeof summaries.beginPage> = (id, generation, token, signal) => summaries.scanRead(id, generation, token, signal, read);
+        let batch: Stored[] = [];
+        for await (const object of metadata(token, signal, undefined, true)) {
+          batch.push(object);
+          if (batch.length === 20) { yield await readBatch(batch, fromScan, token, signal); batch = []; }
+        }
+        if (batch.length) yield await readBatch(batch, fromScan, token, signal);
+      } finally { await parser.close(); }
+    },
     async summary(id, signal) {
       if (!isReplayId(id)) throw new Error("invalid match id");
       try { return await readSummary(id, await metadataAccessToken(request, signal), signal); }
@@ -306,45 +392,13 @@ export function createGcsHistorySource(bucket: string, request: typeof fetch = f
       const token = await metadataAccessToken(request, signal);
       const limit = 20;
       const newest: { id: string; generation?: string }[] = [];
-      const seen = new Set<string>();
-      let providerToken: string | undefined;
-      // GCS has no descending listing. Scan metadata only, retaining 21 names
-      // (one lookahead), then read at most 20 records. Never parse all history.
-      // Every request shares the caller's whole-page deadline and cancellation.
-      do {
-        signal.throwIfAborted();
-        // Saved records only: "*" never matches "/", so private/v1/*.sealed and .bin replays stay in storage.
-        const response = await objects.call(objects.url(undefined, { maxResults: "1000", matchGlob: "*.json",
-          fields: "items(name,generation),nextPageToken", endOffset: before && `${before}.json`, pageToken: providerToken }), { token, signal });
-        if (!response.ok) { await response.body?.cancel(); throw new Error("match history list failed"); }
-        const page = z.object({ items: z.array(z.object({ name: z.string(), generation: z.string().regex(/^[1-9]\d{0,19}$/).optional() })).max(1000).optional(),
-          nextPageToken: z.string().optional() }).parse(await response.json());
-        signal.throwIfAborted();
-        for (const object of page.items ?? []) {
-          if (!object.name.endsWith(".json")) continue;
-          const id = object.name.slice(0, -5);
-          if (!isReplayId(id) || (before !== undefined && id >= before) || newest.some(item => item.id === id)) continue;
-          newest.push({ id, generation: object.generation });
-          newest.sort((a, b) => a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
-          if (newest.length > limit + 1) newest.pop();
-        }
-        providerToken = page.nextPageToken;
-        if (providerToken !== undefined) {
-          if (!validHistoryPageToken(providerToken) || seen.has(providerToken)) throw new Error("invalid match page continuation");
-          seen.add(providerToken);
-        }
-      } while (providerToken !== undefined);
-      const matches: HistorySummary[] = [];
-      for (const object of newest.slice(0, limit)) {
-        // A record that cannot be summarised is left off the page; transport, deadline and cancellation still fail it.
-        try { matches.push(await summaryForPage(object.id, object.generation, token, signal)); }
-        catch (error) {
-          if (!(error instanceof RecordSummaryError) || signal.aborted) throw error;
-          // Id and the fixed reason only: every RecordSummaryError message is a literal here, never record bytes.
-          console.info(`antwar history record ${object.id} left off listing page: ${error.message}`);
-        }
-        signal.throwIfAborted();
+      for await (const object of metadata(token, signal, before)) {
+        if (newest.some(item => item.id === object.id)) continue;
+        newest.push(object);
+        newest.sort((a, b) => a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+        if (newest.length > limit + 1) newest.pop();
       }
+      const matches = await readBatch(newest.slice(0, limit), summaryForPage, token, signal);
       return { matches, nextPageToken: newest.length > limit ? `${cursorPrefix}${newest[limit - 1]!.id}` : null };
     },
   };
