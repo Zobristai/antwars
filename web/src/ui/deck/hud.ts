@@ -356,15 +356,18 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     fitWaiting = undefined;
     if (state.includes(D1_COPY.waiting)) {
       const wait = h(doc, "span", "sb-meta-item", D1_COPY.waiting);
-      metadata.insertBefore(wait, back);
       const other = state.filter(word => word !== D1_COPY.waiting);
       const withoutWaiting = other.length ? `\u00a0· ${other.join(" · ")}` : "";
       // Move only the waiting message, and only if the full legend overflows at its actual size.
       fitWaiting = () => {
         setText(rest, full);
         const move = rest.scrollWidth > rest.clientWidth;
-        if (move) setText(rest, withoutWaiting);
-        setHidden(wait, !move);
+        if (move) {
+          setText(rest, withoutWaiting);
+          if (!wait.parentElement) metadata.insertBefore(wait, back);
+        } else {
+          wait.remove();
+        }
         setHidden(metadata, noFacts && !move);
       };
       fitWaiting();
