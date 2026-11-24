@@ -26,7 +26,7 @@ import { mountDeck } from "./deck.ts";
 import { deckBrand } from "./brand.ts";
 import { mountTeams } from "./pane.ts";
 import { mountAgentDialog } from "./dialog.ts";
-import { caption, colonyCount, legend, type Caption, type Legend } from "./model.ts";
+import { caption, colonyCount, D1_COPY, legend, type Caption, type Legend } from "./model.ts";
 
 /** Below this width Bring your agent has no room beside the wordmark and the pages, and stands at the deck's end.
  * In em, so it grows with the browser's text size: 520 px at default text. */
@@ -323,6 +323,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // ---------------------------------------------------------------- painting
   let legendKey = "";
+  let fitConnection: (() => void) | undefined;
   /** Keep connection state intact; other mode facts retain individual, unbroken metadata cells. */
   const paintLegend = (l: Legend, four: boolean) => {
     const keyNow = `${four}|${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
@@ -333,11 +334,30 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     setHidden(dot, l.dot === null);
     dot.dataset.kind = l.dot ?? "";
     setText(mode, l.words[0] ?? "");
-    const isState = (word: string) => /waiting for new data|connect/i.test(word);
+    const isState = (word: string) => word === D1_COPY.waiting || /connect/i.test(word);
     const state = l.words.slice(1).filter(isState);
-    setText(rest, state.length ? `\u00a0· ${state.join(" · ")}` : "");
-    metadata.replaceChildren(...l.words.slice(1).filter(word => !isState(word)).map(word => h(doc, "span", "sb-meta-item", word)), back);
-    setHidden(metadata, metadata.childElementCount === 1 && l.back === null);
+    const full = state.length ? `\u00a0· ${state.join(" · ")}` : "";
+    setText(rest, full);
+    const facts = l.words.slice(1).filter(word => !isState(word));
+    const noFacts = !facts.length && !l.back;
+    metadata.replaceChildren(...facts.map(word => h(doc, "span", "sb-meta-item", word)), back);
+    setHidden(metadata, noFacts);
+    fitConnection = undefined;
+    if (state.includes(D1_COPY.waiting) && state.some(word => /connect/i.test(word))) {
+      const wait = h(doc, "span", "sb-meta-item", D1_COPY.waiting);
+      metadata.insertBefore(wait, back);
+      const connectionOnly = `\u00a0· ${state.filter(word => word !== D1_COPY.waiting).join(" · ")}`;
+      // Keep the more immediate connection message on the frame. Move the buffer status only
+      // when the actual combined line, in the reader's enlarged type, overflows its flex item.
+      fitConnection = () => {
+        setText(rest, full);
+        const move = rest.scrollWidth > rest.clientWidth && parseFloat(win.getComputedStyle(doc.documentElement).fontSize) > 16;
+        if (move) setText(rest, connectionOnly);
+        setHidden(wait, !move);
+        setHidden(metadata, noFacts && !move);
+      };
+      fitConnection();
+    }
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
   };
@@ -403,12 +423,15 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let metadataH = -1;
   let footerH = -1;
   let laneH = -1;
-  const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+  const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(entries => {
+    if (entries.some(e => e.target === frameEl || e.target === mode)) fitConnection?.();
     const next = legendEl.offsetHeight;
     const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight, nextLane = lane.offsetHeight;
     if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH || nextLane !== laneH)) scheduleRefit();
     legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter; laneH = nextLane;
   });
+  watch?.observe(frameEl);
+  watch?.observe(mode);
   watch?.observe(legendEl);
   watch?.observe(deckEl);
   watch?.observe(metadata);

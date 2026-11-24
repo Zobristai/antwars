@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { createServer } from "vite";
 import { chromium } from "playwright-core";
 import { applyTextSize, fontconfigFor } from "../../../web/render-check/fonts.ts";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
@@ -257,6 +258,56 @@ describe("scrolling HUD fit evidence", () => {
       expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
     } finally { await browser.close(); }
   });
+  it("moves only the waiting message when the enlarged combined connection status no longer fits", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/legend-test") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end(`<meta name="viewport" content="width=device-width, initial-scale=1"><main class="aw-hud"></main>`);
+    });
+    await server.listen();
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor("Liberation Sans") } });
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      for (const size of [16, 32] as const) {
+        const page = await browser.newPage({ viewport: { width: 320, height: 844 }, isMobile: true, deviceScaleFactor: 2 });
+        await applyTextSize(page, size);
+        await page.goto(`http://127.0.0.1:${addr.port}/legend-test`);
+        await page.addScriptTag({ type: "module", content: `
+          import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+          import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+          const hud = mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions: {} });
+          const view = { frame: scoreFrame(2), connection: 'Reconnecting…', mode: { label: 'LIVE', detail: '', link: null }, board: '2d', selected: null, selectedAgent: -1, stalled: true };
+          hud.update(view);
+          window.addEventListener('online', () => hud.update({...view, connection:''}));
+        ` });
+        const rest = page.locator(".d1-legend-rest"), moved = page.locator(".sb-meta-item:visible").filter({ hasText: "Waiting for new data" });
+        await rest.waitFor();
+        if (size === 32) {
+          await moved.waitFor();
+          expect(await rest.textContent()).not.toContain("Waiting for new data");
+          expect(await rest.textContent()).toContain("Reconnecting");
+          expect(await rest.evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+          await page.setViewportSize({ width: 1280, height: 800 });
+          await moved.waitFor({ state: "hidden" });
+          expect(await rest.textContent()).toContain("Waiting for new data");
+          await page.setViewportSize({ width: 320, height: 844 });
+          await moved.waitFor();
+        } else {
+          await page.waitForFunction(() => document.querySelector(".d1-legend-rest")?.textContent?.includes("Reconnecting"));
+          expect(await moved.count()).toBe(0);
+          expect(await rest.textContent()).toContain("Waiting for new data");
+        }
+        await page.evaluate(() => dispatchEvent(new Event("online")));
+        expect(await moved.count()).toBe(0);
+        expect(await rest.textContent()).toContain("Waiting for new data");
+        expect(await rest.textContent()).not.toContain("Reconnecting");
+        await page.close();
+      }
+    } finally { await browser.close(); await server.close(); }
+  }, 30_000);
   it("keeps the enlarged footer attribution on one line on a high-density 320 px phone", async () => {
     const css = ["design-system/tokens.css", "ui/ui.css", "ui/deck/deck.css"].map(path =>
       readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");
