@@ -52,7 +52,7 @@ export interface HistorySource {
    * The listing rows as served, where a source changes them: the /matches route applies it last, after it has typed
    * each row and filled its missing seat handles from the lobby, so it sees every value the page will serve.
    */
-  listed?<Row extends HistorySummary>(rows: readonly Row[]): Promise<Row[]>;
+  listed?<Row extends HistorySummary>(rows: readonly Row[], signal?: AbortSignal): Promise<Row[]>;
   /** One record's listing summary, as list() reads it; null where the record is missing or cannot be summarised. */
   summary?(id: string, signal: AbortSignal): Promise<HistorySummary | null>;
 }

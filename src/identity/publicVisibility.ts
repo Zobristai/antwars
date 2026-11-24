@@ -30,7 +30,7 @@ export function usersOwnerPolicy(read: () => readonly string[], store?: Store, r
 export interface PublicVisibility {
   identitiesVisible(ids: readonly string[]): Promise<boolean>;
   lobbyVisible(id: string): Promise<boolean>;
-  replayVisible(id: string): Promise<boolean>;
+  replayVisible(id: string, signal?: AbortSignal): Promise<boolean>;
 }
 
 /** Many checks answered with one identities read, so a page of rows costs a fixed number of reads. */
@@ -103,19 +103,19 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
       const visible = await groupsVisible(ids.map(id => seatIds(lobbies.get(id)!)), signal);
       return new Map(ids.map((id, index) => [id, visible[index]!]));
     }),
-    replayVisible: safe(async (id: string) => {
-      const owners = await readReplayOwners(store, id);
+    replayVisible: safe(async (id: string, signal) => {
+      const owners = await readReplayOwners(store, id, signal);
       if (owners !== null) return owners.every(owner => !excluded.has(owner));
-      const found = await registry.replayLobby(id);
+      const found = await registry.replayLobby(id, signal);
       // A recording without ownership is shown only when its lobby establishes every player and none is excluded. One
       // whose players cannot be established is hidden rather than failing the read: no lobby link (a scheduled match, or
       // a link never published), a link still pending (in flight or never completed), or a lobby whose seats are missing,
       // unreadable or empty, or whose seat identities do not resolve. A failed read still fails.
       if (found.state !== "found") return false;
       try {
-        const seats = seatIds(await store.get(`lobbies/${found.lobbyId}`));
+        const seats = seatIds(await store.get(`lobbies/${found.lobbyId}`, signal));
         if (seats.length === 0) return false;
-        return (await groupsVisible([seats]))[0]!;
+        return (await groupsVisible([seats], signal))[0]!;
       } catch (error) {
         if (error instanceof Undetermined) return false;
         throw error;

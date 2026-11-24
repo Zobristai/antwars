@@ -1,3 +1,4 @@
+import { joinReads } from "../store/join-reads.js";
 import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
 import type { TestRecordings } from "../replays/test-recordings.js";
 /// <reference types="node" />
@@ -757,7 +758,7 @@ export function createRatings(
       const indexMode = isIndexMode(mode);
       const { replayIds, times } = await storedFormFacts(
         visibleRows.flatMap(row => records.get(row.path)?.form.map(({ matchId }) => matchId) ?? []), indexMode, options.signal);
-      const entries = await Promise.all(visibleRows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
+      const entries = await joinReads(visibleRows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
         const identityId = idOf(path);
         const identity = await identities.findById(identityId, options.signal);
         const record = records.get(path) ?? null;

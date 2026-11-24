@@ -1,3 +1,4 @@
+import { joinReads } from "../store/join-reads.js";
 import { publicUsers } from "./public-users.js";
 import type { Ratings } from "../rating/ratings.js";
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
@@ -43,7 +44,7 @@ export interface RecordingLobby {
  * Replay id -> the lobby that recording came from; null when it has none (a scheduled match); "pending" when its lobby
  * match is registered but the replay link has not published yet. A throw is a failed lookup.
  */
-export type RecordingLobbyLookup = (replayId: string) => Promise<RecordingLobby | null | "pending">;
+export type RecordingLobbyLookup = (replayId: string, signal?: AbortSignal) => Promise<RecordingLobby | null | "pending">;
 /** One handle (or null) per colony, by colony. */
 type ColonyHandles = readonly (string | null)[];
 
@@ -82,7 +83,7 @@ export function lobbySeatHandles(lookup: RecordingLobbyLookup): <Row extends His
     if (handles === null) return row;
     return { ...row, seats: row.seats.map(seat => seat.handle !== null ? seat : { ...seat, handle: handles[seat.colony] ?? null }) };
   }
-  return async page => ({ ...page, matches: await Promise.all(page.matches.map(row => fill(row))) });
+  return async page => ({ ...page, matches: await joinReads(page.matches.map(row => fill(row))) });
 }
 
 /**
@@ -149,16 +150,17 @@ export function recordingMatchType(row: Pick<HistorySummary, "seats" | "rated" |
  * lookup is logged.
  */
 export function recordingMatchTypes(lookup: RecordingLobbyLookup | undefined,
-  log: (message: string, detail: object) => void = console.warn): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
+  log: (message: string, detail: object) => void = console.warn, signal?: AbortSignal): (page: HistoryPage) => Promise<Omit<HistoryPage, "matches"> & { matches: TypedHistorySummary[] }> {
   async function lobbyOf(replayId: string): Promise<RecordingLobby | null | undefined> {
     if (lookup === undefined) return null;
     try { const lobby = await lookup(replayId); return lobby === "pending" ? undefined : lobby; } catch (error) {
+      signal?.throwIfAborted();
       // The row is typed from its record for this listing (a challenge then lists only once a later lookup succeeds).
       log("antwar recording lobby lookup failed", { replayId, error: error instanceof Error ? error.message : String(error) });
       return undefined;
     }
   }
-  return async page => ({ ...page, matches: await Promise.all(page.matches.map(async row => {
+  return async page => ({ ...page, matches: await joinReads(page.matches.map(async row => {
     const lobby = await lobbyOf(row.id);
     const matchType = recordingMatchType(row, lobby);
     const rated = recordingRated(row, lobby);
@@ -342,34 +344,34 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   options: HistoryRouteOptions = {}): MountHandler {
   const recordIdleMs = options.recordIdleMs ?? RECORD_IDLE_MS;
   // A whole-history build uses a fresh projection per page; it never populates the route's long-lived row caches.
-  function projection(policy: PublicVisibility | undefined, fresh: boolean) {
-    const cached = lobbies === undefined ? undefined : cachedLobbyLookup(lobbies, { unsettledMs: options.unsettledLobbyMs });
+  function projection(policy: PublicVisibility | undefined, buildSignal?: AbortSignal) {
+    const cached = lobbies === undefined ? undefined : cachedLobbyLookup(buildSignal ? id => lobbies(id, buildSignal) : lobbies, { unsettledMs: options.unsettledLobbyMs });
     const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
-    const types = recordingMatchTypes(cached);
+    const types = recordingMatchTypes(cached, undefined, buildSignal);
 
     /** Test status and the served type come from the same sources in both public lists. */
-    async function nonTest(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
-      const [all, marked] = await Promise.all([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id), fresh ? signal : undefined, fresh)]);
+    async function nonTest(listed: HistoryPage): Promise<ServedPage> {
+      const [all, marked] = await joinReads([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id), buildSignal, !!buildSignal)]);
       return { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
     }
     async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
-      const typed = await nonTest(listed, signal);
+      const typed = await nonTest(listed);
       // A request that has ended starts no further lookups.
       signal.throwIfAborted();
       const filled = handles === undefined ? typed : await handles(typed);
       // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
-      return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches) };
+      return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches, buildSignal) };
     }
     async function visibleRows<T extends HistorySummary>(rows: T[], signal: AbortSignal) {
       signal.throwIfAborted();
-      return policy ? publiclyVisible(rows, row => policy.replayVisible(row.id), signal) : rows;
+      return policy ? publiclyVisible(rows, row => policy.replayVisible(row.id, buildSignal), signal) : rows;
     }
     async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
       return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
     }
     return { serve, serveVisible };
   }
-  const { serve, serveVisible } = projection(options.publicVisibility, false);
+  const { serve, serveVisible } = projection(options.publicVisibility);
   const continuations = listingContinuations();
   const listPage = (token: string | undefined, signal: AbortSignal) =>
     publicHistoryPage(source, token, signal, options.publicVisibility, continuations, raw => serveVisible(raw, signal));
@@ -378,7 +380,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     if (!source.scan) throw new Error("History scan unavailable");
     for await (const batch of source.scan(signal)) {
       signal.throwIfAborted();
-      yield (await projection(policy, true).serveVisible({ matches: batch, nextPageToken: null }, signal)).matches;
+      yield (await projection(policy, signal).serveVisible({ matches: batch, nextPageToken: null }, signal)).matches;
     }
   }
   const policyNow = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));

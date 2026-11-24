@@ -149,10 +149,10 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
   if (options.historySource !== undefined) {
     // Older recordings carry no seat handle: each one's lobby supplies its colonies' handles.
     const lobbies = options.accounts?.lobbies, registry = options.watchRegistry;
-    const lookup = lobbies && registry ? async (replayId: string) => {
-      const found = await registry.replayLobby(replayId);
+    const lookup = lobbies && registry ? async (replayId: string, signal?: AbortSignal) => {
+      const found = await registry.replayLobby(replayId, signal);
       if (found.state !== "found") return found.state === "pending" ? "pending" as const : null;
-      const read = await lobbies.readLobby(found.lobbyId);
+      const read = await lobbies.readLobby(found.lobbyId, signal);
       return read.ok ? read.value : null;
     } : undefined;
     server.mount("/matches", historyRoutes(options.historySource, lookup, { usersPolicy: options.usersPolicy, ratings: options.accounts?.ratings, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));

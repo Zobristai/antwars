@@ -61,7 +61,7 @@ export interface QueryResult {
 export interface Store {
   readonly namespace: string;
   /** Strongly consistent single-document read outside any transaction. */
-  get(path: DocPath): Promise<Fields | null>;
+  get(path: DocPath, signal?: AbortSignal): Promise<Fields | null>;
   /** Runs step against fresh transactional reads; on ABORTED the whole step runs again. */
   transaction<T>(step: (read: TransactionRead) => Promise<TransactionStep<T>>, signal?: AbortSignal): Promise<T>;
   /** One page of an ordered query; nothing is retried. */
@@ -149,10 +149,10 @@ export function createFirestore(config: StoreConfig): Store {
   return {
     namespace: config.namespace,
 
-    async get(path) {
+    async get(path, signal) {
       const url = `${origin}/v1/${prefix}${path.split("/").map(encodeURIComponent).join("/")}`;
       try {
-        return decodeFields(await call("get", url, { method: "GET" }, await token()));
+        return decodeFields(await call("get", url, { method: "GET" }, await token(signal), undefined, signal));
       } catch (error) {
         if (error instanceof FirestoreError && error.status === "NOT_FOUND") return null;
         throw error;

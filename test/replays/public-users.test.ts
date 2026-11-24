@@ -1,4 +1,6 @@
-import { createServer } from "node:http";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { randomUUID } from "node:crypto";
@@ -6,7 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createPublicVisibility, usersOwnerPolicy } from "../../src/identity/publicVisibility.ts";
 import { historyRoutes, type RecordingLobbyLookup } from "../../src/replays/history-routes.ts";
 import type { HistorySource, HistorySummary } from "../../src/replays/history-source.ts";
-import { createRatings, type LeaderboardEntry } from "../../src/rating/ratings.ts";
+import { createRatings, encodeRating, type LeaderboardEntry } from "../../src/rating/ratings.ts";
 import { createTestRecordings } from "../../src/replays/test-recordings.ts";
 import { neverJoined } from "../../web/src/ui/format.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
@@ -248,4 +250,73 @@ it.each(["upstream failure", "deadline"])("keeps the data-free 503 and retry del
     expect(log.mock.calls).toEqual([["Users listing unavailable (503)"], ["Users listing unavailable (503)"]]);
     ++now; expect((await read()).status).toBe(200); expect(scan).toHaveBeenCalledTimes(2);
   } finally { log.mockRestore(); }
+});
+
+// Drive request lifetimes in-process: no listener, external service or timing-dependent client disconnect.
+function visitor(handler: ReturnType<typeof historyRoutes>) {
+  const req = new IncomingMessage(new Socket()); req.url = "/matches/users"; req.method = "GET";
+  const res = new ServerResponse(req);
+  return { done: Promise.resolve(handler(req, res, undefined as never)).then(() => res.statusCode),
+    leave() { res.destroy(); res.emit("close"); } };
+}
+
+it("holds the build until every lobby read returns even when its marker read cancels first", async () => {
+  const page = [oneMatch(), match(1, ["fern", "spruce"])];
+  const gates = page.map(() => Promise.withResolvers<void>());
+  const buildSignals: AbortSignal[] = [], lookupSignals: (AbortSignal | undefined)[] = [];
+  let active = 0, peak = 0;
+  const starts: number[] = [];
+  const scan = async function* (signal: AbortSignal) { starts.push(active); buildSignals.push(signal); yield page; };
+  const handler = historyRoutes(sourceWith(scan), async (id, signal) => {
+    lookupSignals.push(signal); peak = Math.max(peak, ++active);
+    try { await gates[page.findIndex(row => row.id === id)]!.promise; return null; } finally { --active; }
+  }, { testRecordings: { async mark() {}, async marked(_ids, signal) {
+    peak = Math.max(peak, ++active);
+    try {
+      if (starts.length === 1) { await once(signal!, "abort"); signal!.throwIfAborted(); }
+      return new Set();
+    } finally { --active; }
+  } }, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const first = visitor(handler); await nextTurn(); expect(active).toBe(3);
+  expect(lookupSignals).toEqual([buildSignals[0], buildSignals[0]]);
+  first.leave(); await first.done; await nextTurn(); expect(active).toBe(2);
+  const second = visitor(handler); second.leave(); await second.done;
+  const replacement = visitor(handler); gates[0]!.resolve(); await nextTurn();
+  expect(starts).toEqual([0]); expect(active).toBe(1);
+  gates[1]!.resolve(); expect(await replacement.done).toBe(200);
+  expect(starts).toEqual([0, 0]); expect(active).toBe(0); expect(peak).toBe(3);
+});
+
+it("joins a ranking sibling's rollback before returning the failure or retrying", async () => {
+  const rollback = Promise.withResolvers<void>(), ids = [randomUUID(), randomUUID()];
+  let now = 0, opened = 0, active = 0, failing = true;
+  const store = createFirestore({ projectId: "fixture", namespace: "ranking", emulatorHost: "localhost:8080", request: async (url, init) => {
+    if (String(url).endsWith("/usernames/antwars")) return Response.json({ error: { status: "NOT_FOUND" } }, { status: 404 });
+    if (String(url).endsWith(":runQuery")) return Response.json(ids.map(id => ({ readTime: "2026-11-01T00:00:00Z", document: {
+      name: `projects/fixture/databases/(default)/documents/namespaces/ranking/ratings/${id}`,
+      fields: { rating: { stringValue: encodeRating(1500) }, rd: { stringValue: encodeRating(80) }, ratedMatches: { stringValue: "1" } },
+    } })));
+    if (String(url).endsWith(":beginTransaction")) { ++active; return Response.json({ transaction: String(++opened) }); }
+    const body = JSON.parse(String(init?.body));
+    if (String(url).endsWith(":rollback")) {
+      if (body.transaction === "2") await rollback.promise;
+      --active; return Response.json({});
+    }
+    if (String(url).endsWith(":batchGet")) {
+      if (failing && body.transaction === "1") throw Error("first lookup failed");
+      return Response.json([{ missing: body.documents[0] }]);
+    }
+    throw Error("unexpected read");
+  } });
+  const ratings = createRatings(store); await ratings.houseBackfill;
+  const starts: number[] = [];
+  const scan = async function* () { starts.push(active); yield [oneMatch()]; };
+  const handler = historyRoutes(sourceWith(scan), undefined, { usersNow: () => now, ratings });
+  let returned = false;
+  const first = visitor(handler).done.then(status => { returned = true; return status; });
+  await nextTurn(); expect(active).toBe(1); expect(returned).toBe(false);
+  const other = visitor(handler); expect(starts).toEqual([0]);
+  rollback.resolve(); expect(await first).toBe(503); expect(await other.done).toBe(503);
+  failing = false; now += 60_000;
+  expect(await visitor(handler).done).toBe(200); expect(starts).toEqual([0, 0]); expect(active).toBe(0);
 });
