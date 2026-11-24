@@ -6,6 +6,7 @@ import { chromium, type Browser } from "playwright-core";
 import { COLONY_NAMES } from "../../../src/sim/config.ts";
 import { SUPERCOLONY_NAMES, colonyColours, colourCss } from "../../../src/sim/colonyNames.ts";
 import { setMatchColonies } from "../../../web/src/colony-palette.ts";
+import { COLONY_INK } from "../../../web/src/ui/dom.ts";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const TOKENS = /:root \{[^}]*\}/.exec(read("../../../web/index.html"))![0];
@@ -29,7 +30,8 @@ const texts = (c: number) => [
   `<div class="d1-result-head c${c}" data-t="result head">Name won</div>`,
   `<div class="d1-moment-what c${c}" data-t="moment">Queen lost</div>`,
   `<div class="d2-toast" data-colony="${c}" data-kind="fall"><span class="d2-toast-what" data-t="2d fall">Queen 1 lost</span></div>`,
-  `<div class="d1-caption" data-colony="${c}" data-kind="fall"><span class="d1-cap-what" data-t="3d fall">Queen 1 lost</span></div>`,
+  `<div class="d1-caption" data-colony="${c}" data-kind="fall" style="--d1-side: ${COLONY_INK[c]}"><span class="d1-cap-when"></span>`
+    + `<span class="d1-cap-text"><span class="d1-cap-what" data-t="3d fall">Queen 1 lost</span> <span class="d1-cap-who">Name</span></span></div>`,
 ];
 
 /** The page root's style and attributes exactly as the palette sets them for `names`. */
@@ -89,6 +91,21 @@ describe("a four-colony match's coloured text", () => {
 
 /** `rgb` as a computed style writes it. */
 const computed = (rgb: number) => `rgb(${(rgb >> 16) & 255}, ${(rgb >> 8) & 255}, ${rgb & 255})`;
+
+describe("a four-colony match's 3D fall headline", () => {
+  for (const width of [1280, 390]) it(`is drawn in its colony's colour at ${width}px`, async () => {
+    const tab = await browser.newPage({ viewport: { width, height: 800 } });
+    try {
+      await tab.setContent(page(FOUR).html);
+      const found = await tab.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-t="3d fall"]')].map(el => ({
+        colony: Number(el.closest<HTMLElement>("[data-colony-id]")!.dataset.colonyId), color: getComputedStyle(el).color,
+      })));
+      expect(found).toHaveLength(4);
+      const colours = colonyColours(FOUR);
+      for (const t of found) expect(t.color, `colony ${t.colony} fall headline`).toBe(computed(colours[t.colony]!));
+    } finally { await tab.close(); }
+  });
+});
 
 describe("a four-colony match's agent rows", () => {
   it("draw each row's colour stripe in its colony's table colour, on the 2D board's agent list and the 3D deck's, for all four colonies", async () => {

@@ -97,11 +97,13 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const lane = h(doc, "div", "d1-lane");
   const cap = h(doc, "div", "d1-caption");
   cap.setAttribute("role", "status");
-  const capBar = h(doc, "span", "d1-cap-bar"), capWhat = h(doc, "span", "d1-cap-what"), capMeta = h(doc, "span", "d1-cap-meta");
-  const capWhen = h(doc, "span", "d1-cap-when"), capWho = h(doc, "span", "d1-cap-who");
+  // The bar, the time, then the event's words and its colony as one run: a run longer than its row ends in one "…"
+  // (deck.css), the time never shortens, and the caption's title holds the whole text.
+  const capBar = h(doc, "span", "d1-cap-bar"), capWhen = h(doc, "span", "d1-cap-when"), capText = h(doc, "span", "d1-cap-text");
+  const capWhat = h(doc, "span", "d1-cap-what"), capWho = h(doc, "span", "d1-cap-who");
   capBar.setAttribute("aria-hidden", "true");
-  capMeta.append(capWhen, capWho);
-  cap.append(capBar, capWhat, capMeta);
+  capText.append(capWhat, " ", capWho);
+  cap.append(capBar, capWhen, capText);
   const controls = h(doc, "div", "d1-controls");
   controls.setAttribute("role", "group");
   controls.setAttribute("aria-label", "Board controls");
@@ -385,8 +387,10 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     captionKey = keyNow;
     cap.dataset.kind = c?.kind ?? "none";
     setHidden(capBar, c === null);
-    if (!c) { setText(capWhat, ""); setText(capWhen, ""); setText(capWho, ""); return; }
+    if (!c) { setText(capWhat, ""); setText(capWhen, ""); setText(capWho, ""); setAttr(cap, "title", null); return; }
     cap.style.setProperty("--d1-side", COLONY_INK[c.colony]!);
+    // The whole caption on hover, and its accessible name: shown whether or not its run is shortened.
+    setAttr(cap, "title", [c.when, c.what, c.who].filter(Boolean).join(" · "));
     // The fallen colony's id, for its headline colour.
     if (drawn) cap.dataset.colony = String(c.colony);
     else delete cap.dataset.colony;
