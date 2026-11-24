@@ -68,7 +68,7 @@ it("routes the real shared live source through the worker, buffers playback, and
   const es = new Source(), reject = vi.fn();
   let now = 0;
   const opening = openSource(new URLSearchParams({ lobby: "12" }), { now: () => now }, doc, reject, {
-    source: (path) => { expect(path).toBe("/watch/live/12?kills=1&queenBites=1"); queueMicrotask(() => es.emit(packets[0]!)); return es; },
+    source: (path) => { expect(path).toBe("/watch/live/12?kills=1&queenKills=1&queenBites=1"); queueMicrotask(() => es.emit(packets[0]!)); return es; },
   });
   const source = (await opening)!;
   const playback = new Playback({ live: !source.recorded }), frame = new Frame();
@@ -399,7 +399,7 @@ it.each([false, true])("preserves a finishing selected lobby through fallback, c
     expect(resumed).not.toBeNull();
     expect(resumed.recorded).toBe(false);
     expect(resumed.head.full!.result?.winner).toBe(1);
-    expect(h.paths).toEqual(["/watch/live/selected?kills=1&queenBites=1", "/watch/live/selected?kills=1&queenBites=1"]);
+    expect(h.paths).toEqual(["/watch/live/selected?kills=1&queenKills=1&queenBites=1", "/watch/live/selected?kills=1&queenKills=1&queenBites=1"]);
     expect(h.saved.has(FALLBACK_HANDOVER_KEY)).toBe(false);
     expect(h.leaderboard).not.toHaveBeenCalled();
     const playback = new Playback({ live: true }), frame = new Frame();
@@ -487,7 +487,7 @@ it("a local match's page plays /watch/live/local without the catalog, saying the
   expect(line.textContent).toBe("Live match starting");
   const source = (await opening)!;
   try {
-    expect(paths).toEqual(["/watch/live/local?kills=1&queenBites=1"]);
+    expect(paths).toEqual(["/watch/live/local?kills=1&queenKills=1&queenBites=1"]);
     expect(source.recorded).toBe(false);
     expect(source.head.full).not.toBeNull();
     expect(source.head.full!.result).toBeNull();
