@@ -70,7 +70,14 @@ describe("the match result as a modal over the screen", () => {
     const dialog = modal.dialog as unknown as ElementPort;
     modal.update(frame, null);
     expect(dialog.byClass("aw-user-link")).toHaveLength(0);
+    const player = () => dialog.byClass("d1-rating-name")[0]!;
+    expect(player().title).toBe("sample-orbit");
+    expect(player().getAttribute("role")).toBe("group");
+    expect(player().getAttribute("aria-label")).toBe("sample-orbit");
     modal.update(frame, null, new Map([["sample-orbit", "sample-orbit"]]));
+    expect(player().title).toBe("sample-orbit");
+    expect(player().getAttribute("aria-label")).toBe("sample-orbit");
+    expect(player().getAttribute("role")).toBeNull();
     expect(dialog.byClass("aw-user-link").map(a => a.href)).toEqual(["/?page=users&user=sample-orbit"]);
     modal.update(frame, null, new Map());
     expect(dialog.byClass("aw-user-link")).toHaveLength(0);
@@ -212,6 +219,31 @@ describe("the match result as a modal over the screen", () => {
     expect(head.getAttribute("aria-label")).toBe("Abandoned");
     expect(dialog.byClass("d1-result-how")[0]!.textContent).toBe("Seat inactive · unrated");
     expect(dialog.byClass("rd-outcome")).toHaveLength(0);
+  });
+
+  it("gives the name its own line only in the enlarged phone range, without splitting the badges", async () => {
+    const { doc } = dom(), modal = mountResultModal(doc), f = frameOf({ ended: true, name: "antwars/gpt-6-1-terra-max-fast #1" });
+    modal.update(f);
+    const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      const page = await browser.newPage();
+      await applyTextSize(page, 32);
+      // Fixed test track keeps a genuinely tight name/badge pair even at the upper breakpoint.
+      await page.setContent(`<style>${tokens}${CSS}.rd-player{width:220px}</style><main class="d1">${markup(modal.dialog as unknown as ElementPort)}</main>`);
+      await page.locator("dialog").evaluate(el => (el as HTMLDialogElement).showModal());
+      for (const width of [319, 320, 639, 640]) {
+        await page.setViewportSize({ width, height: 844 });
+        const row = await page.locator(".rd-player").first().evaluate(el => {
+          const name = el.querySelector<HTMLElement>(".d1-rating-name")!, badges = [...el.querySelectorAll(".d1-tag")].map(tag => tag.getBoundingClientRect());
+          return { below: badges[0]!.top >= name.getBoundingClientRect().bottom, wholeGroup: badges.length === 2 && badges[0]!.top === badges[1]!.top,
+            nameWidth: name.clientWidth, natural: name.scrollWidth, space: el.clientWidth };
+        });
+        expect(row.wholeGroup).toBe(true);
+        expect(row.below).toBe(width >= 320 && width < 640);
+        if (row.below) expect(row.nameWidth).toBe(Math.min(row.space, row.natural));
+      }
+    } finally { await browser.close(); }
   });
 
   it("shows every word of a long decisive moment with enlarged text, including the lines after the second", async () => {

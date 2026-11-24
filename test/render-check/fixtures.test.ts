@@ -11,9 +11,9 @@ import { decodeMessage } from "../../src/live/format.ts";
 import { TICK_MS, unpackMessages } from "../../src/live/snapshot.ts";
 import { TEST_BACKFILL_IDS } from "../../src/replays/testBackfillIds.ts";
 import { shippedTopMatchList } from "../../src/replays/top-matches.ts";
-import { RENDER_DELAY_MS } from "../../web/src/buffer.ts";
+import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
 import { SEAT } from "../../web/src/compose.ts";
-import { teamPlayer } from "../../web/src/ui/deck/model.ts";
+import { resultView, teamPlayer } from "../../web/src/ui/deck/model.ts";
 import { FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY, HUD_PLAY_MS } from "../../web/render-check/check.ts";
 import { MAX_FILE_BYTES, MAX_LINE_BYTES, joinReplayText, replayFromText, splitReplayText } from "../../web/render-check/replay-text.ts";
 import { readFixtures } from "../../web/render-check/serve.ts";
@@ -31,6 +31,22 @@ it("packs every committed replay excerpt into bytes with its recorded sha256", a
     expect(fixture.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(sha256(fixture.bytes!)).toBe(fixture.sha256);
   }
+});
+
+it("the result surface plays a rated finish with a long house label, two badges and sample players", async () => {
+  const fixtures = await readFixtures([resolve(FIXTURES, "..", "result-standings-fixture.json")]);
+  const messages = unpackMessages(fixtures[`/replays/${GROUPED_SEATS_REPLAY}`]!.bytes!).map(decodeMessage);
+  expect(messages[0]!.full!.setup.rated).toBe(true);
+  expect(messages[0]!.full!.agents.map(a => a.identity?.displayName)).toEqual([
+    "antwars/gpt-6-1-terra-max-fast #1", "antwars/k3-1-pro-highspeed #1", "sample-orbit", "sample-wren",
+  ]);
+  expect(messages.map(m => m.tick)).toEqual(messages.map((_, i) => messages[0]!.tick + i));
+  const end = messages.flatMap(m => m.events).find(e => e.kind === "end");
+  expect(end?.result.ratingChanges).toHaveLength(4);
+  const replay = new Playback(), frame = new Frame();
+  messages.forEach((m, i) => replay.push(m, i * TICK_MS));
+  replay.sample(HUD_PLAY_MS, frame);
+  expect(resultView(frame)?.moments.map(m => m.what)).toEqual(["Queen 1 lost", "Queen 11 lost", "Queen 12 lost"]);
 });
 
 it("refuses a replay excerpt whose bytes differ from its recorded sha256", async () => {

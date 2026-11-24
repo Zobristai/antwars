@@ -126,9 +126,17 @@ export function mountResultModal(doc: Document): ResultModal {
       const colony = h(doc, "span", "rd-colony", colonyNamesOf(board.setup)[agent.colony].replace(/ Colony$/, ""));
       setAttr(colony, "title", drawn ? colonyNameNote(drawn[agent.colony]) : null);
       const name = userName(doc, rosterHandle(eligible, agent.identity?.displayName), named.name, "d1-rating-name");
+      name.title = named.name;
+      // Plain spans have no nameable role; linked seats keep their native link semantics.
+      if (!name.hasAttribute("href")) name.setAttribute("role", "group");
+      name.setAttribute("aria-label", named.name);
       const badgeLine = h(doc, "span", "rd-player");
       badgeLine.append(name);
-      named.badges.forEach(text => badgeLine.append(" ", h(doc, "span", "d1-tag", text)));
+      if (named.badges.length) {
+        const badges = h(doc, "span", "rd-badges");
+        named.badges.forEach((text, i) => badges.append(...(i ? [" "] : []), h(doc, "span", "d1-tag", text)));
+        badgeLine.append(" ", badges);
+      }
       identity.append(colony, " ", badgeLine);
       li.append(identity);
       if (hasRatings) {

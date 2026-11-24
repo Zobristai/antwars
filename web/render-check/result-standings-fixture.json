@@ -1,0 +1,27 @@
+{
+ "fixtures": {
+  "/replays/2026-11-16T09-21-43-735Z-11240848029112": {
+   "label": "Grouped-seat excerpt with a sample rated finish, long names and model badges",
+   "type": "application/octet-stream",
+   "files": [
+    "result-standings.replay.jsonl"
+   ],
+   "sha256": "d1b65f2847fa1f3f099306d303389872e80cb27c7b9b44c906e43528661ebf8a"
+  },
+  "/matches/users/links/replay/2026-11-16T09-21-43-735Z-11240848029112": {
+   "label": "Confirmed sample players in the finished replay",
+   "body": {
+    "handles": [
+     [
+      "sample-orbit",
+      "sample-orbit"
+     ],
+     [
+      "sample-wren",
+      "sample-wren"
+     ]
+    ]
+   }
+  }
+ }
+}

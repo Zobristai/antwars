@@ -208,6 +208,19 @@ describe("marks on the scrubber", () => {
     expect(at[1]!.x).toBeCloseTo(222.4, 5);
   });
 
+  it("fits the endpoint count and its focus outline on the rail without changing either seek time", () => {
+    const end = DRAWN.at(-1)!;
+    const m = marked([{ ...end, ms: DRAWN_MS - 100 }, { ...end, ms: DRAWN_MS }], 0);
+    const button = m.marks[0]!, badge = button.children[0]!;
+    const x = parseFloat(button.style.left!), width = parseFloat(m.layer!.style.width!);
+    expect(x + badge.offsetWidth / 2 + 4).toBeLessThanOrEqual(width);
+    expect(parseFloat(m.layer!.style.height!)).toBeGreaterThanOrEqual(badge.offsetHeight + 8);
+    button.onclick!({ detail: 0 });
+    m.list!.children[1]!.onclick!({ detail: 1 });
+    expect(m.seeks).toEqual([DRAWN_MS]);
+    m.controls.close();
+  });
+
   it("draws nothing before the marks are read, and adds no control to the row", () => {
     const m = marked(null);
     expect(m.layer).toBeUndefined();

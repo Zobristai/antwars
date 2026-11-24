@@ -146,9 +146,11 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const section = h(doc, "section", `d1-team c${colony}`);
     section.tabIndex = -1;
     const head = h(doc, "header", "d1-team-head");
-    const name = h(doc, "h2", `d1-name c${colony}`, colonyName(colony));
+    // The pane preallocates four sections even when the match names only two colonies.
+    const initialName = colonyName(colony) ?? `Colony ${colony + 1}`;
+    const name = h(doc, "h2", `d1-name c${colony}`, initialName);
     name.id = `d1-team-${colony}`;
-    name.title = colonyName(colony);
+    name.title = initialName;
     name.setAttribute("aria-label", name.title);
     section.setAttribute("aria-labelledby", name.id);
     // One icon per member, then the one player's name, which gives way before its Elo, always shown in full.
@@ -168,15 +170,15 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // The agents: one small row each under the colony name, its badge, name, model and rating; none for one
     // player, whose heading names it once.
     const rows = h(doc, "ol", "d1-agents");
-    rows.setAttribute("aria-label", `${colonyName(colony)} agents`);
+    rows.setAttribute("aria-label", `${initialName} agents`);
     // The game history: side-by-side strip columns at 1200 px and wider, or directly under each colony card narrower.
     const line = h(doc, "section", `d1-timeline c${colony}`);
-    line.setAttribute("aria-label", `${colonyName(colony)} ${D1_COPY.history.toLowerCase()}`);
+    line.setAttribute("aria-label", `${initialName} ${D1_COPY.history.toLowerCase()}`);
     line.style.setProperty("--sb-ink", COLONY_CSS[colony]!);
     const entries = h(doc, "ol", "d1-tl");
     const none = h(doc, "li", "d1-tl-entry d1-tl-none", D1_COPY.timelineNone);
     const lineHead = h(doc, "header", "sb-history-head");
-    const colName = h(doc, "h4", "sb-history-col-name", colonyName(colony));
+    const colName = h(doc, "h4", "sb-history-col-name", initialName);
     const kicker = h(doc, "h3", "d1-kicker sb-history-kicker", D1_COPY.history);
     const ledger = h(doc, "dl", "sb-detail-stat"), hatched = h(doc, "dd", "d1-mv");
     ledger.append(h(doc, "dt", "d1-ml", SCORE_COPY.hatched), hatched);
@@ -192,7 +194,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const historyButton = h(doc, "button", "sb-history");
     historyButton.type = "button";
     historyButton.innerHTML = D1_ICON.history;
-    historyButton.setAttribute("aria-label", `${colonyName(colony)} history`);
+    historyButton.setAttribute("aria-label", `${initialName} history`);
     line.id = `colony-history-${colony}`;
     historyButton.setAttribute("aria-controls", line.id);
     historyButton.setAttribute("aria-expanded", "false");
@@ -743,7 +745,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     if (names === shownNames) return;
     shownNames = names;
     for (const colony of colonies) {
-      const node = teamNodes[colony]!, named = colonyName(colony, setup), note = colonyNote(colony, setup);
+      const node = teamNodes[colony]!, named = colonyName(colony, setup) ?? `Colony ${colony + 1}`, note = colonyNote(colony, setup);
       node.name.textContent = named;
       node.colName.textContent = named;
       node.name.title = note ? `${named} · ${note}` : named;

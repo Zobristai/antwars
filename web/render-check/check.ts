@@ -51,6 +51,8 @@ export interface Surface {
   fixtures?: string;
   /** For fixture states, require the actual page to reach the expected state before judging. */
   readySelector?: string;
+  /** Judge the open result after its replay plays, rather than the inert page behind it. */
+  resultDialog?: boolean;
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
    * never judged and the render is invalid. Watch with no live match shows a list instead and leaves this unset. */
   board?: boolean;
@@ -101,6 +103,7 @@ export const SURFACES: readonly Surface[] = [
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
+  { id: "replay-result", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json", resultDialog: true, what: "Rated result with long player names, badges and signed ratings" },
   { id: "replay-grouped-seats", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, what: "a 2v2 replay where one player holds both seats of each colony: the Score Band's grouped seat badges over the board" },
 ];
 
@@ -643,7 +646,15 @@ async function renderAll(o: Options): Promise<Render[]> {
               }, surface.focus);
               if (!focused) invalid.push(`${surface.focus} was not shown with keyboard focus`);
             }
-            judged = await page.evaluate(judgePage, RULE_LIMITS);
+            if (surface.resultDialog) {
+              const row = page.locator(".d1-result-dialog:modal .d1-rating").filter({ hasText: "K3.1 Pro Highspeed #1" });
+              if (!await row.locator(".d1-tag").isVisible() || !await row.locator(".rd-numbers").isVisible()
+                || !await page.locator(".d1-result-dialog:modal .rd-badges > .d1-tag + .d1-tag").first().isVisible()) {
+                invalid.push("the finished replay did not show the long player, rated row and two-badge player");
+              }
+            }
+            const limits = { ...RULE_LIMITS, resultDialog: surface.resultDialog };
+            judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);
             const wrongFont = fontProblem(typeface, fonts);
             if (wrongFont) invalid.push(wrongFont);
@@ -662,7 +673,7 @@ async function renderAll(o: Options): Promise<Render[]> {
             failureInView = judged.failures.map(() => true);
             marked.forEach((m, k) => { failureImages[m.i] = shot.shownIn[k]!; failureInView[m.i] = shot.inView[k]!; });
             // The renders show the layout judged: judged again after they are saved, it finds the same.
-            if (fingerprint(await page.evaluate(judgePage, RULE_LIMITS)) !== fingerprint(judged)) {
+            if (fingerprint(await page.evaluate(judgePage, limits)) !== fingerprint(judged)) {
               invalid.push("the layout changed while its renders were saved");
             }
           } catch (error) {
