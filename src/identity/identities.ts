@@ -100,7 +100,7 @@ export interface Identities {
   /** testOwnerKey proves a server-allowlisted test owner; it never owns the new account. */
   claimUsername(name: string, caller?: string | null, ownerKey?: string, guard?: CommitGuard, testOwnerKey?: string): Promise<Outcome<IssuedIdentity>>;
   /** No key use: current display/retention projection by stable identity id. */
-  findById(id: string): Promise<Identity | undefined>;
+  findById(id: string, signal?: AbortSignal): Promise<Identity | undefined>;
   /** Durable successful admission into a started match (not lobby seating). */
   recordMatchJoin(identityId: string, at?: number): Promise<void>;
   /** ownerId is the owning username's identity, which the owner key proved. */
@@ -422,12 +422,12 @@ export function createIdentities(store: Store, options: { readonly now?: () => n
       });
     },
 
-    async findById(id) {
+    async findById(id, signal) {
       return store.transaction(async (read) => {
         const writes: Write[] = [];
         const found = await account(read, id, now(), writes);
         return { result: found ? project(found) : undefined, writes: writesOf(writes) };
-      });
+      }, signal);
     },
 
     async findByDisplayName(displayName) {

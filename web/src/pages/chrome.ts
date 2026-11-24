@@ -8,6 +8,7 @@ import "../design-system/tokens.css";
 import "../design-system/page-edge.css";
 import "./archive.css";
 import { INSPIRED_BY_URL } from "../story.ts";
+import { PAGE_WORDS } from "../ui/pages.ts";
 import { h } from "../ui/dom.ts";
 import { mountTopBar, type PageName } from "./top-bar.ts";
 
@@ -132,4 +133,12 @@ export function rebuild(doc: Document, region: HTMLElement, build: () => Node[])
   const key = active instanceof HTMLElement && region.contains(active) ? active.dataset.key : undefined;
   region.replaceChildren(...build());
   if (key) region.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+}
+
+/** The Matches lists’ shared paging control. Each list owns its continuation. */
+export function loadMoreButton(doc: Document, key: string, loading: boolean, more: () => void) {
+  const button = h(doc, "button", "d1-agent-button", PAGE_WORDS.more);
+  button.type = "button"; button.dataset.key = key; button.disabled = loading;
+  button.addEventListener("click", more);
+  return button;
 }

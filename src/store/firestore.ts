@@ -42,6 +42,7 @@ export interface TransactionStep<T> {
  * field, then by document name in the same direction.
  */
 export interface QueryOptions {
+  readonly signal?: AbortSignal;
   readonly orderBy: string;
   readonly direction: "ASCENDING" | "DESCENDING";
   readonly limit: number;
@@ -60,9 +61,9 @@ export interface QueryResult {
 export interface Store {
   readonly namespace: string;
   /** Strongly consistent single-document read outside any transaction. */
-  get(path: DocPath): Promise<Fields | null>;
+  get(path: DocPath, signal?: AbortSignal): Promise<Fields | null>;
   /** Runs step against fresh transactional reads; on ABORTED the whole step runs again. */
-  transaction<T>(step: (read: TransactionRead) => Promise<TransactionStep<T>>): Promise<T>;
+  transaction<T>(step: (read: TransactionRead) => Promise<TransactionStep<T>>, signal?: AbortSignal): Promise<T>;
   /** One page of an ordered query; nothing is retried. */
   query(collectionId: string, options: QueryOptions): Promise<QueryResult>;
   /**
@@ -122,9 +123,10 @@ export function createFirestore(config: StoreConfig): Store {
   const database = `projects/${config.projectId}/databases/(default)`;
   const prefix = `${database}/documents/namespaces/${config.namespace}/`;
   const origin = config.emulatorHost ? `http://${config.emulatorHost}` : "https://firestore.googleapis.com";
-  const token = () => config.emulatorHost ? Promise.resolve("owner") : metadataAccessToken(request);
+  const token = (signal?: AbortSignal) => config.emulatorHost ? Promise.resolve("owner") : metadataAccessToken(request, signal);
 
-  async function call(operation: string, url: string, init: { method: string; body?: unknown }, bearer: string, deadline?: number): Promise<unknown> {
+  async function call(operation: string, url: string, init: { method: string; body?: unknown }, bearer: string, deadline?: number, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted();
     const payload = init.body === undefined ? undefined : JSON.stringify(init.body);
     // Read at launch, with nothing awaited before the request is sent: a deadline passed by then sends nothing.
     const timeout = deadline === undefined ? FIRESTORE_RPC_TIMEOUT_MS : Math.min(FIRESTORE_RPC_TIMEOUT_MS, deadline - now());
@@ -133,45 +135,47 @@ export function createFirestore(config: StoreConfig): Store {
       method: init.method,
       headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
       body: payload,
-      signal: AbortSignal.timeout(timeout),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
       redirect: "error",
     });
     const body: unknown = await response.json().catch(() => undefined);
+    signal?.throwIfAborted();
     if (response.ok) return body;
     throw new FirestoreError(operation, response.status, errorStatus(body));
   }
-  const rpc = (method: string, body: unknown, bearer: string, deadline?: number) =>
-    call(method, `${origin}/v1/${database}/documents:${method}`, { method: "POST", body }, bearer, deadline);
+  const rpc = (method: string, body: unknown, bearer: string, deadline?: number, signal?: AbortSignal) =>
+    call(method, `${origin}/v1/${database}/documents:${method}`, { method: "POST", body }, bearer, deadline, signal);
 
   return {
     namespace: config.namespace,
 
-    async get(path) {
+    async get(path, signal) {
       const url = `${origin}/v1/${prefix}${path.split("/").map(encodeURIComponent).join("/")}`;
       try {
-        return decodeFields(await call("get", url, { method: "GET" }, await token()));
+        return decodeFields(await call("get", url, { method: "GET" }, await token(signal), undefined, signal));
       } catch (error) {
         if (error instanceof FirestoreError && error.status === "NOT_FOUND") return null;
         throw error;
       }
     },
 
-    async transaction<T>(step: (read: TransactionRead) => Promise<TransactionStep<T>>): Promise<T> {
-      const bearer = await token();
+    async transaction<T>(step: (read: TransactionRead) => Promise<TransactionStep<T>>, signal?: AbortSignal): Promise<T> {
+      const bearer = await token(signal);
       // Rollback only releases locks: its own failure is ignored, so it can neither
       // trigger a retry nor replace the error that ended the attempt.
       const rollback = (transaction: string) => rpc("rollback", { transaction }, bearer).then(() => undefined, () => undefined);
       const attempt = async (): Promise<T> => {
-        const begun = await rpc("beginTransaction", { options: { readWrite: {} } }, bearer);
+        const begun = await rpc("beginTransaction", { options: { readWrite: {} } }, bearer, undefined, signal);
         const transaction = (begun as { transaction?: unknown }).transaction;
         if (typeof transaction !== "string") throw new Error("firestore beginTransaction returned no transaction");
         const read: TransactionRead = async (paths) => {
-          const results = await rpc("batchGet", { documents: paths.map((path) => prefix + path), transaction }, bearer);
+          const results = await rpc("batchGet", { documents: paths.map((path) => prefix + path), transaction }, bearer, undefined, signal);
           return decodeBatch(results, prefix, paths);
         };
         let outcome: TransactionStep<T>;
         try {
           outcome = await step(read);
+          signal?.throwIfAborted();
         } catch (error) {
           await rollback(transaction);
           throw error;
@@ -199,7 +203,7 @@ export function createFirestore(config: StoreConfig): Store {
           if (!(error instanceof FirestoreError) || error.status !== "ABORTED" || attempts >= MAX_TRANSACTION_ATTEMPTS) throw error;
           // The emulator reports a lock conflict after about 2 s; jitter keeps two
           // retrying contenders from colliding again in step.
-          await sleep(Math.random() * 100 * 2 ** Math.min(attempts, 4));
+          await sleep(Math.random() * 100 * 2 ** Math.min(attempts, 4), undefined, { signal });
         }
       }
     },
@@ -241,7 +245,7 @@ export function createFirestore(config: StoreConfig): Store {
       const body: Record<string, unknown> = { structuredQuery };
       if (options.readTime !== undefined) body.readTime = options.readTime;
       const url = `${origin}/v1/${prefix.slice(0, -1)}:runQuery`;
-      const results = await call("runQuery", url, { method: "POST", body }, await token());
+      const results = await call("runQuery", url, { method: "POST", body }, await token(options.signal), undefined, options.signal);
       // An element without a document is progress or an empty result, never a row.
       // readTime may increase along the stream, and only the last one is a time at
       // which every streamed document still held its returned value, so it is the
