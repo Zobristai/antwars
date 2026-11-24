@@ -755,7 +755,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     // The queen bite cues are placed first, clear of the panels, and reserved: the marks' labels and badges keep clear of them.
     const placementView = `${viewKey()}:${overlaysOn}`;
     const dots = words.projectMarkers(shown, toScreen, placementView, toScreenInFront);
-    const cueRects = cues.update(shown, { toScreen, bodyPx: (tx, ty, soldier) => ants.lengthTiles * tilePxAt(tx, ty) * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : [], words.layer.visible ? dots : []);
+    const cueRects = cues.update(shown, { toScreen, bodyPx: (tx, ty, soldier) => ants.lengthTiles * tilePxAt(tx, ty) * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : [], words.layer.visible ? dots : [], markers.chips);
     words.update(shown, toScreen, blocked, placementView, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront, cueRects);
     squads.updateBadges(shown, toScreen, words.badges);
     cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : []);

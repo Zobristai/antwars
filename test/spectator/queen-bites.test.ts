@@ -21,7 +21,7 @@ import { Ants3D } from "../../web/src/board3d/ants3d.ts";
 import { COLONY_RGB, Ground } from "../../web/src/board3d/ground.ts";
 import { colonyTint } from "../../web/src/colony-palette.ts";
 import { EMBLEM_BAR, QUEEN_CHIP, QUEEN_EMBLEM, QUEEN_LIT, QueenHomes, emblemState, mixColour } from "../../web/src/effects.ts";
-import { markerParticles } from "../../web/src/board3d/markers3d.ts";
+import { MarkerSpecs3D, markerParticles } from "../../web/src/board3d/markers3d.ts";
 import { QueenBiteCues, CUE_BRACKETS, bracketBox, cueName, emblemRect, layoutCues, stackSpots } from "../../web/src/queen-bites.ts";
 import { Placer, placeBadges, overlaps } from "../../web/src/words.ts";
 import { boardQueenHp } from "../../web/src/variant.ts";
@@ -369,6 +369,37 @@ describe("the cues' layout", () => {
     const top = place([{ x0: x - 300, y0: y - 300, x1: x + 300, y1: y + 300 }]);
     expect(top.onTop).toBe(true);
     expect(top.rect).toEqual(spots[0]);
+  });
+
+  it("reserves only the visible damage segment and paints it above fixed markers and unavoidable badges on either board", () => {
+    const frame = frameAt(biteTicks.find(t => t % 10 > 1 && simBites.has(t - 1))! * TICK_MS + 40);
+    const flat = new QueenHomes(scale), tilted = new MarkerSpecs3D();
+    const project = (x: number, y: number, out: { x: number; y: number }) => { [out.x, out.y] = board.toScreen(x, y); };
+    flat.update(frame, false, board.toScreen);
+    tilted.update(frame, project, false);
+    expect(flat.chips.length).toBeGreaterThan(0);
+    expect(tilted.chips).toHaveLength(flat.chips.length);
+    expect(tilted.chips[0]!.y0).toBeCloseTo(flat.chips[0]!.y0 - 0.5);
+    for (const chip of [flat.chips[0]!, tilted.chips[0]!]) {
+      const cues = new QueenBiteCues();
+      const raised = cues.aboveBadges.children[0] as Graphics;
+      expect(chip.x1 - chip.x0).toBeGreaterThan(0);
+      expect(chip.x1 - chip.x0).toBeLessThan(EMBLEM_BAR.w);
+      expect(chip.y1 - chip.y0).toBe(EMBLEM_BAR.h);
+      expect(cues.update(frame, board, screen, [], [chip], [chip])).toContain(chip);
+      cues.drawLabels([]);
+      expect(raised.context.instructions).toHaveLength(1);
+      cues.update(frame, board, screen, [], [], [chip]);
+      cues.drawLabels([chip]);
+      expect(raised.context.instructions).toHaveLength(1);
+      cues.drawLabels([]);
+      expect(raised.context.instructions).toHaveLength(0);
+    }
+    const none = new Frame();
+    flat.update(none, false, board.toScreen);
+    tilted.update(none, project, false);
+    expect(flat.chips).toEqual([]);
+    expect(tilted.chips).toEqual([]);
   });
 
   it("raises only the colliding label's drawing, including when a badge cannot step aside", () => {

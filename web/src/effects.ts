@@ -15,6 +15,7 @@ import { AIR_LIFT_2D_LENGTHS } from "./flyer-lift.ts";
 import { colonyTint } from "./colony-palette.ts";
 import { reducedMotion } from "./camera.ts";
 import { visibleStory } from "./story.ts";
+import type { Rect } from "./words.ts";
 import { boardQueenHp } from "./variant.ts";
 
 /** A ground fight's contact spark: radius in CSS px, tint and alpha. */
@@ -161,6 +162,14 @@ export const QUEEN_LIT = 0.42;
 /** Her bar's chip: her colour mixed this far toward white, the bar's own flash colour. */
 export const QUEEN_CHIP = 0.6;
 
+/** Visible face of a damage chip in screen CSS pixels, not the whole HP bar. */
+export interface DamageChip extends Rect { colour: number }
+
+export function damageChip(x: number, top: number, bar: number, lost: number, colour: number): DamageChip {
+  const x0 = x + EMBLEM_BAR.w * (bar - 0.5);
+  return { x0, x1: x0 + EMBLEM_BAR.w * lost, y0: top, y1: top + EMBLEM_BAR.h, colour: mixColour(colour, 0xffffff, QUEEN_CHIP) };
+}
+
 /** What stays of a lost queen's emblem once her collapse is over: dimmed and a little smaller, a landmark of where she was. */
 export const LOST_EMBLEM = { alpha: 0.35, scale: 0.78 } as const;
 
@@ -199,6 +208,7 @@ export function mixColour(a: number, b: number, t: number): number {
 export class QueenHomes {
   readonly layer = new Graphics();
   readonly emblems = new Graphics();
+  readonly chips: DamageChip[] = [];
   private readonly icons = new IconSprites();
   readonly crownIcons = this.icons.layer;
   private px: number;
@@ -213,7 +223,8 @@ export class QueenHomes {
     this.px = 1 / tilePx;
   }
 
-  update(frame: Pick<Frame, "board" | "targetMs" | "hits" | "lossShown"> & Partial<Pick<Frame, "queenPulse">>, reduced = reducedMotion()) {
+  update(frame: Pick<Frame, "board" | "targetMs" | "hits" | "lossShown"> & Partial<Pick<Frame, "queenPulse">>, reduced = reducedMotion(), toScreen?: (x: number, y: number) => [number, number]) {
+    this.chips.length = 0;
     const g = this.layer;
     const emblem = this.emblems;
     const px = this.px;
@@ -262,7 +273,14 @@ export class QueenHomes {
         emblem.rect(qx - w / 2, y, w, h).fill({ color: 0x090807, alpha: 0.9 * s.zone });
         if (s.bar > 0) emblem.rect(qx - w / 2, y, w * s.bar, h).fill({ color: mixColour(colour, 0xffffff, s.flash), alpha: s.zone });
         // The chip: from the fill to where it stood at the last whole match second, cut to nothing as each second turns.
-        if (s.chip > 0) emblem.rect(qx - w / 2 + w * s.bar, y, w * s.chip, h).fill({ color: mixColour(colour, 0xffffff, QUEEN_CHIP), alpha: s.zone });
+        if (s.chip > 0) {
+          const chip = damageChip(0, QUEEN_EMBLEM.r + EMBLEM_BAR.gap, s.bar, s.chip, colour);
+          emblem.rect(qx + chip.x0 * px, y, (chip.x1 - chip.x0) * px, h).fill({ color: chip.colour, alpha: s.zone });
+          if (toScreen) {
+            const [x, y] = toScreen(qx, qy);
+            this.chips.push({ x0: x + chip.x0, x1: x + chip.x1, y0: y + chip.y0, y1: y + chip.y1, colour: chip.colour });
+          }
+        }
       }
     }
   }

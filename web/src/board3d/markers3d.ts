@@ -9,7 +9,7 @@ import { TICK_MS } from "../../../src/live/snapshot.ts";
 import type { Frame } from "../buffer.ts";
 import { colonyTint } from "../colony-palette.ts";
 import { reducedMotion } from "../camera.ts";
-import { EMBLEM_BAR, QUEEN_CHIP, QUEEN_EMBLEM, QUEEN_LIT, STORY_MARK_MS, crownPolygon, emblemState, mixColour } from "../effects.ts";
+import { EMBLEM_BAR, damageChip, type DamageChip, QUEEN_EMBLEM, QUEEN_LIT, STORY_MARK_MS, crownPolygon, emblemState, mixColour } from "../effects.ts";
 import { visibleStory } from "../story.ts";
 
 /** One queen emblem per colony, index = colony id; a match has at most four colonies. */
@@ -52,6 +52,7 @@ export const MARKER_FRAMES: Readonly<Record<MarkerParticle["kind"], MarkerFrame>
  * The projection writes to scratch points rather than allocating a tuple for each arm. */
 export class MarkerSpecs3D {
   readonly particles: MarkerParticle[] = [];
+  readonly chips: DamageChip[] = [];
   shown = 0;
   /** The tile of an order the viewer points at in the dock or on the card (overlays.ts handlers.target), lit on the board; null for none. */
   target: [number, number] | null = null;
@@ -86,6 +87,7 @@ export class MarkerSpecs3D {
    */
   update(frame: Pick<Frame, "board" | "story" | "targetMs" | "hits" | "lossShown"> & Partial<Pick<Frame, "queenPulse">>, project: ProjectToRef, reduced = reducedMotion()): void {
     this.count = 0;
+    this.chips.length = 0;
     this.shown = 0;
     const setup = frame.board?.setup;
     if (setup) for (const q of streamQueens(frame.board!)) {
@@ -117,7 +119,11 @@ export class MarkerSpecs3D {
         const y = this.point.y + QUEEN_EMBLEM.r + EMBLEM_BAR.gap + 1;
         this.put("line", this.point.x, y, EMBLEM_BAR.w / 112, 1.5, 0x111111, s.zone);
         if (s.bar > 0) this.put("line", this.point.x - (EMBLEM_BAR.w / 2) * (1 - s.bar), y, (EMBLEM_BAR.w * s.bar) / 112, 1.5, mixColour(colonyTint(colony), 0xffffff, s.flash), s.zone);
-        if (s.chip > 0) this.put("line", this.point.x - EMBLEM_BAR.w / 2 + EMBLEM_BAR.w * (s.bar + s.chip / 2), y, (EMBLEM_BAR.w * s.chip) / 112, 1.5, mixColour(colonyTint(colony), 0xffffff, QUEEN_CHIP), s.zone);
+        if (s.chip > 0 && Number.isFinite(this.point.x) && Number.isFinite(y)) {
+          const chip = damageChip(this.point.x, y - EMBLEM_BAR.h / 2, s.bar, s.chip, colonyTint(colony));
+          this.chips.push(chip);
+          this.put("line", (chip.x0 + chip.x1) / 2, y, (chip.x1 - chip.x0) / 112, 1.5, chip.colour, s.zone);
+        }
       }
     }
     for (const e of visibleStory(frame.story)) {
@@ -160,6 +166,8 @@ export class BoardMarkers3D {
   private textures: Record<MarkerParticle["kind"], Texture>;
   private pool: Particle[] = [];
   private readonly specs = new MarkerSpecs3D();
+
+  get chips(): readonly DamageChip[] { return this.specs.chips; }
 
   private crownTexture: Texture | undefined;
   private crownSecondTexture: Texture | undefined;
