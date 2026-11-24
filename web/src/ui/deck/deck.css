@@ -1122,6 +1122,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .sb-sticky-bar .d1-name::before { margin-right: 5px; }
   .score-band .sb-sticky-bar > .sb-history { margin-left: auto; }
   .d1-sel > .d1-sel-head > .d1-sel-names { grid-column: 1 / -1; grid-row: 2; }
+  .d1-sel-ant .d1-sel-title { --d1-fit-ant: 1; font-size: var(--d1-ant-fit, var(--aw-text-lead)); }
   .d1-sel-ant > .d1-sel-head > .d1-close { grid-column: 2; grid-row: 1; }
   .d1-sel:not(.d1-sel-ant) > .d1-sel-head > .d1-close { grid-column: 3; grid-row: 1; }
   .d1 .aw-replay-controls { grid-template-rows: var(--d1-tap) var(--d1-tap); border-radius: calc(var(--d1-tap) / 2); }
@@ -1132,6 +1133,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-history-line > :is(.d1-chip, .d1-gone) { grid-column: 1 / -1; justify-self: end; }
   .d1-result-dialog .d1-moment { grid-template-columns: calc(36em / 13) minmax(0, 1fr); }
   .d1-result-dialog .d1-moment-who { grid-column: 2; }
+  /* Arrival descriptions need the whole row, rather than the space left after the time and icons. */
+  .score-band .d1-log.is-arrival > .d1-tl-what { grid-column: 1 / -1; grid-row: 2; }
   .score-band .d1-log-lead { display: inline-block; }
   .score-band .d1-log-mark { flex-wrap: wrap; }
   .d1-sel-recent > .d1-kicker,

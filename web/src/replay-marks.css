@@ -90,3 +90,13 @@
   }
   .d1 .aw-replay-controls .aw-mark-label { line-height: calc(16em / 12); }
 }
+
+/* In an enlarged phone HUD, the label can be wider than the entire transport. Keep
+   the list in the flow below the rail (never above the phone scroller), let rows
+   grow by whole words, and keep the time intact. */
+@media (min-width: 320px) and (max-width: 19.99em) {
+  .d1 .aw-mark-list { position: static; grid-column: 1 / -1; width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
+  .d1 .aw-mark-row { min-height: var(--aw-mark-row); height: auto; padding-block: 0.25em; white-space: normal; }
+  .d1 .aw-mark-row .aw-mark-words { min-width: 0; }
+  .d1 .aw-mark-row .aw-mark-words b { white-space: nowrap; }
+}

@@ -568,6 +568,32 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   const antTitle = h(doc, "p", "d1-sel-title"), antLine = h(doc, "p", "d1-sel-sub");
   const antNames = h(doc, "div", "d1-sel-names");
   antNames.append(antTitle, antLine);
+  // Fit the actual words (id, colony and face all vary). A resize or a new pick can
+  // restore the full token. Measure at candidate sizes: hinted glyph widths do not
+  // scale exactly in proportion to font size.
+  const fitAntTitle = () => {
+    if (!antTitle.isConnected || antCard.hidden || !antTitle.textContent) return;
+    antTitle.style.removeProperty("--d1-ant-fit");
+    const style = win.getComputedStyle(antTitle);
+    if (!style.getPropertyValue("--d1-fit-ant")) return;
+    const range = doc.createRange();
+    range.selectNodeContents(antTitle);
+    const room = antTitle.getBoundingClientRect().width, full = parseFloat(style.fontSize);
+    if (room <= 0 || range.getBoundingClientRect().width <= room) return;
+    let low = 0, high = Math.ceil(full * 4);
+    while (high - low > 1) {
+      const mid = Math.floor((high + low) / 2);
+      antTitle.style.setProperty("--d1-ant-fit", `${mid / 4}px`);
+      if (range.getBoundingClientRect().width <= room) low = mid; else high = mid;
+    }
+    antTitle.style.setProperty("--d1-ant-fit", `${low / 4}px`);
+  };
+  let antRoom = -1;
+  const antResize = win?.ResizeObserver ? new win.ResizeObserver(([entry]) => {
+    if (entry && entry.contentRect.width !== antRoom) { antRoom = entry.contentRect.width; fitAntTitle(); }
+  }) : null;
+  antResize?.observe(antNames);
+  if (doc.fonts) listen(doc.fonts, "loadingdone", fitAntTitle);
   const antClose = h(doc, "button", "d1-close");
   antClose.type = "button";
   antClose.setAttribute("aria-label", PAGE_WORDS.close);
@@ -617,9 +643,13 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   const writeSelected = (sel: Selected, board: Board | null) => {
     place(sel);
     setHidden(card, sel.kind !== "agent");
+    const openingAnt = antCard.hidden;
     setHidden(antCard, sel.kind !== "ant");
     if (sel.kind === "ant") {
-      setText(antTitle, sel.title);
+      if (openingAnt || antTitle.textContent !== sel.title) {
+        setText(antTitle, sel.title);
+        fitAntTitle();
+      }
       setText(antLine, sel.line);
       antCard.style.setProperty("--d1-side", COLONY_CSS[sel.colony]);
       return;
@@ -812,6 +842,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       resultModal.update(frame, view.share ?? null, eligible);
     },
     destroy() {
+      antResize?.disconnect();
       for (const off of listeners.splice(0)) off();
       if (targetFor >= 0) light(-1);
       tip.remove();

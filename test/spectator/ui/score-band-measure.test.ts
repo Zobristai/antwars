@@ -278,6 +278,68 @@ describe("scrolling HUD fit evidence", () => {
       expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
     } finally { await browser.close(); }
   });
+  it("fits the picked ant and every grouped seek mark at enlarged phone widths", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/hud-fit") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end(`<meta name="viewport" content="width=device-width,initial-scale=1"><main class="d1 score-band"><section class="d1-deck"></section><section id="rail"></section></main>`);
+    });
+    await server.listen();
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      for (const font of ["Roboto", "Liberation Sans"] as const) {
+        const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+          args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+        try {
+          const page = await browser.newPage({ viewport: { width: 320, height: 844 } });
+          await applyTextSize(page, 32);
+          await page.goto(`http://127.0.0.1:${addr.port}/hud-fit`);
+          await page.addScriptTag({ type: "module", content: `
+            import '/web/src/design-system/tokens.css'; import '/web/src/ui/deck/deck.css';
+            import { mountTeams } from '/web/src/ui/deck/pane.ts'; import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+            import { mountReplayControls } from '/web/src/replay-controls.ts';
+            const teams = mountTeams(document, {}, {search: () => '', economy: [0,1].map(() => document.createElement('div'))});
+            document.querySelector('.d1-deck').append(...teams.teams); teams.setWide(false);
+            teams.update({frame: scoreFrame(2), connection: 'live', selected: {antId: 123456, agent: -1, colony: 0}, selectedAgent: -1, board:'3d', mode:null}, false);
+            const marks = [0,1,1].map(colony => ({kind:'nest', ms:12000, tick:120, colony}));
+            const controls = mountReplayControls(document, {duration:30000, rate:1, error:null, position:0, events:marks});
+            document.querySelector('#rail').append(controls.el); document.querySelector('.aw-mark.group').click();
+          ` });
+          const title = page.locator(".d1-sel-ant .d1-sel-title");
+          await title.waitFor();
+          for (const width of [320, 390, 393, 412, 430, 559, 560, 639]) {
+            await page.setViewportSize({ width, height: 844 });
+            // The mounted card refits after layout delivers its size observer.
+            await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+            const t = await title.evaluate(el => {
+              const range = new Range(); range.selectNodeContents(el);
+              const line = range.getBoundingClientRect(), box = el.getBoundingClientRect();
+              return { text: el.textContent, lines: range.getClientRects().length, fits: line.right <= box.right + 0.5,
+                fontSize: parseFloat(getComputedStyle(el).fontSize) };
+            });
+            expect(t, `${width}px ${font}`).toMatchObject({ text: "Ant 123456 · Very Large Colony", lines: 1, fits: true });
+            expect(t.fontSize).toBeGreaterThan(14);
+            if (width === 639) expect(t.fontSize).toBe(28);
+            const menuTop = (await page.locator(".aw-mark-list:visible").boundingBox())!.y;
+            const seek = (await page.locator('.aw-replay-controls input[type="range"]').boundingBox())!;
+            expect(menuTop).toBeGreaterThanOrEqual(seek.y + seek.height - 0.5);
+            const rows = page.locator(".aw-mark-list:visible .aw-mark-row");
+            expect(await rows.count()).toBe(3);
+            const fits = await rows.evaluateAll(nodes => nodes.every(row => {
+              const box = row.getBoundingClientRect(), words = row.querySelector(".aw-mark-words")!;
+              const range = new Range(); range.selectNodeContents(words);
+              const next = row.nextElementSibling?.getBoundingClientRect();
+              return box.right <= innerWidth + 0.5 && (!next || box.bottom <= next.top + 0.5) &&
+                [...range.getClientRects()].every(r => r.right <= box.right + 0.5 && r.left >= box.left - 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5);
+            }));
+            expect(fits, `${width}px ${font}: mark words and time inside their own row`).toBe(true);
+          }
+        } finally { await browser.close(); }
+      }
+    } finally { await server.close(); }
+  }, 60_000);
   it("moves only the waiting message when the legend cannot fit, at default or enlarged text", async () => {
     const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
     server.middlewares.use((req, res, next) => {
