@@ -30,7 +30,7 @@ export interface RecordedMatch {
   readonly colonyNames?: readonly string[];
 }
 
-export const isHouseHandle = (handle: string) => handle === HOUSE_USERNAME || handle.startsWith(`${HOUSE_USERNAME}/`);
+const isHouseHandle = (handle: string) => handle === HOUSE_USERNAME || handle.startsWith(`${HOUSE_USERNAME}/`);
 
 /**
  * A recording's match type from its own recorded facts, for a recording whose lobby cannot be read: a four-colony record

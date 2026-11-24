@@ -22,8 +22,7 @@ import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h, heldSpaces, leastShown } from "../ui/dom.ts";
 import { watchCut } from "../ui/cut.ts";
 import type { Mounted } from "../ui/types.ts";
-import { usersLedger } from "./users.ts";
-import { loadMoreButton, mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
+import { mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
 import { rowRatingNode } from "./identity.ts";
 import { waitingCard } from "./waiting.ts";
 import {
@@ -134,7 +133,6 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
   });
 
   // ---------------------------------------------------------------- update
-  const users = usersLedger(doc, search);
   let drawn = "", seen: LoadsSeen = new Map();
   let loadedAt: number | null = null;
   // Recordings while its load is this page's Load more, not a Refresh.
@@ -152,9 +150,7 @@ export function mountMatches(doc: Document, host: HTMLElement, actions: MatchesA
       if (next === drawn) return;
       drawn = next;
       const more = () => { continuing = new Set([...continuing, RECORDINGS_LIST]); actions.more(); };
-      const redraw = () => rebuild(doc, frame.content, () => [waitingCard(doc, view, parts), liveCard(view),
-        ...(view.users ? [users(view.users, redraw)] : []), recordingsCard(doc, view, { search, more })]);
-      redraw();
+      rebuild(doc, frame.content, () => [waitingCard(doc, view, parts), liveCard(view), recordingsCard(doc, view, { search, more })]);
     },
     destroy() { frame.destroy(); },
   };
@@ -499,7 +495,11 @@ export function recordingsCard(doc: Document, view: MatchesView, options: Record
   if (options.foot) foot = [options.foot];
   else if (view.next !== null && options.more) {
     // Load more in the site's cyan button (deck.css .d1-agent-button), as the Leaderboard's is.
-    foot = [loadMoreButton(doc, "more", view.recordings.status === "loading", options.more)];
+    const button = h(doc, "button", "d1-agent-button", PAGE_WORDS.more);
+    button.type = "button";
+    button.dataset.key = "more"; button.disabled = view.recordings.status === "loading";
+    button.addEventListener("click", options.more);
+    foot = [button];
   }
   const lines = rows.map(row => recordingMatchRow(byId.get(row.id)!, row));
   const loading = view.recordings.status === "loading" && rows.length === 0;

@@ -1,5 +1,4 @@
 /// <reference types="node" />
-import { joinReads } from "../store/join-reads.js";
 import { Readable } from "node:stream";
 import type { StreamIdentity, StreamMessage } from "../live/format.js";
 import type { Store } from "../store/firestore.js";
@@ -56,15 +55,15 @@ const MAX_BYTES = 64 * 1024 * 1024;
  * Whether a correction reads applied. Read for each request until it does; an applied correction is never undone (both
  * records are written once), so that answer is kept. A failed read is CorrectedRecordingUnavailable.
  */
-function appliedReader(store: Pick<Store, "get">): (correction: Correction, signal?: AbortSignal) => Promise<boolean> {
+function appliedReader(store: Pick<Store, "get">): (correction: Correction) => Promise<boolean> {
   const applied = new Set<Correction["kind"]>();
-  return async (correction, signal) => {
+  return async correction => {
     if (applied.has(correction.kind)) return true;
     let yes: boolean;
     try {
-      if (correction.kind === "sol") yes = await store.get(CORRECTION_MARKER, signal) !== null;
+      if (correction.kind === "sol") yes = await store.get(CORRECTION_MARKER) !== null;
       else {
-        const record = await store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`, signal);
+        const record = await store.get(`ratingCorrections/${NEVER_JOINED.lobbyId}`);
         yes = record?.kind === CORRECTION_KIND && record.lobbyId === NEVER_JOINED.lobbyId && record.replayId === NEVER_JOINED.replayId;
       }
     } catch { throw new CorrectedRecordingUnavailable("correction state unreadable"); }
@@ -227,14 +226,13 @@ export function correctedHistorySource(source: HistorySource, store: Pick<Store,
   const applied = appliedReader(store);
   return {
     list: (pageToken, signal) => source.list(pageToken, signal),
-    scan: source.scan?.bind(source),
     continuationAfter: source.continuationAfter === undefined ? undefined : id => source.continuationAfter!(id),
     // Uncorrected, as list(): listed corrects every served row, the top matches' included.
     summary: source.summary === undefined ? undefined : (id, signal) => source.summary!(id, signal),
-    async listed(rows, signal) {
-      return joinReads(rows.map(async row => {
+    async listed(rows) {
+      return Promise.all(rows.map(async row => {
         const correction = CORRECTIONS.get(row.id);
-        return correction !== undefined && await applied(correction, signal) ? correctSummary(correction, row) : row;
+        return correction !== undefined && await applied(correction) ? correctSummary(correction, row) : row;
       }));
     },
     async open(id, signal) {

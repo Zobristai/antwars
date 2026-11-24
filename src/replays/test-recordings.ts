@@ -13,7 +13,7 @@ export const testRecordingPath = (replayId: string) => `${TEST_RECORDINGS}/${rep
 
 export interface TestRecordings {
   /** The ids among replayIds recorded as test, read in one batch; ids answered recently come from the cache. */
-  marked(replayIds: readonly string[], signal?: AbortSignal, fresh?: boolean): Promise<ReadonlySet<string>>;
+  marked(replayIds: readonly string[]): Promise<ReadonlySet<string>>;
   /** Record replayId as a test recording; marking it again changes nothing. */
   mark(replayId: string): Promise<void>;
 }
@@ -30,18 +30,13 @@ export function createTestRecordings(store: Store, options: { readonly unmarkedM
   /** Replay id -> true (marked, kept for good) or the time a "not marked" answer expires. */
   const cache = new Map<string, true | number>();
   return {
-    async marked(replayIds, signal, fresh = false) {
+    async marked(replayIds) {
       const unique = [...new Set(replayIds)].filter(isReplayId);
-      if (!unique.length) return new Set<string>();
-      if (fresh) {
-        const docs = await store.transaction(async read => ({ result: await read(unique.map(testRecordingPath)), writes: [] }), signal);
-        return new Set(unique.filter(id => docs.get(testRecordingPath(id))));
-      }
       const at = now();
       const unknown = unique.filter(id => { const hit = cache.get(id); return hit === undefined || (hit !== true && hit <= at); });
       if (unknown.length > 0) {
         // A transaction with no writes is rolled back: this is one batched read.
-        const docs = await store.transaction(async read => ({ result: await read(unknown.map(testRecordingPath)), writes: [] }), signal);
+        const docs = await store.transaction(async read => ({ result: await read(unknown.map(testRecordingPath)), writes: [] }));
         for (const id of unknown) cache.set(id, docs.get(testRecordingPath(id)) ? true : at + unmarkedMs);
       }
       return new Set(unique.filter(id => cache.get(id) === true));
