@@ -132,7 +132,11 @@ export function mountResultModal(doc: Document): ResultModal {
       name.setAttribute("aria-label", named.name);
       const badgeLine = h(doc, "span", "rd-player");
       badgeLine.append(name);
-      named.badges.forEach(text => badgeLine.append(" ", h(doc, "span", "d1-tag", text)));
+      if (named.badges.length) {
+        const badges = h(doc, "span", "rd-badges");
+        named.badges.forEach((text, i) => badges.append(...(i ? [" "] : []), h(doc, "span", "d1-tag", text)));
+        badgeLine.append(" ", badges);
+      }
       identity.append(colony, " ", badgeLine);
       li.append(identity);
       if (hasRatings) {

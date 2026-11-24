@@ -643,7 +643,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-result-dialog .rd-colony { display: flex; align-items: center; gap: 7px; color: #c3cdd0; font-size: var(--aw-text-body); white-space: nowrap; }
 .d1-result-dialog .rd-colony::before { content: ''; width: calc(7em / 13); height: calc(7em / 13); border-radius: 2px; background: var(--rd-colony); flex: none; }
 .d1-result-dialog .rd-player { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.d1-result-dialog .rd-player > .d1-tag { flex: none; }
+.d1-result-dialog .rd-badges { display: flex; align-items: center; gap: 6px; flex: none; }
+@media (320px <= width < 20em) {
+  /* Prefer the complete identity to sharing its line with a badge group. */
+  .d1-result-dialog .rd-player { flex-wrap: wrap; }
+}
 .d1-result-dialog .d1-rating-name { color: #f2f5f6; font-size: var(--aw-text-lead); font-weight: 600; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .d1-result-dialog .rd-numbers { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .d1-result-dialog .rd-after { color: #f2f5f6; font-weight: 600; }

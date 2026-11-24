@@ -142,7 +142,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
     if (cs.display.includes("grid") || cs.display.startsWith("table") && !heading || cs.display === "list-item" && !top) return false;
     if (cs.display.includes("flex") && !rowFlex(cs)) return false;
     // A group of links or buttons allowed to wrap is a set of controls, not a line of text.
-    if (cs.flexWrap !== "nowrap" && [...el.children].some(c => c.matches("a, button"))) return false;
+    if (cs.flexWrap !== "nowrap" && !el.matches(".d1-result-dialog .rd-player") && [...el.children].some(c => c.matches("a, button"))) return false;
     if (!top && !inline(cs.display) && !(el.parentElement && rowFlex(style(el.parentElement)))) return false;
     // A heading cell built of two or more stacked blocks (a date over its time) is that many lines by design: each block
     // is then judged as a one-line item of its own.
@@ -219,6 +219,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
     isItem.add(el);
     items.push(el);
   }
+  const narrowStandings = matchMedia("(320px <= width < 20em)").matches;
   for (const el of items) {
     // Only what stands in the item's line: a part positioned out of it (a tooltip shown above a badge) is not a line.
     const inLine = (n: Element) => { for (let e: Element | null = n; e && e !== el; e = e.parentElement) if (outOfFlow(e)) return false; return true; };
@@ -228,7 +229,14 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
     const lines = lineCount(rects);
     const words = text(el);
     const prose = !oneLineItem(el) && (el.matches(PROSE + ", li, .d1-result-dialog .d1-moment-what") || el.closest(PROSE) !== null || words.length >= 80);
-    if (lines > 1 && !prose) {
+    // Only the group of whole badges may move down. A wrapped name, split badge group,
+    // or an item cut by its row is still a failure.
+    const group = el.matches(".d1-result-dialog .rd-player") ? el.querySelector(":scope > .rd-badges") : null;
+    const player = el.querySelector(":scope > .d1-rating-name");
+    const stacked = narrowStandings && lines === 2 && group && player
+      && group.getBoundingClientRect().top >= player.getBoundingClientRect().bottom - 0.5
+      && [player, group].every(part => lineCount(textRects(part).map(t => t.r)) === 1);
+    if (lines > 1 && !prose && !stacked) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
       const cs = style(el);
@@ -281,6 +289,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
     if (!words || run.children.length || run.title !== words || run.getAttribute("aria-label") !== words
       || !run.matches('a[href], span[role="group"]') || run.closest('[aria-hidden="true"], [inert]') || run.hasAttribute("aria-labelledby")) continue;
     if (cs.whiteSpace === "nowrap" && cs.textOverflow === "ellipsis" && cs.overflowX === "hidden" && cs.display === "block"
+      && (!narrowStandings || run.scrollWidth <= run.clientWidth || run.clientWidth >= run.parentElement!.clientWidth - 1)
       && run.clientWidth >= 1.5 * parseFloat(cs.fontSize)) designedEnds.add(run);
   }
 
@@ -367,7 +376,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
   }
   // An image, board or control cut by an overflow box or the viewport. (An image cropped by design, object-fit: cover,
   // keeps its box inside its frame and crops within it, so it is not cut here.)
-  for (const el of scope.querySelectorAll("img, svg, canvas, video, iframe, button, input, select, textarea, .d1-result-dialog .rd-player > .d1-tag")) {
+  for (const el of scope.querySelectorAll("img, svg, canvas, video, iframe, button, input, select, textarea, .d1-result-dialog .rd-player .d1-tag")) {
     if (el.closest("[data-render-check='skip']") || el.parentElement?.closest("svg, button") || !shown(el)) continue;
     if ([el, ...el.querySelectorAll("*")].some(c => reported.has(c))) continue;
     const cut = (at: Edges, e: Edges, x: boolean, y: boolean) => {

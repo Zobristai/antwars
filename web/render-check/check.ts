@@ -649,7 +649,7 @@ async function renderAll(o: Options): Promise<Render[]> {
             if (surface.resultDialog) {
               const row = page.locator(".d1-result-dialog:modal .d1-rating").filter({ hasText: "K3.1 Pro Highspeed #1" });
               if (!await row.locator(".d1-tag").isVisible() || !await row.locator(".rd-numbers").isVisible()
-                || !await page.locator(".d1-result-dialog:modal .rd-player > .d1-tag + .d1-tag").first().isVisible()) {
+                || !await page.locator(".d1-result-dialog:modal .rd-badges > .d1-tag + .d1-tag").first().isVisible()) {
                 invalid.push("the finished replay did not show the long player, rated row and two-badge player");
               }
             }
