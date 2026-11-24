@@ -57,13 +57,18 @@ export async function publicUsers(batches: AsyncIterable<readonly UserMatch[]>, 
   });
 }
 
+export function listedUsername(handle: string | null) {
+  if (!handle || isHouseHandle(handle.toLowerCase())) return null;
+  const username = handle.split("/", 1)[0]!;
+  return parseName(username) ? username : null;
+}
+
 function tally(users: Map<string, User>, match: UserMatch) {
   const played = new Set<string>();
   const colonies = new Map<User, Set<number>>();
   for (const { handle, colony, modelLabel } of match.seats) {
-    if (!handle || isHouseHandle(handle.toLowerCase())) continue;
-    const username = handle.split("/", 1)[0]!;
-    if (!parseName(username)) continue; // Released accounts have no public username.
+    const username = listedUsername(handle);
+    if (!username || !handle) continue; // Released accounts have no public username.
     const latest = { startedAt: match.startedAt, id: match.id };
     let user = users.get(username);
     if (!user) {

@@ -378,17 +378,19 @@ it("waits for the last reader's cancelled build to stop, then starts a fresh bui
   } finally { finish.resolve(); }
 });
 
-it("applies public visibility as each page arrives", async () => {
+it("applies the latest visibility once, after all pages arrive", async () => {
   const earlier = oneMatch(), later = match(1, ["fern", "spruce"]);
   earlier.seats[0]!.modelLabel = "earlier"; later.seats[0]!.modelLabel = "later";
   const { store, docs } = memoryWatchStore(), lobbyId = randomUUID(), owner = randomUUID(), excluded = randomUUID();
   const ownership = (id: string, who: string) => docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([who]) });
   ownership(earlier.id, owner); ownership(later.id, owner);
-  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [excluded]);
+  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [excluded])!;
+  const checks = vi.spyOn(visibility, "replaysVisibleEach");
   const source = sourceWith(async function* () { yield [earlier]; ownership(later.id, excluded); yield [later]; });
   const leaderboard = async () => { return { ok: true as const, value: { entries: [score("spruce")] } }; };
   const origin = await listen(source, undefined, { publicVisibility: visibility, ratings: { leaderboard } });
   const { users } = await (await fetch(origin + "/matches/users")).json();
+  expect(checks.mock.calls.map(([ids]) => ids)).toEqual([[earlier.id, later.id]]);
   expect(users.map((u: { username: string }) => u.username).sort()).toEqual(["fern", "river"]);
   expect(users[0]).toMatchObject({ username: "fern", matches: 1, wins: 1, latest: { id: earlier.id }, model: "earlier", moreModels: 0 });
 });
@@ -423,6 +425,25 @@ it("verifies all 6,000 records before publication but does not retain oversized 
   try { await vi.waitFor(() => expect(builds).toBe(2)); expect(checked).toBe(12_000); } finally { resume.resolve(); }
   expect(await expired).toEqual([]);
   expect(warn.mock.calls).toEqual([["Users listing exceeds the contribution limit; expiry will wait for a full build"]]);
+});
+
+it("keeps a large warm listing across writes to unlisted ids but rebuilds when a contributor changes", async () => {
+  const { store, docs } = memoryWatchStore(), markers = createTestRecordings(store);
+  const rows = Array.from({ length: 200 }, (_, i) => match(i, ["fern", "river"]));
+  for (const row of rows) row.seats[0]!.modelLabel = "M".repeat(12 * 1024); // Contributions alone exceed 2 MiB.
+  const hidden = rows[0]!.id, listed = rows[1]!.id, anotherTime = listed.replace("T01-", "T02-");
+  const owner = randomUUID(), excluded = randomUUID(), lobbyId = randomUUID();
+  for (const { id } of rows) docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([id === hidden ? excluded : owner]) });
+  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [excluded]);
+  const scan = vi.fn(async function* () { yield rows; });
+  const url = await listen(sourceWith(scan), undefined, { usersNow: () => 0, publicVisibility: visibility, testRecordings: markers,
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const count = async () => { const r = await fetch(url + "/matches/users"); expect(r.status).toBe(200); return (await r.json()).users[0].matches; };
+  using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  expect(await count()).toBe(199); expect(warn.mock.calls).toEqual([["Users listing exceeds the contribution limit; expiry will wait for a full build"]]);
+  await markers.mark(hidden); await markers.mark(anotherTime); // Scanned but excluded; unknown with the same sequence as a contributor.
+  expect(await count()).toBe(199); expect(scan).toHaveBeenCalledTimes(1);
+  await markers.mark(listed); expect(await count()).toBe(198); expect(scan).toHaveBeenCalledTimes(2);
 });
 
 it("warns once and fails the build without publishing a partial listing at the 32 MiB limit", async () => {

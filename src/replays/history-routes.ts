@@ -1,9 +1,9 @@
 import { agreedHandles, attributeRoster, type CurrentRosterSeats } from "./roster-ownership.js";
 import { isValidId } from "../rating/ratings.js";
 import { joinReads } from "../store/join-reads.js";
-import { needsUsersCheck, snapshotContributions, usersRevision } from "./users-snapshot.js";
+import { needsUsersCheck, snapshotContributions, usersRevision, type Candidate } from "./users-snapshot.js";
 import { neverJoined } from "./listed-colonies.js";
-import { publicUsers, type UserMatch } from "./public-users.js";
+import { listedUsername, publicUsers, type UserMatch } from "./public-users.js";
 import type { Ratings } from "../rating/ratings.js";
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -351,7 +351,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   options: HistoryRouteOptions = {}): MountHandler {
   const recordIdleMs = options.recordIdleMs ?? RECORD_IDLE_MS;
   // A whole-history build uses a fresh projection per page; it never populates the route's long-lived row caches.
-  function projection(policy: PublicVisibility | undefined, buildSignal?: AbortSignal, originals?: WeakMap<TypedHistorySummary, TypedHistorySummary>) {
+  function projection(policy: PublicVisibility | undefined, buildSignal?: AbortSignal) {
     const cached = lobbies === undefined ? undefined : cachedLobbyLookup(buildSignal ? id => lobbies(id, buildSignal) : lobbies, { unsettledMs: options.unsettledLobbyMs });
     const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
     const types = recordingMatchTypes(cached, undefined, buildSignal);
@@ -361,20 +361,19 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       const [all, marked] = await joinReads([types(listed), options.testRecordings?.marked(listed.matches.map(row => row.id), buildSignal, !!buildSignal)]);
       return { ...all, matches: all.matches.filter(row => row.matchType?.kind !== "test" && !marked?.has(row.id)) };
     }
-    async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
+    async function candidates(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
       const typed = await nonTest(listed);
       // A request that has ended starts no further lookups.
       signal.throwIfAborted();
       const filled = handles === undefined ? typed : await handles(typed);
       // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
       const rows = source.listed === undefined ? filled.matches : await source.listed(filled.matches, buildSignal);
-      if (!rows.length || !options.currentRosterSeats) {
-        if (rows.length && buildSignal) throw new Error("Roster ownership unavailable");
-        return { ...filled, matches: rows };
-      }
-      const attributed = await attributeRoster(rows, cached, options.currentRosterSeats, signal, buildSignal ? "directory" : "archive");
-      if (originals) attributed.forEach((row, i) => originals.set(row, rows[i]!));
-      return { ...filled, matches: attributed };
+      return { ...filled, matches: rows };
+    }
+    async function serve(listed: HistoryPage, signal: AbortSignal): Promise<ServedPage> {
+      const page = await candidates(listed, signal);
+      if (!page.matches.length || !options.currentRosterSeats) return page;
+      return { ...page, matches: await attributeRoster(page.matches, cached, options.currentRosterSeats, signal, "archive") };
     }
     async function visibleRows<T extends { id: string }>(rows: T[], signal: AbortSignal, lobbyLimit = 20) {
       signal.throwIfAborted();
@@ -387,32 +386,32 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
       return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
     }
-    return { serve, serveVisible, visibleRows };
+    return { serve, serveVisible, visibleRows, candidates };
   }
   const { serve, serveVisible } = projection(options.publicVisibility);
   const continuations = listingContinuations();
   const listPage = (token: string | undefined, signal: AbortSignal) =>
     publicHistoryPage(source, token, signal, options.publicVisibility, continuations, raw => serveVisible(raw, signal));
 
-  async function scanContributions(signal: AbortSignal, policy: PublicVisibility | undefined, facts: ReturnType<typeof snapshotContributions>) {
+  async function scanContributions(signal: AbortSignal, facts: ReturnType<typeof snapshotContributions>) {
     if (!source.scan) throw new Error("History scan unavailable");
     const stop = new AbortController(), reading = AbortSignal.any([signal, stop.signal]);
     const iterator = source.scan(reading)[Symbol.asyncIterator]();
-    // Two pages at most, including the next body read. Its owner checks can start as soon as the
-    // bodies arrive while the current page finishes checking claims. Yield in discovery order.
+    // Read up to two storage pages while typing rows and filling historical seat labels.
+    // Only the final check resolves visibility and current owners, before anything is tallied.
     const pages: Promise<TypedHistorySummary[]>[] = [];
-    const originals = new WeakMap<TypedHistorySummary, TypedHistorySummary>();
     function remember(rows: TypedHistorySummary[]) {
-      for (const row of rows) if (!neverJoined(row) && row.seats.some(s => s.handle && !isHouseHandle(s.handle.toLowerCase()))) facts.add(originals.get(row)!);
+      // Even a never-joined match must fail closed on a broken ownership read. Keep
+      // its verification key, not tally fields; it cannot appear in the response.
+      for (const row of rows) facts.add(row, !neverJoined(row) && row.seats.some(s => s.handle && !isHouseHandle(s.handle.toLowerCase())));
     }
     async function project(matches: HistorySummary[]) {
-      const page = projection(policy, reading, originals);
-      const visible = await page.visibleRows(matches, reading);
+      const page = projection(undefined, reading);
       const rows: TypedHistorySummary[] = [];
       // A wider storage read must not fan out an entire window of individual lobby lookups.
-      for (let i = 0; i < visible.length; i += PAGE_ROWS) {
+      for (let i = 0; i < matches.length; i += PAGE_ROWS) {
         reading.throwIfAborted();
-        const served = await page.serve({ matches: visible.slice(i, i + PAGE_ROWS), nextPageToken: null }, reading);
+        const served = await page.candidates({ matches: matches.slice(i, i + PAGE_ROWS), nextPageToken: null }, reading);
         rows.push(...served.matches);
       }
       return rows;
@@ -437,8 +436,9 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const policyNow = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));
   const usersDeadline = options.usersDeadlineMs ?? 120_000, usersNow = options.usersNow ?? Date.now;
   type Facts = ReturnType<typeof snapshotContributions>;
+  type Ids = ReturnType<Facts["createIndex"]>;
   type Policy = ReturnType<typeof policyNow>;
-  type Answer = { body: Buffer; revision: number; expires: number };
+  type Answer = { body: Buffer; revision: number; expires: number; ids: Ids };
   type Snapshot = { answer?: Answer; expires: number; digest: string; facts?: Facts };
   let snapshot: Snapshot | undefined;
   type Flight = { answer(): Promise<Buffer>; background: boolean; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; waiters: number };
@@ -448,23 +448,26 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
 
   // Use the same fresh database reads for both an expired answer and publication. An ownership
   // write or hide on another instance doesn't advance our process-local revision.
-  async function checked(facts: Facts, policy: Policy, signal: AbortSignal, width: 1 | 4) {
+  async function checked(facts: Facts, policy: Policy, signal: AbortSignal, ids: Ids, publication: boolean) {
+    const width = publication ? 4 : 1;
     // A remote change cannot advance our revision. Bound the oldest database read, not the publication time.
     const expires = usersNow() + 60_000, revision = usersRevision();
     const page = projection(policy.visibility, signal);
-    async function verify(rows: UserMatch[], lobbyLimit: number) {
+    async function verify(rows: Candidate[], lobbyLimit: number) {
       const [visible, marked] = await joinReads([page.visibleRows(rows, signal, lobbyLimit),
         options.testRecordings?.marked(rows.map(row => row.id), signal, true)]);
       const allowed = visible.filter(row => !marked?.has(row.id));
       if (!allowed.length) return [];
       if (!options.currentRosterSeats) throw new Error("Roster ownership unavailable");
-      return attributeRoster(allowed, lobbies, options.currentRosterSeats, signal, "directory", lobbyLimit);
+      const attributed = await attributeRoster(allowed, lobbies, options.currentRosterSeats, signal, "directory", lobbyLimit);
+      return attributed.filter((row): row is UserMatch => "outcome" in row);
     }
     async function* batches() {
       const iterator = facts.batches();
+      let ordinal = 0;
       for (;;) {
         signal.throwIfAborted();
-        const group: UserMatch[][] = [];
+        const group: Candidate[][] = [];
         while (group.length < width) {
           const batch = iterator.next();
           if (batch.done) break;
@@ -474,14 +477,21 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         // Verification phases run in order inside a batch. Share the lobby budget across
         // both legacy visibility and attribution; drain the whole group before reading more.
         const limit = Math.min(20, Math.floor(40 / group.length));
-        yield* await joinReads(group.map(rows => verify(rows, limit)));
+        const verified = await joinReads(group.map(rows => verify(rows, limit)));
+        for (const [i, batch] of verified.entries()) {
+          if (publication) {
+            const contributing = new Set(batch.filter(row => row.seats.some(s => listedUsername(s.handle))).map(row => row.id));
+            for (const { id } of group[i]!) ids.set(ordinal++, contributing.has(id) ? id : undefined);
+          }
+          yield batch;
+        }
       }
     }
     const users = await publicUsers(batches(), options.ratings, signal);
-    return { body: Buffer.from(JSON.stringify({ users })), revision, expires };
+    return { body: Buffer.from(JSON.stringify({ users })), revision, expires, ids };
   }
 
-  function begin(policy: Policy, prior?: Facts): Flight {
+  function begin(policy: Policy, prior?: Snapshot): Flight {
     const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
     const started = usersNow();
     // One admitted check at a time, shared even while waiting out the cooldown. When the
@@ -489,34 +499,37 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     const earlyStop = new AbortController(), earlySignal = AbortSignal.any([signal, earlyStop.signal]);
     let closing = false, nextCheck = 0, early: Promise<Answer | undefined> | undefined;
     function checkPrior() {
-      if (!prior || closing) return early;
+      if (!prior?.facts || !prior.answer || closing) return early;
+      const { facts, answer } = prior;
       return early ??= (async () => {
         const delay = nextCheck - performance.now();
         if (delay > 0) await sleep(delay, undefined, { signal: earlySignal });
-        return checked(prior, policy, earlySignal, 1);
+        return checked(facts, policy, earlySignal, answer.ids, false);
       })().catch(() => { closing = true; return undefined; }).finally(() => {
         nextCheck = performance.now() + 1000; early = undefined;
       });
     }
     const work = (async () => {
       const facts = snapshotContributions();
-      await scanContributions(signal, policy.visibility, facts);
+      await scanContributions(signal, facts);
       closing = true;
       // An active early check may still give its visitors a faster answer; a waiting timer
       // must not hold up publication. Drain its reads before starting the final check.
       if (nextCheck > performance.now()) earlyStop.abort();
       await early;
+      const ids = facts.createIndex();
       let answer: Answer;
       do {
         signal.throwIfAborted();
-        answer = await checked(facts, policy, signal, 4);
-      } while (needsUsersCheck(answer.revision, facts)); // retry the database check, never the storage scan
+        answer = await checked(facts, policy, signal, ids, true);
+      } while (needsUsersCheck(answer.revision, ids)); // retry the database check, never the storage scan
       signal.throwIfAborted();
       const published = usersNow();
       if (policy.digest !== policyNow().digest) throw invalidated;
       if (published >= answer.expires || published - started >= usersDeadline) throw new Error("Listing expired");
-      if (!facts.retainable) console.warn("Users listing exceeds the contribution limit; expiry will wait for a full build");
-      snapshot = { answer, facts: facts.retainable ? facts : undefined, digest: policy.digest, expires: answer.expires };
+      const retained = facts.retainListed(ids);
+      if (!retained) console.warn("Users listing exceeds the contribution limit; expiry will wait for a full build");
+      snapshot = { answer, facts: retained ? facts : undefined, digest: policy.digest, expires: answer.expires };
       return answer;
     })().catch(error => {
       if (error !== invalidated && signal.reason !== invalidated && signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
@@ -526,13 +539,13 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       const pending = checkPrior();
       if (pending) {
         const first = await Promise.race([pending, work]);
-        if (first && usersNow() < first.expires && !needsUsersCheck(first.revision, prior)) return first.body;
+        if (first && usersNow() < first.expires && !needsUsersCheck(first.revision, first.ids)) return first.body;
       }
       const final = await work;
-      if (usersNow() >= final.expires || needsUsersCheck(final.revision, snapshot?.facts)) throw invalidated;
+      if (usersNow() >= final.expires || needsUsersCheck(final.revision, final.ids)) throw invalidated;
       return final.body;
     }
-    const build: Flight = { answer: sharedRead(answer), background: !!prior, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0 };
+    const build: Flight = { answer: sharedRead(answer), background: !!prior?.facts, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0 };
     return build;
   }
   async function users(signal: AbortSignal, admit: () => void): Promise<Buffer> {
@@ -542,10 +555,12 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (snapshot?.digest !== policy.digest) snapshot = undefined;
       if (snapshot && usersNow() < snapshot.expires) {
         if (!snapshot.answer) throw new Error("Users listing temporarily unavailable");
-        if (!needsUsersCheck(snapshot.answer.revision, snapshot.facts)) return snapshot.answer.body;
+        if (!needsUsersCheck(snapshot.answer.revision, snapshot.answer.ids)) {
+          snapshot.answer.revision = usersRevision(); return snapshot.answer.body;
+        }
       }
       admit();
-      const build = flight ??= begin(policy, snapshot?.facts);
+      const build = flight ??= begin(policy, snapshot);
       if (build.digest !== policy.digest) {
         build.stop.abort(invalidated);
         await untilAborted(build.settled, signal);
