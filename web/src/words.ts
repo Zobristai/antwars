@@ -229,8 +229,7 @@ export function placeBadges(placer: Placer, anchors: readonly (readonly [number,
 }
 
 /** The screen rect a marker at (x, y) takes in the layout: the whole ping and its halo, so a badge does not touch it. */
-export function markerRect(x: number, y: number): Rect {
-  const h = MARK_DOT.ring + 3;
+export function markerRect(x: number, y: number, h = MARK_DOT.ring + 3): Rect {
   return { x0: x - h, y0: y - h, x1: x + h, y1: y + h };
 }
 
@@ -647,6 +646,8 @@ export class Words {
   private lines = new Map<number, { dots: [number, number][]; end: [number, number] }>();
   /** Each air route at the last layout: its oldest mark, whose owner shades it; its drawn marks in chain order; its dashes (airRouteDashes). */
   private routes: { owner: StreamMark; marks: StreamMark[]; dashes: [number, number, number, number][] }[] = [];
+  /** Marker footprints for damage chips, including the outer stroke on linked flyer patrol marks. */
+  chipObstacles: readonly Rect[] = [];
   /** The patrol link range of the last layout's board (patrolRangeTiles), kept while its setup and queens are the same. */
   private range: { setup: unknown; queens: unknown; tiles: number | null } = { setup: null, queens: null, tiles: null };
   /** Each live flyer LINE mark's air segment at the last layout, by mark id (airSegment). */
@@ -934,6 +935,10 @@ export class Words {
       const dashes = airRouteDashes(drawn.map((p) => (p === null ? null : [p.x, p.y] as const)), screen, { tiles, inFront });
       this.routes.push({ owner: chain[0]!, marks, dashes });
     }
+    this.chipObstacles = this.routes.length === 0 ? dots : dots.concat(this.routes.flatMap(route => route.marks.map(m => {
+      const p = this.pointById.get(m.id)!;
+      return markerRect(p.x, p.y, AIR_ROUTE.ringR + AIR_ROUTE.ringW / 2);
+    })));
     // Then each count mark's label beside its marker, in the owner's shade, where the layout has room (every
     // marker, panel and nest is already reserved); a crowded mark keeps its reading for the tooltip.
     for (const { mark: m } of frame.marks) {

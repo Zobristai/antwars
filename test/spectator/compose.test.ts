@@ -121,6 +121,19 @@ describe("marks as ground markers", () => {
     expect(overlaps(words.badges.get(0)!, cue)).toBe(false);
   });
 
+  it("moves a mark's count plate off a reserved chip without hiding the count", () => {
+    const words = new Words({ w: 640, h: 480 });
+    const f = frameOf([{ ...mark(1, 10, 10, 0), words: [], verb: "DEFEND", count: 8, claimed: 3 }]);
+    words.update(f, toScreen, [], 1);
+    const first = words.drawnLabels()[0]!;
+    const chip = { x0: first.rect.x0 + 1, y0: 209, x1: first.rect.x0 + 7, y1: 212 };
+    words.update(f, toScreen, [], 1, [], 0, toScreen, [chip]);
+    const moved = words.drawnLabels()[0]!;
+    expect(moved.text).toBe("3/8");
+    expect(overlaps(moved.rect, chip)).toBe(false);
+    expect(words.markers()[0]).toMatchObject({ x: 210, y: 210 });
+  });
+
   // Regression caught in review: badges and fades stepping at 100 to 1000 ms because the
   // whole drawing was cached with the placement; and a mark and its label vanishing at once at the end of its life.
   it("paints every frame on the cached placement: a badge follows its anchor ant between layouts at the offset the layout chose, and a mark's ring, plate and reading fade out together over its last MARK_EXIT_MS", () => {

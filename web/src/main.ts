@@ -662,7 +662,7 @@ async function start(): Promise<void> {
     territory.update(shown, now);
     fog.update(shown);
     startBoxes.update(shown);
-    queens.update(shown);
+    queens.update(shown, undefined, camera.toScreen);
     food.update(shown);
     lap("territory");
     ants.update(shown, selected, agentHues(board?.agents ?? []), fallWindow(frame));
@@ -684,11 +684,11 @@ async function start(): Promise<void> {
     const antPx = antLengthPx(camera.fit.tilePx * scale) / camera.fit.tilePx * camera.view.tilePx;
     const placementView = `${viewVersion}:${overlaysOn}`;
     const dots = words.projectMarkers(shown, camera.toScreen, placementView);
-    const cueRects = cues.update(shown, { toScreen: camera.toScreen, bodyPx: (_x, _y, soldier) => antPx * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : [], words.layer.visible ? dots : []);
+    const cueRects = cues.update(shown, { toScreen: camera.toScreen, bodyPx: (_x, _y, soldier) => antPx * (soldier ? 2 : 1) }, { w, h }, overlaysOn ? overlays.blocked() : [], words.layer.visible ? dots : [], queens.chips);
     words.update(shown, camera.toScreen, blocked, placementView, squads.anchors(shown, camera.toScreen), squads.badgeR, camera.toScreen, cueRects);
     lap("words");
     squads.updateBadges(shown, camera.toScreen, words.badges);
-    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : []);
+    cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : [], words.layer.visible ? words.chipObstacles : []);
     lap("tags");
     // The finale: once playback has the result, the board's text and badges fade out under it, and the tooltips go.
     if (board?.result) endedAt ??= now;

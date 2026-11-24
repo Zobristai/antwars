@@ -15,7 +15,7 @@ import { colonyNamesOf } from "../../src/sim/colonyNames.ts";
 import type { Frame, QueenPulse } from "./buffer.ts";
 import { renderedQueenBiteContacts } from "./bite.ts";
 import { colonyTint } from "./colony-palette.ts";
-import { EMBLEM_BAR, GROUND_SPARK, QUEEN_EMBLEM } from "./effects.ts";
+import { type DamageChip, EMBLEM_BAR, GROUND_SPARK, QUEEN_EMBLEM } from "./effects.ts";
 import { GLOSS_FONT, LABEL_PLATE_ALPHA, Placer, overlaps, type Rect } from "./words.ts";
 
 /** The board label's type for the stacks and tabs, CSS px, and its plate's padding and corner radius. */
@@ -219,6 +219,8 @@ export class QueenBiteCues {
   private readonly sparks = new Graphics();
   private readonly brackets = new Graphics();
   readonly aboveBadges = new Container();
+  private readonly raisedChips = new Graphics();
+  private chips: readonly DamageChip[] = [];
   private readonly normal;
   private readonly raised = labelParts(this.aboveBadges);
   private readonly pool: BitmapText[] = [];
@@ -228,11 +230,13 @@ export class QueenBiteCues {
 
   constructor() {
     this.layer.addChild(this.sparks, this.brackets);
+    this.aboveBadges.addChildAt(this.raisedChips, 0);
     this.normal = labelParts(this.layer);
   }
 
   /** Lay out and draw this frame's cues; returns the rects the marks' layout keeps clear of. */
-  update(frame: Frame, board: CueBoard, screen: { w: number; h: number }, blocked: readonly Rect[], markers: readonly Rect[]): readonly Rect[] {
+  update(frame: Frame, board: CueBoard, screen: { w: number; h: number }, blocked: readonly Rect[], markers: readonly Rect[], chips: readonly DamageChip[] = []): readonly Rect[] {
+    this.chips = chips;
     this.sparks.clear();
     this.brackets.clear();
     // The contacts of the ants biting her, on her ring, above her emblem so the mob cannot hide them.
@@ -241,7 +245,8 @@ export class QueenBiteCues {
       if (Number.isFinite(x) && Number.isFinite(y)) this.sparks.circle(x, y, GROUND_SPARK.r);
     }
     this.sparks.fill({ color: GROUND_SPARK.tint, alpha: GROUND_SPARK.alpha });
-    const placed = this.placed = layoutCues(frame, board, screen, blocked, markers);
+    const placed = this.placed = layoutCues(frame, board, screen, chips.length ? [...blocked, ...chips] : blocked, markers);
+    placed.reserved.push(...chips);
     for (const br of placed.brackets) {
       const half = br.side / 2, arm = Math.min(CUE_BRACKETS.arm, br.side / 3);
       const x0 = br.x - half, y0 = br.y - half, x1 = br.x + half, y1 = br.y + half;
@@ -259,7 +264,14 @@ export class QueenBiteCues {
   }
 
   /** Once badges have followed their ants, lift only fallback labels or those a badge still touches. */
-  drawLabels(badges: readonly Rect[]): void {
+  drawLabels(badges: readonly Rect[], chipObstacles: readonly Rect[] = []): void {
+    // Keep the original face on its bar unless a fixed marker or a badge with no free spot covers it.
+    this.raisedChips.clear();
+    for (const c of this.chips) {
+      if (chipObstacles.some(m => overlaps(m, c)) || badges.some(b => overlaps(grow(b, 1), c))) {
+        this.raisedChips.rect(c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0).fill(c.colour);
+      }
+    }
     for (const p of [this.normal, this.raised]) { p.stackPlates.clear(); p.tabPlates.clear(); }
     this.used = 0;
     // A badge's two-pixel outline is centred on its footprint.
