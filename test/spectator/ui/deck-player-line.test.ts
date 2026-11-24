@@ -54,6 +54,11 @@ describe("a colony panel's player line", () => {
     const rows = [0, 1].map(colony => m.team(colony as 0 | 1).byClass("d1-who")[0]!);
     expect(rows.map(m.shown)).toEqual(["GPT-6 Luna max Fast 1979", "kite GPT-6.1 Terra high Fast 1540"]);
     expect(rows[1]!.children.filter(part => !part.hidden).map(part => part.className)).toEqual(["d1-title-box", "d1-model-box", "d1-tag d1-elo"]);
+    const builder = m.team(1).byClass("aw-user-link")[0]!;
+    expect(builder.href).toBe("/?page=users&user=kite");
+    const pick = m.team(1).byClass("d1-agent-pick")[0]!;
+    expect(pick.contains(builder)).toBe(false); pick.click(); expect(m.picked).toEqual([1]);
+    expect(m.team(0).byClass("aw-user-link").length).toBe(0);
     const all = m.team(0).textContent + m.team(1).textContent;
     expect(all).not.toContain("Rating");
     expect(all).not.toContain("(high)");
@@ -82,7 +87,7 @@ describe("a colony panel's player line", () => {
     let stopped = false;
     elo.fire("click", { stopPropagation: () => { stopped = true; } });
     expect([stopped, m.tip().hidden, m.picked]).toEqual([true, false, []]);
-    const row = m.team(1).byClass("d1-agent")[0]! as ElementPort & { matches(selector: string): boolean };
+    const row = m.team(1).byClass("d1-agent-pick")[0]! as ElementPort & { matches(selector: string): boolean };
     row.matches = selector => selector === ":focus-visible";
     row.fire("blur"); expect(m.tip().hidden).toBe(true);
     row.fire("focus");
@@ -102,6 +107,7 @@ describe("a colony panel's player line", () => {
     m.update(frameOf([...seats(0, "antwars/k3-1-pro-highspeed", { elo: 1662, rd: 60 }, "k"), ...seats(1, "kite", kite, "openai/gpt-6.1-terra", { thinkingLevel: "max" })]));
     const head = (colony: 0 | 1) => m.team(colony).byClass("d1-team-player")[0]!;
     expect([m.shown(head(0)), m.shown(head(1))]).toEqual(["K3.1 Pro Highspeed high 1662 ×4", "kite GPT-6.1 Terra max 1540 ×4"]);
+    expect(head(1).byClass("aw-user-link")[0]!.href).toBe("/?page=users&user=kite");
     expect(m.team(0).byClass("d1-agent")).toHaveLength(0);
     expect(m.team(0).byClass("d1-member")).toHaveLength(4);
     const elo = head(1).byClass("d1-elo")[0]!;

@@ -258,7 +258,7 @@ describe("leaderboard page mode choice", () => {
     const p = mount(server({ ...emptyIndex })); await p.settled();
     expect(p.root.textContent).not.toMatch(/lobb|queue|account|sign in|username/i);
     // The links: the brand home, the tabs, the house-1v1 mode, Rules and Inspired by.
-    expect(p.root.querySelectorAll("a").map(link => link.href)).toEqual(["/", "/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=leaderboard&mode=house-1v1", "/rules", INSPIRED_BY_URL]); p.dispose();
+    expect(p.root.querySelectorAll("a").map(link => link.href)).toEqual(["/", "/?watch=1", "/?page=matches", "/?page=leaderboard", "/?page=users", "/?page=leaderboard&mode=house-1v1", "/rules", INSPIRED_BY_URL]); p.dispose();
   });
 });
 
@@ -339,7 +339,7 @@ describe("independently paging ranking", () => {
 
 describe("independent entry wiring", () => {
   it("dispatches leaderboard without loading the spectator module", async () => {
-    const starts = { leaderboard: vi.fn(async () => {}), matches: vi.fn(async () => {}), landing: vi.fn(async () => {}), spectator: vi.fn(async () => {}) };
+    const starts = { users: vi.fn(async () => {}), leaderboard: vi.fn(async () => {}), matches: vi.fn(async () => {}), landing: vi.fn(async () => {}), spectator: vi.fn(async () => {}) };
     await dispatchPage(new URL("http://example.test/?page=leaderboard&lobby=private#invite=secret"), starts);
     expect(starts.leaderboard).toHaveBeenCalledOnce(); expect(starts.matches).not.toHaveBeenCalled(); expect(starts.landing).not.toHaveBeenCalled(); expect(starts.spectator).not.toHaveBeenCalled();
     expect(isLeaderboardPage(new URL("http://example.test/other?page=leaderboard"))).toBe(false);
@@ -351,14 +351,14 @@ describe("independent entry wiring", () => {
     expect(host.querySelectorAll("main")).toHaveLength(1); page.destroy();
   });
   it("dispatches matches without loading the spectator module", async () => {
-    const starts = { leaderboard: vi.fn(async () => {}), matches: vi.fn(async () => {}), landing: vi.fn(async () => {}), spectator: vi.fn(async () => {}) };
+    const starts = { users: vi.fn(async () => {}), leaderboard: vi.fn(async () => {}), matches: vi.fn(async () => {}), landing: vi.fn(async () => {}), spectator: vi.fn(async () => {}) };
     await dispatchPage(new URL("http://example.test/?page=matches&board=2d"), starts);
     expect(starts.matches).toHaveBeenCalledOnce(); expect(starts.leaderboard).not.toHaveBeenCalled(); expect(starts.landing).not.toHaveBeenCalled(); expect(starts.spectator).not.toHaveBeenCalled();
     expect(isMatchesPage(new URL("http://example.test/other?page=matches"))).toBe(false);
   });
   const route = async (path: string) => {
     const order: string[] = [];
-    await dispatchPage(new URL(path, "http://example.test"), { leaderboard: async () => { order.push("leaderboard"); }, matches: async () => { order.push("matches"); }, landing: async () => { order.push("landing"); }, spectator: async () => { order.push("spectator"); } });
+    await dispatchPage(new URL(path, "http://example.test"), { users: async () => { order.push("users"); }, leaderboard: async () => { order.push("leaderboard"); }, matches: async () => { order.push("matches"); }, landing: async () => { order.push("landing"); }, spectator: async () => { order.push("spectator"); } });
     return order;
   };
   // The bare front page is the landing; every watch, lobby, replay, recording or capture link keeps the viewer.

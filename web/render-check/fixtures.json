@@ -9,7 +9,7 @@
    }
   },
   "/replays/2026-11-17T08-55-08-583Z-151632020035470": {
-   "label": "Free-for-all replay: public recording 2026-11-17T08-55-08-583Z-151632020035470, ticks 6000-6110 (excerpt.ts; source sha256 eba9ca7c…, excerpt sha256 f9ac31cb…)",
+   "label": "Free-for-all excerpt, ticks 6000–6110, with invented player names for the HUD",
    "type": "application/octet-stream",
    "files": [
     "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/01.replay.jsonl",
@@ -28,7 +28,7 @@
     "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/14.replay.jsonl",
     "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/15.replay.jsonl"
    ],
-   "sha256": "f9ac31cb0f2bbfe250294519c7f92dcea02e8657039830f136c279d00f3b65d5"
+   "sha256": "0e5aad0bde528c3a639f455063a10f627c56b1d94c727406666e952658beba30"
   },
   "/matches/2026-11-17T08-55-08-583Z-151632020035470": {
    "label": "Free-for-all replay's full record, left out: it is 8.4 MB and the page stops reading a record after 256 KiB, as it does on a 404",

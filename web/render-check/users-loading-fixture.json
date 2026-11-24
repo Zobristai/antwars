@@ -1,0 +1,8 @@
+{
+ "fixtures": {
+  "/matches/users": {
+   "label": "Users loading: invented directory fixture",
+   "pending": true
+  }
+ }
+}

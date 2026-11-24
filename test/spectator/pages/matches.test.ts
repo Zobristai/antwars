@@ -98,7 +98,7 @@ const cells = (row: ElementPort) => row.children.map(cell => {
 });
 /** A player line's parts in order, each by its role. */
 const lineParts = (line: ElementPort): (string | string[])[][] => line.children.flatMap(node => {
-  if ((node.classes().includes("d1p-name") || node.classes().includes("d1p-rec-name"))) return [["name", node.children.map(part => `${part.className ?? ""}:${part.textContent}`).filter(part => part !== ":" && part !== ": ")]];
+  if ((node.classes().includes("d1p-name") || node.classes().includes("d1p-rec-name"))) return [["name", node.children.map(part => `${part.classes().filter(c => c !== "aw-user-link").join(" ")}:${part.textContent}`).filter(part => part !== ":" && part !== ": ")]];
   // A Recordings player's badges line holds the same badges a table's player line does, in the same order.
   if (node.classes().includes("d1p-rec-badges")) return lineParts(node);
   // A Recordings name stands in its place on the line, which holds nothing else.

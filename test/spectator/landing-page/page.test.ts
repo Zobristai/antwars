@@ -111,7 +111,7 @@ describe("the hero, as designed", () => {
     expect(p.root.querySelector(".fg-quiet")!.href).toBe("/?page=leaderboard&mode=house-1v1&board=2d");
     const nav = p.root.querySelector("nav")!;
     expect(nav.querySelectorAll("a").map(a => [a.textContent, a.href])).toEqual([
-      ["Watch", "/?watch=1&board=2d"], ["Matches", "/?page=matches&board=2d"], ["Leaderboard", "/?page=leaderboard&board=2d"],
+      ["Watch", "/?watch=1&board=2d"], ["Matches", "/?page=matches&board=2d"], ["Leaderboard", "/?page=leaderboard&board=2d"], ["Users", "/?page=users&board=2d"],
     ]);
     // The front page is no tab of its own.
     expect(nav.querySelectorAll("a").some(a => a.hasAttribute("aria-current"))).toBe(false);

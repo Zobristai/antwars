@@ -22,6 +22,7 @@ import { colonySeats, seatGroups, whenParts, winnerOf, type PlayerParts, type Se
 import { DECIDED_ON, LAST_COLONY_STANDING } from "../story.ts";
 import { MATCH_TYPE_WORDS, recordingResult, recordingRow } from "../ui/format.ts";
 import { h, heldSpaces, leastShown } from "../ui/dom.ts";
+import { userHref } from "../ui/user-link.ts";
 import { watchCut } from "../ui/cut.ts";
 
 /** A colony no seat was recorded for, as Matches words it. */
@@ -91,7 +92,15 @@ function held<T extends HTMLElement>(doc: Document, node: T, text: string): T {
  * the name's title keeps both whole. */
 function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   const name = h(doc, "span", "aw-name");
-  if (parts.user !== null) name.append(held(doc, h(doc, "b"), parts.user));
+  if (parts.user !== null) {
+    const builder = h(doc, "b");
+    const href = userHref(parts.user);
+    if (href) {
+      const link = held(doc, h(doc, "a"), parts.user);
+      link.href = href; link.title = parts.user; builder.append(link);
+    } else held(doc, builder, parts.user);
+    name.append(builder);
+  }
   if (parts.model !== null) name.append(held(doc, h(doc, "span", "aw-model"), parts.user !== null ? ` ${parts.model}` : parts.model));
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   watchCut(doc, name);
@@ -182,10 +191,11 @@ export function topMatchTile(doc: Document, r: Recording, search: string, result
   const length = results === "shown" ? lengthText(r) : null;
 
   const item = h(doc, "li");
-  const link = h(doc, "a", "aw-tile");
+  const tile = h(doc, "div", "aw-tile"), link = h(doc, "a", "aw-tile-replay");
+  tile.append(link);
   link.href = listed.href;
   link.dataset.key = `top|${r.id}`;
-  if (winner !== null) link.style.setProperty("--tile-accent", colourCss(colonyColours(names)[winner]!));
+  if (winner !== null) tile.style.setProperty("--tile-accent", colourCss(colonyColours(names)[winner]!));
 
   const meta = h(doc, "span", "aw-row aw-meta");
   const typeName = h(doc, "span", "aw-type aw-name");
@@ -194,22 +204,22 @@ export function topMatchTile(doc: Document, r: Recording, search: string, result
     if (type.size !== null) typeName.append(" · ", h(doc, "span", "aw-keep", type.size));
   }
   meta.append(typeName);
-  link.append(meta);
+  tile.append(meta);
   // The players block. A free-for-all: every colony in colony order, filled across then down, where it starts on the map;
   // only the winner marked. A team match or 1v1: the winner first, then the other side; hidden, colony order.
   const lines = h(doc, "span", `aw-lines ${freeForAll ? "is-grid is-ffa" : sides.some(side => side !== null && side.seats > 1) ? "is-sides" : "is-pair"}`);
   lines.append(...(freeForAll ? sides.map((_, colony) => colony) : order)
     .map(colony => playerLine(doc, sides[colony] ?? null, colony === winner)));
-  link.append(lines);
+  tile.append(lines);
   if (ended !== null) {
     const howRow = h(doc, "span", "aw-row aw-how");
     howRow.append(h(doc, "span", "aw-name", tileEnding(ended, colonies)));
-    link.append(howRow);
+    tile.append(howRow);
   }
   const dateRow = h(doc, "span", "aw-row aw-date");
   dateRow.append(h(doc, "span", "aw-name", date));
   if (results === "shown") dateRow.append(h(doc, "span", "aw-len", length ?? ""));
-  link.append(dateRow);
+  tile.append(dateRow);
 
   const typeWords = type === null ? null : type.size === null ? type.kind : `${type.kind} · ${type.size}`;
   const sideList = order.map(colony => sideWords(sides[colony] ?? null));
@@ -219,6 +229,7 @@ export function topMatchTile(doc: Document, r: Recording, search: string, result
   const label = [sidesWords, typeWords, ended, length === null ? null : length.replace(" min", " minutes"), date].filter(word => word !== null && word !== "").join(", ");
   link.setAttribute("aria-label", label);
   link.title = label;
-  item.append(link);
+  tile.setAttribute("role", "group"); tile.setAttribute("aria-label", label);
+  item.append(tile);
   return item;
 }

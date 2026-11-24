@@ -349,3 +349,17 @@ it.each(["get", "transaction"])("cancels the waking lobby store's %s read when t
   expect(await visitor(handler).done).toBe(200); expect(builds).toBe(2);
   expect(rollbacks).toBe(phase === "transaction" ? 1 : 0); expect(wake).not.toHaveBeenCalled();
 });
+
+it("puts each own agent on its side, counts each agent only once, and never lists a released account identifier", async () => {
+  const first = match(1, ["sample-wing/red", "sample-wing/blue", "sample-wing/red"]);
+  first.seats[2]!.modelLabel = "Sample two"; first.seats[0]!.modelLabel = "Sample one";
+  const placeholder = `account:${randomUUID()}/released`;
+  const second = match(2, ["sample-wing/red", placeholder]);
+  const origin = await listen(sourceWith(async function* () { yield [second, first]; }), undefined, { ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const { users } = await (await fetch(origin + "/matches/users")).json();
+  expect(users).toHaveLength(1); expect(JSON.stringify(users)).not.toContain(placeholder);
+  expect(users[0]).toMatchObject({ username: "sample-wing", own: 1, matches: 2, wins: 1, losses: 0,
+    agentDetails: [{ handle: "sample-wing/blue", matches: 1, models: [] }, { handle: "sample-wing/red", matches: 2, models: ["Sample one", "Sample two"] }],
+    recent: [{ id: second.id, agents: ["sample-wing/red"], result: "Won", opponents: [{ handle: null }] },
+      { id: first.id, agents: ["sample-wing/red"], result: "Own match", opponents: [{ handle: "sample-wing/blue" }] }] });
+});

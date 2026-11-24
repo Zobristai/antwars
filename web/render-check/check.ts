@@ -49,6 +49,8 @@ export interface Surface {
   /** Fixtures this surface alone answers with (a file beside this one), over the shared ones. Every surface runs with
    * the page's wall clock fixed at the snapshot's time, so derived times and "Loaded HH:MM UTC" labels never vary. */
   fixtures?: string;
+  /** For fixture states, require the actual page to reach the expected state before judging. */
+  readySelector?: string;
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
    * never judged and the render is invalid. Watch with no live match shows a list instead and leaves this unset. */
   board?: boolean;
@@ -86,6 +88,11 @@ export const SURFACES: readonly Surface[] = [
   // Not capture=1: on Watch that also changes what the page shows with no live match.
   { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), its top matches' results hidden as a visitor first sees them" },
   { id: "watch-results-shown", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), in a browser that chose to show the top matches' results", storage: { "aw.topMatches.showResults": "true" } },
+  { id: "users-loaded", url: "/?page=users&user=sample-wren", hud: false, what: "Users: loaded", fixtures: "users-loaded-fixture.json", readySelector: ".users-open" },
+  { id: "users-empty", url: "/?page=users", hud: false, what: "Users: empty", fixtures: "users-empty-fixture.json", readySelector: ".users-message" },
+  { id: "users-failed", url: "/?page=users", hud: false, what: "Users: failed", fixtures: "users-failed-fixture.json", readySelector: ".users-message" },
+  { id: "users-loading", url: "/?page=users", hud: false, what: "Users: loading", fixtures: "users-loading-fixture.json", readySelector: ".users-skeleton" },
+  { id: "users-not-listed", url: "/?page=users&user=sample-absent", hud: false, what: "Users: not-listed", fixtures: "users-loaded-fixture.json", readySelector: ".users-message" },
   { id: "matches", url: "/?page=matches", hud: false, what: "the Matches page (all recordings)" },
   { id: "waiting", url: "/?page=matches", hud: false, what: "the Matches page with agents waiting and matches live (fixture: Waiting and Live now rows)", fixtures: "waiting-fixture.json" },
   { id: "recordings", url: "/?page=matches", hud: false, what: "the Matches page with a Recordings list of the cases the snapshot lacks (fixture: a sample win by a player without a model in Lake Skinner; snapshot rows), its first Replay link focused", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS },
@@ -213,7 +220,8 @@ export function boardProblem(surface: Pick<Surface, "board">, readiness: BoardRe
  * everything is scrolled back to the top.
  */
 async function settle(page: Page, surface: Surface, evidence: RenderEvidence): Promise<{ readiness: BoardReadiness | null; playback: Playback | null }> {
-  await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
+  if (surface.readySelector) await page.locator(surface.readySelector).first().waitFor({ state: "visible" });
+  else await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
   let readiness: BoardReadiness | null = null;
   let playback: Playback | null = null;
   if (surface.hud) {
@@ -237,7 +245,7 @@ async function settle(page: Page, surface: Surface, evidence: RenderEvidence): P
       for (let y = 0; y < e.scrollHeight; y += Math.max(e.clientHeight, 100)) { e.scrollTop = y; await pause(); }
     }
   });
-  await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
+  if (surface.id !== "users-loading") await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => undefined);
   await page.waitForTimeout(800);
   await scrollHome(page);
   return { readiness, playback };

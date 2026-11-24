@@ -416,3 +416,5 @@ button.d2-history-button:hover .d2-said { text-decoration: underline; text-under
 .d2 .aw-team-view:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
 /* After a click or tap it shows no focus ring, like the round controls beside it; by keyboard it keeps the shared ring. */
 .d2 .aw-team-view[data-pointer]:focus-visible { outline: none; }
+a.aw-user-link { color: inherit; text-decoration: underline; text-underline-offset: .2em; }
+a.aw-user-link:is(:focus-visible, :hover) { color: var(--aw-ink-bright); }

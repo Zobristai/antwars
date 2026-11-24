@@ -42,7 +42,7 @@ describe("the Waiting card", () => {
       ["11 Nov 202605:01 UTC", "Ranked · 1v1", ["coffee-ant1540 ± 80"], ["no opponent yet"], "Status Waiting", ""],
       ["11 Nov 202605:02 UTC", "Index · 2v2", ["GPT-6 Lunamax Fast"], ["no opponent yet"], "Status Waiting", ""],
     ]);
-    expect(p.card().all().filter(node => node.tag === "a")).toEqual([]);
+    expect(p.card().querySelectorAll("a").map(a => a.href)).toEqual(Array(2).fill(`/?page=users&user=${agents[0]!.displayName}`));
     expect(p.card().byClass("d1p-state")[0]!.textContent).toBe("Ranked queue: 2");
     // A builder's line is its username alone (with its rating); a house model leads with its model and has no username.
     const [builder, house] = p.card().byClass("d1p-wide")[0]!.byClass("d1p-model");
@@ -312,7 +312,7 @@ describe("house challenges on the Waiting card", () => {
     mounted.update(view({ status: "error", rows: [] }));
     expect(links()).toEqual([]);
     mounted.update(view({ status: "ready", rows: [{ displayName: "bea", mode: "1v1", waitingSeconds: 12, since: 0 }] }));
-    expect(links()).toEqual([]);
+    expect(links()).toEqual(Array(2).fill(["bea", "/?page=users&user=bea"]));
     mounted.destroy();
   });
 });

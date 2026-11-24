@@ -39,9 +39,16 @@ export function mountFrame(doc: Document, host: HTMLElement, page: PageName): Fr
   // ---------------------------------------------------------------- the hero and the page under it
   const hero = h(doc, "div", "d1p-hero");
   hero.setAttribute("aria-hidden", "true");
-  const image = h(doc, "img");
-  image.src = HERO; image.alt = ""; image.decoding = "async";
-  hero.append(image);
+  if (page === "users") {
+    // An actual viewport for the decorative artwork: crop the same band as the other public pages,
+    // without an oversized HTML image overflowing the viewport on a phone.
+    const svg = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const image = doc.createElementNS(svg.namespaceURI!, "image"); image.setAttribute("href", HERO);
+    svg.append(image); hero.append(svg);
+  } else {
+    const image = h(doc, "img"); image.src = HERO; image.alt = ""; image.decoding = "async";
+    hero.append(image);
+  }
   const body = h(doc, "div", "d1p-page");
   const main = h(doc, "main", "d1p-main");
   const band = h(doc, "div", "d1p-band");

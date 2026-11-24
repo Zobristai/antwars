@@ -9,6 +9,7 @@ import type { AgentLineModel } from "../hud-model.ts";
 import { tps } from "../hud-model.ts";
 import { ICON, crownIcon, markIcon, orderIcon } from "../icons.ts";
 import { h, setAttr, setHidden, setMarkup, setText } from "../dom.ts";
+import { userName } from "../user-link.ts";
 import { keep } from "../format.ts";
 import { OFFER_TEXT } from "../../replay.ts";
 import { SCORE_COPY } from "../../story.ts";
@@ -281,7 +282,8 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   const rowNodes = new Map<number, RowNode>();
   const makeRow = (index: number): RowNode => {
     const item = h(doc, "li", "d1-agent-item");
-    const button = h(doc, "button", "d1-agent");
+    const surface = h(doc, "div", "d1-agent");
+    const button = h(doc, "button", "d1-agent-pick");
     button.type = "button";
     const badge = h(doc, "span", "d1-badge");
     const who = h(doc, "span", "d1-who"), title = h(doc, "span", "d1-title"), model = h(doc, "span", "d1-model");
@@ -300,9 +302,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // cyan badge (the figure, its "± RD" in the tip), then the colony's result once the match has ended.
     const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-outcome");
     who.append(titleBox, modelBox, tags, ast, elo, result);
-    button.append(badge, who);
-    for (const child of button.children) child.setAttribute("aria-hidden", "true");
-    item.append(button);
+    badge.setAttribute("aria-hidden", "true");
+    surface.append(button, badge, who);
+    item.append(surface);
     listen(ast, "pointerenter", () => showTip(ast));
     listen(ast, "click", e => { e.stopPropagation(); showTip(ast); });
     listen(ast, "pointerleave", leaveTip);
@@ -321,13 +323,13 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
 
   const writeRow = (node: RowNode, row: Row) => {
     const isSelected = row.index === selectedAgent;
-    const written = [row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.elo, row.rd, row.result, row.label, isSelected].join("|");
+    const written = [row.handle, row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.elo, row.rd, row.result, row.label, isSelected].join("|");
     if (node.written === written) return;
     node.written = written;
     node.item.className = `d1-agent-item c${row.colony}${isSelected ? " is-selected" : ""}`;
     setAttr(node.button, "aria-current", isSelected ? "true" : null);
     setMarkup(node.badge, row.badge);
-    setText(node.title, row.title);
+    node.title.replaceChildren(userName(doc, row.handle, row.title));
     node.title.title = row.title;
     // Provider text is set as text, never markup.
     node.tags.replaceChildren(...row.badges.map(text => h(doc, "span", "d1-tag", text)));
@@ -409,7 +411,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     team.playerRd = p?.rd ?? "";
     if (tipFor === team.playerElo && !team.playerRd) hideTip();
     if (p === null) return;
-    setText(team.playerTitle, p.name);
+    team.playerTitle.replaceChildren(userName(doc, p.handle, p.name));
     team.playerTitle.title = p.name;
     setText(team.playerModel, p.model);
     team.playerModel.title = p.model;
@@ -613,12 +615,12 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       return;
     }
     if (sel.kind !== "agent") return;
-    const keyNow = [sel.key, sel.title, sel.model, sel.badges.join(" "), sel.asterisk, sel.sub, sel.order, sel.target, sel.lines.join("\n")].join("|");
+    const keyNow = [sel.key, sel.handle, sel.title, sel.model, sel.badges.join(" "), sel.asterisk, sel.sub, sel.order, sel.target, sel.lines.join("\n")].join("|");
     if (keyNow !== cardKey) {
       cardKey = keyNow;
       card.style.setProperty("--d1-side", COLONY_CSS[sel.colony]);
       setMarkup(cardBadge, sel.badge);
-      setText(cardName, sel.title);
+      cardName.replaceChildren(userName(doc, sel.handle, sel.title));
       setText(cardModel, sel.model);
       setHidden(cardModel, sel.model === "");
       cardTags.replaceChildren(...sel.badges.map(text => h(doc, "span", "d1-tag", text)));

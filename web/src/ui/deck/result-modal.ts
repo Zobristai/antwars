@@ -9,6 +9,7 @@
 import type { Frame } from "../../buffer.ts";
 import { colonyNameNote, colonyNamesOf } from "../../../../src/sim/colonyNames.ts";
 import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
+import { userName } from "../user-link.ts";
 import { rowName, agentHandle } from "../../compose.ts";
 import { D1_ICON } from "./icons.ts";
 import { PAGE_WORDS, resultView, shareHref, type ResultView } from "./model.ts";
@@ -124,7 +125,7 @@ export function mountResultModal(doc: Document): ResultModal {
       const identity = h(doc, "div", "rd-identity");
       const colony = h(doc, "span", "rd-colony", colonyNamesOf(board.setup)[agent.colony].replace(/ Colony$/, ""));
       setAttr(colony, "title", drawn ? colonyNameNote(drawn[agent.colony]) : null);
-      const name = h(doc, "span", "d1-rating-name", named.name);
+      const name = userName(doc, agent.identity?.displayName, named.name, "d1-rating-name");
       const badgeLine = h(doc, "span", "rd-player");
       badgeLine.append(name);
       named.badges.forEach(text => badgeLine.append(" ", h(doc, "span", "d1-tag", text)));

@@ -130,7 +130,7 @@ export function keep(href: string, search: string): string {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export const PAGES = [["watch", "Watch", "/?watch=1"], ["matches", "Matches", "/?page=matches"], ["leaderboard", "Leaderboard", "/?page=leaderboard"]] as const;
+export const PAGES = [["watch", "Watch", "/?watch=1"], ["matches", "Matches", "/?page=matches"], ["leaderboard", "Leaderboard", "/?page=leaderboard"], ["users", "Users", "/?page=users"]] as const;
 export type PageName = (typeof PAGES)[number][0];
 
 /** The board choice, both ways: 3D keeps the existing manual-attempt marker, 2D drops it. Every other parameter stays. */

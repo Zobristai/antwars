@@ -1,10 +1,11 @@
 import type { TypedHistorySummary } from "./history-routes.js";
-import { neverJoined } from "./listed-colonies.js";
+import { parseName } from "../identity/identities.js";
+import { neverJoined, recordedColonies } from "./listed-colonies.js";
 import { isHouseHandle } from "./recorded-match-type.js";
 import type { Ratings } from "../rating/ratings.js";
 
 interface Recent {
-  id: string; startedAt: string; matchType: TypedHistorySummary["matchType"];
+  id: string; startedAt: string; colonies: number; matchType: TypedHistorySummary["matchType"];
   agents: string[]; opponents: { handle: string | null; modelLabel: string | null; thinkingLevel: string | null; serviceTier: string | null }[];
   result: "Own match" | "Won" | "Lost" | "Draw" | "Abandoned" | "No result";
 }
@@ -55,9 +56,9 @@ function tally(users: Map<string, User>, match: TypedHistorySummary) {
   const played = new Set<string>();
   const colonies = new Map<User, Set<number>>();
   for (const { handle, colony, modelLabel } of match.seats) {
-    if (!handle || isHouseHandle(handle)) continue;
+    if (!handle || isHouseHandle(handle.toLowerCase())) continue;
     const username = handle.split("/", 1)[0]!;
-    if (!username) continue;
+    if (!parseName(username)) continue; // Released accounts have no public username.
     const latest = { startedAt: match.startedAt, id: match.id };
     let user = users.get(username);
     if (!user) {
@@ -79,9 +80,14 @@ function tally(users: Map<string, User>, match: TypedHistorySummary) {
     if (result === "Own match") user.own++;
     else if (result === "Won") user.wins++;
     else if (result === "Lost") user.losses++;
-    const agents = [...played].filter(handle => handle.split("/", 1)[0] === user.username);
-    const opponents = match.seats.filter(seat => !sides.has(seat.colony) || sides.size > 1).map(({ handle, modelLabel, thinkingLevel, serviceTier }) => ({ handle, modelLabel, thinkingLevel, serviceTier }));
-    user.recent.push({ id: match.id, startedAt: match.startedAt, matchType: match.matchType, agents, opponents, result });
+    // Describe the match from the first colony this user played on. Two of their own opposing
+    // agents then appear on opposite sides of the detail, not both as themselves and their opponent.
+    const first = sides.values().next().value!;
+    const agents = [...new Set(match.seats.filter(seat => seat.colony === first && seat.handle?.split("/", 1)[0] === user.username).map(seat => seat.handle!))];
+    const opponents = match.seats.filter(seat => seat.colony !== first).map(({ handle, modelLabel, thinkingLevel, serviceTier }) => ({
+      handle: handle && parseName(handle.split("/", 1)[0]!) ? handle : null, modelLabel, thinkingLevel, serviceTier,
+    }));
+    user.recent.push({ id: match.id, startedAt: match.startedAt, matchType: match.matchType, colonies: recordedColonies(match), agents, opponents, result });
     user.recent.sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
     if (user.recent.length > 5) user.recent.pop();
   }

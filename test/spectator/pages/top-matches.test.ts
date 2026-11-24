@@ -31,7 +31,7 @@ const KINDS = [...ROWS, "aw-side"];
 /** The players block: every tile has one, holding its player lines. */
 const block = (tile: ElementPort) => tile.byClass("aw-lines")[0]!;
 /** The tile's rows, in order, by their kind; the players block's lines in its place. */
-const rowKinds = (tile: ElementPort) => link(tile).children.flatMap(row => row.classes().includes("aw-lines") ? row.children : [row])
+const rowKinds = (tile: ElementPort) => tile.byClass("aw-tile")[0]!.children.filter(n => n.tag !== "a").flatMap(row => row.classes().includes("aw-lines") ? row.children : [row])
   .map(row => KINDS.find(kind => row.classes().includes(kind)) ?? row.className);
 
 describe("a top-match tile", () => {
@@ -55,7 +55,7 @@ describe("a top-match tile", () => {
     const players = tile.byClass("aw-player");
     expect(players.map(p => p.classes().includes("is-winner"))).toEqual([true, false]);
     expect(players.map(text)).toEqual(["GPT-6.2 Astralow", "GPT-6.1 Terramax"]);
-    expect(link(tile).style.getPropertyValue("--tile-accent")).not.toBe("");
+    expect(tile.byClass("aw-tile")[0]!.style.getPropertyValue("--tile-accent")).not.toBe("");
     expect(tile.byClass("aw-meta").map(text)).toEqual(["Index · 1v1"]);
     expect(tile.byClass("aw-how").map(text)).toEqual(["Queens killed"]);
     expect(tile.byClass("aw-date").map(text)).toEqual(["11 Nov 202646 min"]);
@@ -76,6 +76,9 @@ describe("a top-match tile", () => {
     const r = recording({ seats: [seat(0, 0, "wren"), seat(1, 1, "antwars/gpt-6-1-terra-max-fast")] });
     for (const results of ["hidden", "shown"] as const) {
       const tile = topMatchTile(doc, r, "", results) as unknown as ElementPort;
+      const player = tagged(tile.byClass("aw-name").find(n => text(n) === "wren")!, "a")[0]!;
+      expect(player.href).toBe("/?page=users&user=wren");
+      expect(link(tile).querySelectorAll("a")).toHaveLength(0);
       expect(tagged(tile, "b").map(text)).toEqual(["wren"]);
       expect(link(tile).getAttribute("aria-label")).toContain("wren");
     }
@@ -261,7 +264,7 @@ describe("a top-match tile with results hidden", () => {
   /** Nothing in the tile's markup that says who won or how: no winner mark, no colony colour, no ending, no length. */
   const resultFree = (tile: ElementPort) => {
     expect(tile.all().filter(node => node.classes().some(c => c === "is-winner" || c === "aw-how" || c === "aw-len"))).toEqual([]);
-    expect(link(tile).style.getPropertyValue("--tile-accent")).toBe("");
+    expect(tile.byClass("aw-tile")[0]!.style.getPropertyValue("--tile-accent")).toBe("");
     const label = link(tile).getAttribute("aria-label")!;
     expect(link(tile).title).toBe(label);
     expect(`${text(tile)} ${label}`).not.toMatch(/ beat |queens|time-up|killed|standing|decided|\d+ min/i);
@@ -322,7 +325,7 @@ describe("the top-matches page", () => {
     expect(host.byClass("d1p-title").map(text)).toEqual([TOP_WORDS.title]);
     expect(host.byClass("d1p-state").map(text)).toEqual([TOP_STATE.idle]);
     await vi.waitFor(() => expect(host.byClass("aw-tile")).toHaveLength(12));
-    expect(host.byClass("aw-tile").map(tile => tile.href)).toEqual(rows.map(r => `/?replay=${r.id}`));
+    expect(host.byClass("aw-tile-replay").map(tile => tile.href)).toEqual(rows.map(r => `/?replay=${r.id}`));
     expect(request).toHaveBeenCalledWith("/matches/top", expect.anything());
     expect(host.byClass("d1p-card")).toEqual([]);
     expect(tagged(host.byClass("aw-after")[0]!, "a").map(a => a.href)).toEqual([ALL_RECORDINGS_HREF]);
@@ -336,7 +339,7 @@ describe("the top-matches page", () => {
     const joined = recording({ id: "2026-11-11T10-34-00-000Z-1" }), absent = recording({ id: "2026-11-11T10-34-00-000Z-2", seats: [seat(0, 0, "antwars/gpt-6-astra")] });
     const page = mountTopMatchesPage(port.doc, port.win, { state: "idle", request: vi.fn(async () => Response.json({ matches: [absent, joined] })) });
     const host = port.body.children.at(-1)!;
-    await vi.waitFor(() => expect(host.byClass("aw-tile").map(tile => tile.href)).toEqual([`/?replay=${joined.id}`]));
+    await vi.waitFor(() => expect(host.byClass("aw-tile-replay").map(tile => tile.href)).toEqual([`/?replay=${joined.id}`]));
     page.destroy();
   });
 

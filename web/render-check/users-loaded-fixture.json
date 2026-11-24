@@ -1,0 +1,488 @@
+{
+ "fixtures": {
+  "/matches/users": {
+   "label": "Users loaded: invented directory fixture",
+   "body": {
+    "users": [
+     {
+      "username": "sample-fern",
+      "agents": [
+       "sample-fern"
+      ],
+      "agentDetails": [
+       {
+        "handle": "sample-fern",
+        "matches": 3,
+        "models": [
+         "Sample Model"
+        ]
+       }
+      ],
+      "matches": 3,
+      "wins": 3,
+      "losses": 0,
+      "own": 0,
+      "latest": {
+       "id": "2026-11-01T00-00-00-000Z-3",
+       "startedAt": "2026-11-03T00:00:00.000Z"
+      },
+      "recent": [
+       {
+        "id": "2026-11-01T00-00-00-000Z-3",
+        "startedAt": "2026-11-03T00:00:00.000Z",
+        "agents": [
+         "sample-fern"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-reed",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-2",
+        "startedAt": "2026-11-02T00:00:00.000Z",
+        "agents": [
+         "sample-fern"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-reed",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-1",
+        "startedAt": "2026-11-01T00:00:00.000Z",
+        "agents": [
+         "sample-fern"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-reed",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       }
+      ],
+      "model": "Sample Model",
+      "moreModels": 0,
+      "ranked": null
+     },
+     {
+      "username": "sample-reed",
+      "agents": [
+       "sample-reed"
+      ],
+      "agentDetails": [
+       {
+        "handle": "sample-reed",
+        "matches": 4,
+        "models": []
+       }
+      ],
+      "matches": 4,
+      "wins": 4,
+      "losses": 0,
+      "own": 0,
+      "latest": {
+       "id": "2026-11-01T00-00-00-000Z-4",
+       "startedAt": "2026-11-04T00:00:00.000Z"
+      },
+      "recent": [
+       {
+        "id": "2026-11-01T00-00-00-000Z-4",
+        "startedAt": "2026-11-04T00:00:00.000Z",
+        "agents": [
+         "sample-reed"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-wren",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-3",
+        "startedAt": "2026-11-03T00:00:00.000Z",
+        "agents": [
+         "sample-reed"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-wren",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-2",
+        "startedAt": "2026-11-02T00:00:00.000Z",
+        "agents": [
+         "sample-reed"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-wren",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-1",
+        "startedAt": "2026-11-01T00:00:00.000Z",
+        "agents": [
+         "sample-reed"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-wren",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       }
+      ],
+      "model": null,
+      "moreModels": 0,
+      "ranked": null
+     },
+     {
+      "username": "sample-wren",
+      "agents": [
+       "sample-wren",
+       "sample-wren/wing"
+      ],
+      "agentDetails": [
+       {
+        "handle": "sample-wren",
+        "matches": 5,
+        "models": [
+         "Sample Model"
+        ]
+       },
+       {
+        "handle": "sample-wren/wing",
+        "matches": 1,
+        "models": [
+         "Sample Model"
+        ]
+       }
+      ],
+      "matches": 5,
+      "wins": 5,
+      "losses": 0,
+      "own": 0,
+      "latest": {
+       "id": "2026-11-01T00-00-00-000Z-5",
+       "startedAt": "2026-11-05T00:00:00.000Z"
+      },
+      "recent": [
+       {
+        "id": "2026-11-01T00-00-00-000Z-5",
+        "startedAt": "2026-11-05T00:00:00.000Z",
+        "agents": [
+         "sample-wren"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-bee",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-4",
+        "startedAt": "2026-11-04T00:00:00.000Z",
+        "agents": [
+         "sample-wren"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-bee",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-3",
+        "startedAt": "2026-11-03T00:00:00.000Z",
+        "agents": [
+         "sample-wren"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-bee",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-2",
+        "startedAt": "2026-11-02T00:00:00.000Z",
+        "agents": [
+         "sample-wren"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-bee",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-1",
+        "startedAt": "2026-11-01T00:00:00.000Z",
+        "agents": [
+         "sample-wren"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-bee",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       }
+      ],
+      "model": "Sample Model",
+      "moreModels": 0,
+      "ranked": {
+       "rating": 1475,
+       "rd": 80,
+       "ratedMatches": 6
+      }
+     },
+     {
+      "username": "sample-bee",
+      "agents": [
+       "sample-bee"
+      ],
+      "agentDetails": [
+       {
+        "handle": "sample-bee",
+        "matches": 6,
+        "models": []
+       }
+      ],
+      "matches": 6,
+      "wins": 6,
+      "losses": 0,
+      "own": 0,
+      "latest": {
+       "id": "2026-11-01T00-00-00-000Z-6",
+       "startedAt": "2026-11-06T00:00:00.000Z"
+      },
+      "recent": [
+       {
+        "id": "2026-11-01T00-00-00-000Z-6",
+        "startedAt": "2026-11-06T00:00:00.000Z",
+        "agents": [
+         "sample-bee"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-fern",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-5",
+        "startedAt": "2026-11-05T00:00:00.000Z",
+        "agents": [
+         "sample-bee"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-fern",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-4",
+        "startedAt": "2026-11-04T00:00:00.000Z",
+        "agents": [
+         "sample-bee"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-fern",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-3",
+        "startedAt": "2026-11-03T00:00:00.000Z",
+        "agents": [
+         "sample-bee"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-fern",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       },
+       {
+        "id": "2026-11-01T00-00-00-000Z-2",
+        "startedAt": "2026-11-02T00:00:00.000Z",
+        "agents": [
+         "sample-bee"
+        ],
+        "result": "Won",
+        "colonies": 2,
+        "matchType": {
+         "kind": "ranked",
+         "size": 1
+        },
+        "opponents": [
+         {
+          "handle": "sample-fern",
+          "modelLabel": null,
+          "thinkingLevel": null,
+          "serviceTier": null
+         }
+        ]
+       }
+      ],
+      "model": null,
+      "moreModels": 0,
+      "ranked": null
+     }
+    ]
+   }
+  }
+ }
+}
