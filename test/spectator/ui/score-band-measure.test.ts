@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createServer } from "vite";
 import { chromium } from "playwright-core";
 import { applyTextSize, fontconfigFor } from "../../../web/render-check/fonts.ts";
+import { judgePage, RULE_LIMITS } from "../../../web/render-check/rules.ts";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
 import { D1_ICON } from "../../../web/src/ui/deck/icons.ts";
 import { fitLegendLine } from "../../../web/src/ui/deck/hud.ts";
@@ -84,17 +85,18 @@ describe("scrolling HUD fit evidence", () => {
   it("keeps zoom-narrow score groups readable with the browser default font setting", async () => {
     const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
-    for (const defaultFontSize of [16, 32]) {
-      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
+    for (const font of ["Roboto", "Liberation Sans", "system-ui"] as const) for (const defaultFontSize of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`],
+        env: font === "system-ui" ? process.env : { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
       try {
         const page = await browser.newPage();
         await page.setContent("<span>Browser default</span>");
         expect(await page.locator("span").evaluate(e => getComputedStyle(e).fontSize)).toBe(`${defaultFontSize}px`);
         const metrics = [["workers", "Workers", "224"], ["soldiers", "Soldiers", "58"], ["flyers", "Flyers", "0"], ["food", "Food", "4,457"], ["next", "Next spawn", "—"], ["ants", "Ants", "282/512"], ["queen-kills", "Queen kills", "—"]];
-        const card = `<section class="d1-team"><div class="sb-sticky-bar"><header class="d1-team-head"><h2 class="d1-name">Lake Hodges Colony</h2><span class="d1-team-members">◇ ◇ ◇ ◇</span></header><button class="sb-history" aria-label="History">${D1_ICON.history}</button></div><div class="sb-identity"><div class="d1-who"><span class="d1-title">Claude Sonnet 5.5</span><span class="d1-model">GPT-6.1 Terra</span></div></div><div class="d1-econ has-flyers">${metrics.map(([key, label, value]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">${value}</span></div>`).join("")}</div></section>`;
-        for (const width of [160, 195, 320, 390]) for (const font of ["Roboto", "Liberation Sans"]) {
+        const card = `<section class="d1-team"><div class="sb-sticky-bar"><header class="d1-team-head"><h2 class="d1-name" title="Lake Hodges Colony" aria-label="Lake Hodges Colony">Lake Hodges Colony</h2><span class="d1-team-members">◇ ◇ ◇ ◇</span></header><button class="sb-history" aria-label="History">${D1_ICON.history}</button></div><div class="sb-identity"><div class="d1-who"><span class="d1-title">Claude Sonnet 5.5</span><span class="d1-model">GPT-6.1 Terra</span></div></div><div class="d1-econ has-flyers">${metrics.map(([key, label, value]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">${value}</span></div>`).join("")}</div></section>`;
+        for (const width of [160, 195, 320, 390]) {
           await page.setViewportSize({ width, height: 900 });
-          await page.setContent(`<style>body{margin:0}:root{--aw-sans:'${font}',sans-serif}${tokens}${css}.d1{position:relative;inset:auto}.d1-frame{margin-top:8px;--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="d1-window"></div></section><div class="d1-below"><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-lane"></div><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></div></main>`);
+          await page.setContent(`<style>body{margin:0}${tokens}${css}.d1{--aw-sans:${font},sans-serif}.d1{position:relative;inset:auto}.d1-frame{margin-top:8px;--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="d1-window"></div></section><div class="d1-below"><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-lane"></div><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></div></main>`);
           await page.evaluate(() => document.fonts.ready);
           const line = await page.evaluateHandle(() => {
             const node = (selector: string) => document.querySelector<HTMLElement>(selector)!;
@@ -118,7 +120,14 @@ describe("scrolling HUD fit evidence", () => {
           await line.dispose();
           const items = await page.evaluate(measureLabels, ".d1-name,.d1-title,.d1-model,.d1-ml,.d1-mv,.d1-clock,.d1-map-name,.d1-glabel,.d1-mode,.d1-legend-rest,.sb-meta-item,.sb-history");
           const visible = items.filter(i => i.target);
-          expect(visible.filter(i => i.clipped || i.outside), `${width}px ${font} default${defaultFontSize}: cut`).toEqual([]);
+          // Range rectangles include the unpainted tail of an ellipsized heading. At enlarged
+          // phone sizes use the render gate's accessible, full-row check for that heading only.
+          const pinned = defaultFontSize === 32 && width >= 320;
+          if (pinned) {
+            const { failures } = await page.evaluate(judgePage, RULE_LIMITS);
+            expect(failures.filter(f => f.element.endsWith("h2.d1-name")), `${width}px ${font}: heading`).toEqual([]);
+          }
+          expect(visible.filter(i => (i.clipped || i.outside) && !(pinned && i.cls === "d1-name")), `${width}px ${font} default${defaultFontSize}: cut`).toEqual([]);
           expect(visible.filter(i => i.overlaps.some(index => visible.some(other => other.index === index))), `${width}px ${font} default${defaultFontSize}: overlap`).toEqual([]);
           if (width >= 320) expect(visible.filter(i => i.lines > 1), "ordinary labels stay whole").toEqual([]);
           const brokenWords = await page.locator(".d1-name,.d1-title,.d1-model,.d1-ml,.d1-legend-rest,.sb-meta-item").evaluateAll(nodes => nodes.flatMap(e => {

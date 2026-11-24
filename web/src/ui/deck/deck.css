@@ -1108,6 +1108,12 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-log-mark { flex-wrap: wrap; }
 }
 
+/* At the smallest zoomed width with enlarged text, reclaim the deck's 8px gutters
+   for prose only: even the full description row would otherwise split ordinary words. */
+@media (max-width: 239px) and (max-width: 5.5em) {
+  .score-band .d1-log > .d1-tl-what { margin-inline: -8px; }
+}
+
 /* Independent sibling actions: the row selects the agent, the name opens Users. */
 .d1-agent { position: relative; isolation: isolate; }
 .d1-agent-pick { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; z-index: 1; }
@@ -1136,6 +1142,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-history-line > :is(.d1-chip, .d1-gone) { grid-column: 1 / -1; justify-self: end; }
   .d1-result-dialog .d1-moment { grid-template-columns: calc(36em / 13) minmax(0, 1fr); }
   .d1-result-dialog .d1-moment-who { grid-column: 2; }
+  /* Without a refusal, its empty status column and gap belong to the description. */
+  .score-band .d1-log:not(.is-arrival) > .d1-tl-what:last-child { grid-column: 4 / -1; }
   /* Arrival descriptions need the whole row, rather than the space left after the time and icons. */
   .score-band .d1-log.is-arrival > .d1-tl-what { grid-column: 1 / -1; grid-row: 2; }
   .score-band .d1-log-lead { display: inline-block; }
