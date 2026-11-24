@@ -3,14 +3,12 @@
 // carries them for two and four colonies; older content keeps its version and bytes and carries none.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   KILLS_STREAM_VERSION, QUEEN_BITES_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, decodeMessage, encodeMessage, encodePublicMessage,
   withoutQueenBites, withoutQueenKills, type StreamEvent, type StreamMessage,
 } from "../../src/live/format.ts";
 import { SpectatorRecorder, SpectatorState } from "../../src/live/model.ts";
-import { unpackMessages } from "../../src/live/snapshot.ts";
 import { PUBLIC_CONFIG, rulesConfig, type MapDefinition, type SimConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { createMatch } from "../../src/sim/map.ts";
@@ -188,7 +186,9 @@ describe("queen kills beside queen bites (version 32)", () => {
   it("leave recordings stored at version 32 decoding and re-encoding unchanged, with no queen kills", () => {
     // A four-colony opening, a bitten tick and the board at that tick, as main 900e46c54b6c1465183736398c18ba0906e4f8c4
     // wrote them (kill totals and queen bites, no queen kills), with the SHA-256 of what its decoder read from each.
-    const stored = unpackMessages(Uint8Array.from(gunzipSync(readFileSync(new URL("./fixtures/queen-bites-900e46c5.bin", import.meta.url)))));
+    // One message per line, as hex; lines starting with # are comments.
+    const stored = readFileSync(new URL("./fixtures/queen-bites-900e46c5.hex", import.meta.url), "utf8").split("\n")
+      .filter(line => line !== "" && !line.startsWith("#")).map(line => Uint8Array.from(Buffer.from(line, "hex")));
     expect(stored.map(bytes => bytes[2])).toEqual([KILLS_STREAM_VERSION, QUEEN_BITES_STREAM_VERSION, QUEEN_BITES_STREAM_VERSION]);
     expect(stored.map(bytes => createHash("sha256").update(JSON.stringify(decodeMessage(bytes))).digest("hex"))).toEqual([
       "6c6dfcc0a9bc834789cd5a641fb1b825b06a0e2aecb9415d4fbf183f50f33088",
