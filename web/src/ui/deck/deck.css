@@ -9,7 +9,7 @@
 .d1 {
   --d1-lane: 44px; --d1-tap: 36px; --d1-hair: rgba(233, 239, 240, 0.08); --d1-ground: rgba(233, 239, 240, 0.12);
   position: absolute; inset: 0; box-sizing: border-box; color-scheme: dark;
-  font: 400 13px/1.35 var(--aw-sans); color: var(--aw-ink); -webkit-font-smoothing: antialiased;
+  font: 400 var(--aw-text-body)/1.35 var(--aw-sans); color: var(--aw-ink); -webkit-font-smoothing: antialiased;
 }
 /* The HUD host passes the pointer through; this view passes it through its board window to the board. */
 .aw-hud > .d1 { pointer-events: none; }
@@ -123,41 +123,42 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   padding: 0 8px 0 12px; border-top: 1px solid var(--aw-line); border-radius: 0 0 14px 14px; background: var(--aw-surface); pointer-events: auto;
 }
 .d1-caption { display: flex; align-items: center; gap: 10px; min-width: 0; color: var(--d1-side, var(--aw-ink)); }
-.d1-cap-bar { flex: none; width: 4px; height: 28px; border-radius: 2px; background: currentColor; }
-.d1-cap-when { flex: none; font-size: 12px; font-weight: 600; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+.d1-cap-bar { flex: none; width: 4px; height: calc(28em / 13); border-radius: 2px; background: currentColor; }
+.d1-cap-when { flex: none; font-size: var(--aw-text-meta); font-weight: 600; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
 /* The event's words and its colony shorten as one run: one line, cut at the last letter that fits, ending in a single
    small "…" (in the run's own 12 px face). The time beside it never shortens; the caption's title holds the whole text. */
-.d1-cap-text { min-width: 0; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.d1-cap-what { font-size: 15px; font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; }
-.d1-cap-who { margin-left: 7px; font-size: 12px; font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; }
+.d1-cap-text { min-width: 0; font-size: var(--aw-text-meta); font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-cap-what { font-size: var(--aw-text-title); font-weight: 700; color: var(--aw-ink-bright); white-space: nowrap; }
+.d1-cap-who { margin-left: 7px; font-size: var(--aw-text-meta); font-weight: 600; color: var(--aw-ink-2); white-space: nowrap; }
 .d1-cap-when:empty { display: none; }
 /* The fall: the queen lost, large, in the fallen colony's colour (the caption's, not the grey run's), with the colony
    centred beside it. */
-.d1-caption[data-kind="fall"] .d1-cap-what { font-size: 24px; line-height: 30px; letter-spacing: -0.01em; color: var(--d1-side, var(--aw-ink)); }
-.d1-caption[data-kind="fall"] .d1-cap-who { font-size: 14px; }
+.d1-caption[data-kind="fall"] .d1-cap-what { font-size: 2em; line-height: 1.25; letter-spacing: -0.01em; color: var(--d1-side, var(--aw-ink)); }
+.d1-caption[data-kind="fall"] .d1-cap-who { font-size: var(--aw-text-lead); }
 .d1-caption[data-kind="fall"] .d1-cap-what, .d1-caption[data-kind="fall"] .d1-cap-who { vertical-align: middle; }
 .d1-controls { flex: none; display: flex; align-items: center; gap: 4px; }
 /* One treatment for every board control: round, its icon or its letters centred. */
 .d1-btn {
-  display: inline-grid; place-items: center; width: var(--d1-tap); height: var(--d1-tap); padding: 0; border: 0; border-radius: 999px;
-  background: var(--aw-raise); color: var(--aw-ink); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 18px; font-weight: 500; line-height: 1;
+  display: inline-grid; place-items: center; width: max(var(--d1-tap), calc(1.125rem + 18px)); height: max(var(--d1-tap), calc(1.125rem + 18px)); padding: 0; border: 0; border-radius: 999px;
+  background: var(--aw-raise); color: var(--aw-ink); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: calc(18em / 13); font-weight: 500; line-height: 1;
   text-decoration: none; cursor: pointer;
 }
 .d1-btn:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
 .d1-btn svg { display: block; }
-.d1-btn-board { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.d1-btn > svg { width: calc(16em / 18); height: calc(16em / 18); }
+.d1-btn-board { font-size: var(--aw-text-meta); font-weight: 700; letter-spacing: 0.02em; }
 /* An explicit replay's own speed and position controls (replay-controls.ts), just before the board controls:
    pushed against them, 8px apart. */
 .d1-transport { display: flex; align-items: center; margin: 0 -4px 0 auto; }
-.d1 .aw-replay-controls { position: relative; display: grid; grid-template-columns: auto auto auto; grid-template-rows: var(--d1-tap); width: auto; min-width: 0; max-width: 100%; align-items: center; gap: 0 8px; min-height: var(--d1-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: 12px; color: var(--aw-ink); }
+.d1 .aw-replay-controls { position: relative; display: grid; grid-template-columns: auto auto auto; grid-template-rows: var(--d1-tap); width: auto; min-width: 0; max-width: 100%; align-items: center; gap: 0 8px; min-height: var(--d1-tap); padding: 0 6px 0 12px; border-radius: 999px; background: var(--aw-raise); box-shadow: inset 0 0 0 1px var(--aw-line); font-size: var(--aw-text-meta); color: var(--aw-ink); }
 .d1 .aw-replay-controls:has(> .aw-replay-state:not(:empty)) { padding-bottom: 8px; border-radius: calc(var(--d1-tap) / 2); }
 .d1 .aw-replay-controls label { display: flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--aw-ink-2); }
-.d1 .aw-replay-controls select { min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); color: var(--aw-ink); font: inherit; }
+.d1 .aw-replay-controls select { min-width: 0; min-height: calc(var(--d1-tap) - 8px); height: auto; padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 8px; background: var(--aw-surface); color: var(--aw-ink); font: inherit; }
 .d1 .aw-replay-controls input { width: clamp(72px, 18vw, 280px); min-width: 0; min-height: 0; height: calc(var(--d1-tap) - 8px); margin: 0; accent-color: var(--aw-ink-bright); }
-.d1 .aw-replay-time { font-size: 12px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
+.d1 .aw-replay-time { font-size: var(--aw-text-meta); color: var(--aw-ink); font-variant-numeric: tabular-nums; }
 /* Replay status takes its own row inside the transport pill whenever it has text, so it never floats over
    metadata or the board and never clips at the top of the stacked scroller. */
-.d1 .aw-replay-state { grid-column: 1 / -1; justify-self: start; min-width: 0; max-width: calc(100% - 6px); min-height: 0; margin-right: 6px; padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: 11px; line-height: 16px; color: var(--aw-ink-2); white-space: nowrap; }
+.d1 .aw-replay-state { grid-column: 1 / -1; justify-self: start; min-width: 0; max-width: calc(100% - 6px); min-height: 0; margin-right: 6px; padding: 2px 8px; border-radius: 6px; background: var(--aw-surface); font-size: var(--aw-text-badge); line-height: var(--aw-lh-badge); color: var(--aw-ink-2); white-space: nowrap; }
 .d1 .aw-replay-state:empty { display: none; }
 /* A recording's Back to live, at the legend's end, as today's HUD offers it on its status line. */
 .d1-back { flex: none; margin-left: 10px; color: var(--aw-ink-bright); font-weight: 600; letter-spacing: 0; text-transform: none; text-underline-offset: 3px; }
@@ -176,7 +177,7 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
 .d1-team.c1 { grid-area: t1; }
 .d1-team:focus { outline: none; }
 .d1-team-head { flex: none; display: flex; align-items: baseline; gap: 0 10px; min-width: 0; }
-.d1-name { flex: 0 1 auto; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-name { flex: 0 1 auto; min-width: 0; font-size: var(--aw-text-title); font-weight: 700; line-height: var(--aw-lh-title); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* A colony's colour: its name's (--aw-k0, --aw-k1, colony-palette.ts), else the rated names'; the site's cyan buttons keep --aw-c1. */
 .d1-name.c0 { color: var(--aw-k0, var(--aw-c0)); }
 .d1-name.c1 { color: var(--aw-k1, var(--aw-c1)); }
@@ -188,7 +189,7 @@ button.d1-member { appearance: none; border: 0; background: transparent; color: 
 button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 /* The one player's line, in the Matches order: its name and model give way, ending in an ellipsis; its badges, rating,
    seat count and result never do. */
-.d1-team-player { flex: 0 1 auto; display: inline-flex; align-items: baseline; gap: 0 6px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-team-player { flex: 0 1 auto; display: inline-flex; align-items: baseline; gap: 0 6px; min-width: 0; font-size: var(--aw-text-meta); font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .d1-team-player[hidden] { display: none; }
 /* With one player the colony name takes its own line and the player's line follows under it, its seat icons leading it,
    so neither the name nor the line gives way to the other. */
@@ -198,23 +199,24 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-team-head > .d1-team-player { flex: 1 1 0; }
 .d1-team-player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .d1-team-player > :not(.d1-team-player-name) { flex: none; }
+.d1-player-rating { display: contents; }
 .d1-seats { font-weight: 400; color: var(--aw-ink-3); }
 /* The economy: a cell per measure, its label over its figure. */
 .d1-econ { flex: none; display: grid; grid-template-columns: repeat(5, minmax(max-content, 1fr)); column-gap: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--d1-hair); }
 .d1-econ.has-flyers { grid-template-columns: repeat(6, minmax(max-content, 1fr)); }
-.d1-cell { display: grid; grid-template-rows: 14px 20px; row-gap: 1px; min-width: 0; }
-.d1-ml { min-width: 0; font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.d1-mv { display: flex; align-items: center; min-width: 0; font-size: 15px; font-weight: 700; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d1-cell { display: grid; grid-template-rows: minmax(var(--aw-lh-badge-sm), auto) minmax(var(--aw-lh-title), auto); row-gap: 1px; min-width: 0; }
+.d1-ml { min-width: 0; font-size: var(--aw-text-label); font-weight: 600; line-height: var(--aw-lh-badge-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d1-mv { display: flex; align-items: center; min-width: 0; font-size: var(--aw-text-title); font-weight: 700; line-height: var(--aw-lh-title); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .d1-mv.c0 { color: var(--aw-k0, var(--aw-c0)); }
 .d1-mv.c1 { color: var(--aw-k1, var(--aw-c1)); }
 /* The next spawn: the coming unit's icon inside its ring, both in the colony's colour, no seconds; full, the
    grey full ring; short of food, the empty ring alone. */
-.d1-next { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.d1-next { display: inline-flex; align-items: center; gap: 6px; font-size: var(--aw-text-body); }
 .d1-next .d1-ring { display: inline-grid; place-items: center; }
 .d1-next .d1-ring > * { grid-area: 1 / 1; }
-.d1-next .d1-ring > svg { width: 20px; height: 20px; }
+.d1-next .d1-ring > svg { width: calc(20em / 13); height: calc(20em / 13); }
 .d1-caste { display: inline-grid; place-items: center; color: currentColor; }
-.d1-caste svg { display: block; width: 10px; height: 10px; }
+.d1-caste svg { display: block; width: calc(10em / 13); height: calc(10em / 13); }
 .d1-ring { flex: none; display: inline-flex; }
 .d1-ring svg { display: block; }
 .d1-ring-track { fill: none; stroke: #3a4448; stroke-width: 3; }
@@ -226,7 +228,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-next[data-kind="none"] .d1-next-text { color: var(--aw-ink-3); }
 
 /* Balance and Win conditions: a figure and a half-track per colony, mirrored about the row's label. */
-.d1-kicker { font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); }
+.d1-kicker { font-size: var(--aw-text-label); font-weight: 700; line-height: var(--aw-lh-badge-sm); letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); }
 /* Each heading on the axis its rows' labels and the clock share. */
 .d1-score > .d1-kicker, .d1-win > .d1-kicker { margin-top: 6px; text-align: center; }
 .d1-win { display: grid; min-width: 0; }
@@ -250,7 +252,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-lamps { grid-row: 1; display: flex; gap: 4px; min-width: 0; }
 .d1-lamps.c0 { grid-column: 2; }
 .d1-lamps.c1 { grid-column: 4; flex-direction: row-reverse; }
-.d1-lamp { position: relative; flex: 1 1 0; min-width: 0; height: 12px; border-radius: 3px; background: var(--d1-ground); overflow: hidden; font-size: 10px; font-weight: 700; line-height: 12px; text-align: center; font-variant-numeric: tabular-nums; }
+.d1-lamp { position: relative; flex: 1 1 0; min-width: 0; height: 1.2em; border-radius: 3px; background: var(--d1-ground); overflow: hidden; font-size: var(--aw-text-badge-sm); font-weight: 700; line-height: 1.2em; text-align: center; font-variant-numeric: tabular-nums; }
 .d1-lamp-fill, .d1-lamp-hp { position: absolute; inset: 0; }
 .d1-lamp-fill { background: var(--aw-k0, var(--aw-c0)); clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
 .d1-lamp-hp { color: var(--aw-ink-bright); }
@@ -305,7 +307,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-agent-item.c3 { --d1-side: var(--aw-k3); }
 .d1-agent {
   display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 7px; align-items: center; width: 100%; min-height: 22px; margin: 0; padding: 0 6px 0 9px;
-  border: 0; border-radius: 6px; background: none; box-shadow: inset 3px 0 0 var(--d1-side); font-size: 11.5px; line-height: 16px; text-align: left; cursor: pointer;
+  border: 0; border-radius: 6px; background: none; box-shadow: inset 3px 0 0 var(--d1-side); font-size: 11.5px; line-height: var(--aw-lh-meta); text-align: left; cursor: pointer;
 }
 .d1-agent:hover, .d1-agent-item.is-selected .d1-agent { background: var(--aw-raise); }
 .d1-agent:focus-visible { outline-offset: -2px; }
@@ -315,11 +317,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; padding-block: 2px; }
 .d1-title-box { flex: 0 1 auto; display: inline-flex; min-width: 0; }
 .d1-model-box { flex: 0 1 auto; display: inline-flex; align-items: baseline; column-gap: 6px; min-width: 0; }
-.d1-title { min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; color: var(--aw-ink-bright); }
+.d1-title { min-width: 0; overflow-wrap: anywhere; font-size: var(--aw-text-meta); font-weight: 700; color: var(--aw-ink-bright); }
 .d1-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--aw-ink-3); }
 /* A Benchmark handle's level and Fast badges, as the Leaderboard's d1p-tags: one unit, never split or shrunk. */
 .d1-tags { flex: none; display: inline-flex; gap: 3px; align-self: center; }
-.d1-tag { padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 3px; font-size: 10px; font-weight: 600; line-height: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
+.d1-tag { padding: 0 4px; border: 1px solid var(--aw-line); border-radius: 3px; font-size: var(--aw-text-badge-sm); font-weight: 600; line-height: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-ink-2); white-space: nowrap; }
 /* The self-reported asterisk, right after the model it marks; a pointer over it or a tap shows its explanation. */
 .d1-ast-mark { flex: none; padding: 0 2px 0 1px; color: var(--aw-ink-2); font-weight: 700; cursor: help; }
 .d1-who > .d1-ast-mark { margin-left: -6px; }
@@ -328,15 +330,15 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 /* The figure alone; a pointer over it, a tap, or focus shows its "± RD" in the tip (pane.ts rdTip). */
 .d1-elo[data-rd] { cursor: help; }
 /* A player line's model, after the name in the Matches line's regular weight and ink (archive.css .d1p-mname). */
-.d1-who .d1-model, .d1-team-player-name > .d1-model { font-size: 12px; font-weight: 400; color: var(--aw-ink); }
+.d1-who .d1-model, .d1-team-player-name > .d1-model { font-size: var(--aw-text-meta); font-weight: 400; color: var(--aw-ink); }
 /* The colony's result once the match has ended, WINNER, DRAW or ABANDONED in the colony's ink (archive.css .d1p-result-tag). */
 .d1-outcome { flex: none; align-self: center; }
 .d1-outcome.c0 { color: var(--aw-k0, var(--aw-c0)); }
 .d1-outcome.c1 { color: var(--aw-k1, var(--aw-c1)); }
-.d1-tip { position: fixed; z-index: 5; max-width: min(300px, calc(100vw - 16px)); padding: 7px 11px; border-radius: 10px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.35; color: var(--aw-ink); pointer-events: auto; }
+.d1-tip { position: fixed; z-index: 5; max-width: min(300px, calc(100vw - 16px)); padding: 7px 11px; border-radius: 10px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line), 0 4px 16px rgba(0, 0, 0, 0.45); font-size: var(--aw-text-meta); line-height: 1.35; color: var(--aw-ink); pointer-events: auto; }
 .d1-tip-line { display: block; overflow-wrap: anywhere; }
-.d1-said-icon { flex: none; display: inline-flex; width: 14px; height: 14px; }
-.d1-said-icon svg { display: block; }
+.d1-said-icon { flex: none; display: inline-flex; width: calc(14em / 12); height: calc(14em / 12); }
+.d1-said-icon svg { display: block; width: 100%; height: 100%; }
 .d1-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--aw-ink); }
 .d1-said.is-thought, .d1-said.is-words { font-style: italic; color: var(--aw-ink-2); }
 .d1-said.is-mark:not(.is-words) { font-weight: 700; color: var(--aw-ink-bright); font-variant-numeric: tabular-nums; }
@@ -345,21 +347,21 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-timeline { flex: 1 1 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 52px; }
 .d1-timeline > .d1-kicker { flex: none; }
 .d1-tl { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(233, 239, 240, 0.25) transparent; }
-.d1-tl-entry { display: grid; grid-template-columns: 38px minmax(0, max-content) auto; align-items: baseline; column-gap: 8px; min-height: 18px; font-size: 12px; line-height: 18px; }
+.d1-tl-entry { display: grid; grid-template-columns: calc(38em / 12) minmax(0, max-content) auto; align-items: baseline; column-gap: 8px; min-height: 18px; font-size: var(--aw-text-meta); line-height: 1.125rem; }
 .d1-tl-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--aw-ink); }
 .d1-tl-none { display: block; color: var(--aw-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* A row: its time, the acting member's badge (blank for a colony's own event), its symbol, its words, and its status at the right. */
-.d1-tl-entry.d1-log { grid-template-columns: 38px 14px 13px minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
+.d1-tl-entry.d1-log { grid-template-columns: calc(38em / 12) calc(14em / 12) calc(13em / 12) minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
 .d1-log .d1-when { font-variant-numeric: tabular-nums; }
-.d1-log-who { display: inline-flex; width: 14px; height: 14px; }
-.d1-log-icon { display: inline-flex; width: 13px; height: 13px; color: var(--aw-ink-2); }
-.d1-log-who svg, .d1-log-icon svg { display: block; }
+.d1-log-who { display: inline-flex; width: calc(14em / 12); height: calc(14em / 12); }
+.d1-log-icon { display: inline-flex; width: calc(13em / 12); height: calc(13em / 12); color: var(--aw-ink-2); }
+.d1-log-who svg, .d1-log-icon svg { display: block; width: 100%; height: 100%; }
 .d1-log-intent { margin-left: 6px; font-style: italic; color: var(--aw-ink-2); }
-.d1-log-refused { justify-self: end; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
+.d1-log-refused { justify-self: end; font-size: var(--aw-text-label); color: var(--aw-ink-3); white-space: nowrap; }
 .d1-log.is-refused .d1-log-text { color: var(--aw-ink-2); text-decoration: line-through; text-decoration-color: var(--aw-ink-3); }
 /* An arrival row: no time, "On arrival" before the standing order and its newest live mark, wrapping whole. */
 .d1-log.is-arrival .d1-tl-what { white-space: normal; overflow-wrap: anywhere; }
-.d1-log-lead { margin-right: 6px; font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
+.d1-log-lead { margin-right: 6px; font-size: var(--aw-text-label); color: var(--aw-ink-3); white-space: nowrap; }
 .d1-log-mark { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: top; }
 /* Fixed labels and symbols keep their full width beside the wrapping mark description. */
 .d1-log-mark-word { flex: none; white-space: nowrap; color: var(--aw-ink-3); }
@@ -376,27 +378,30 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-sel:has(> .d1-sel-recent[hidden]), .d1-sel-ant { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "order" "lines"; }
 .d1-sel-recent { grid-area: recent; display: grid; align-content: start; gap: 2px; min-width: 0; }
 .d1-sel-head { grid-area: head; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 10px; }
-.d1-sel-head > .d1-badge { width: 18px; height: 18px; margin-top: 1px; }
+.d1-sel-head > .d1-badge { width: calc(18em / 13); height: calc(18em / 13); margin-top: 1px; }
+.d1-sel-head > .d1-badge svg { width: 100%; height: 100%; }
 .d1-sel-ant .d1-sel-head { grid-template-columns: minmax(0, 1fr) auto; }
 .d1-sel-names { display: grid; gap: 2px; min-width: 0; }
-/* The opened card's model and its level badges are one unit that never splits: a model beside the name takes its own
-   line under it with its badges after it, and where the name is the model its badges stay beside the name. */
-.d1-sel-title { display: grid; grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr); align-items: baseline; gap: 0 8px; min-width: 0; font-size: 14px; font-weight: 700; color: var(--aw-ink-bright); overflow-wrap: anywhere; }
-.d1-sel-title:has(> .d1-model:not([hidden])) > .d1-sel-name { grid-column: 1 / -1; }
+/* The title wraps between units: a separate model follows the name on a new line and stays whole. */
+.d1-sel-title { display: flex; align-items: baseline; gap: 0 8px; min-width: 0; font-size: var(--aw-text-lead); font-weight: 700; color: var(--aw-ink-bright); overflow-wrap: normal; flex-wrap: wrap; }
+.d1-sel-ant .d1-sel-title { white-space: nowrap; }
+.d1-sel-title > .d1-sel-name { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d1-sel-title:has(> .d1-model:not([hidden])) > .d1-sel-name { flex: 1 0 100%; }
+.d1-sel-title > .d1-tags { flex: none; }
 .d1-sel-title .d1-model { font-weight: 400; }
-.d1-sel-title .d1-ast-mark { margin-left: -8px; font-size: 11px; }
-.d1-sel-sub { font-size: 12px; font-weight: 600; color: var(--aw-ink-2); }
+.d1-sel-title .d1-ast-mark { margin-left: -8px; font-size: var(--aw-text-label); margin-right: -0.6em; }
+.d1-sel-sub { font-size: var(--aw-text-meta); font-weight: 600; color: var(--aw-ink-2); }
 .d1-sel-order { grid-area: order; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
-.d1-sel-line { font-size: 12.5px; color: var(--aw-ink); overflow-wrap: anywhere; }
+.d1-sel-line { font-size: var(--aw-text-body); color: var(--aw-ink); overflow-wrap: break-word; }
 .d1-sel-lines { grid-area: lines; display: grid; align-content: start; gap: 4px; }
 .d1-history { display: grid; gap: 2px; }
-.d1-history-line { display: grid; grid-template-columns: 38px 14px minmax(0, 1fr) auto; align-items: center; column-gap: 6px; min-height: 28px; font-size: 12px; }
-.d1-history-line .d1-said { white-space: normal; overflow-wrap: anywhere; }
+.d1-history-line { display: grid; grid-template-columns: calc(38em / 12) calc(14em / 12) minmax(0, 1fr) auto; align-items: center; column-gap: 6px; min-height: 28px; font-size: var(--aw-text-meta); }
+.d1-history-line .d1-said { white-space: normal; overflow-wrap: break-word; overflow: visible; text-overflow: clip; }
 .d1-history-line .d1-said-icon[hidden] + .d1-said { grid-column: 2 / 4; }
-.d1-when { font-size: 11px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
-.d1-gone { font-size: 11px; color: var(--aw-ink-3); white-space: nowrap; }
+.d1-when { font-size: var(--aw-text-label); color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+.d1-gone { font-size: var(--aw-text-label); color: var(--aw-ink-3); white-space: nowrap; }
 /* The grey pill: a secondary action; pressed, it turns white like the page's chosen pills. */
-.d1-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--aw-raise-hover); font-size: 12px; font-weight: 600; color: var(--aw-ink); white-space: nowrap; cursor: pointer; }
+.d1-chip { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--aw-raise-hover); font-size: var(--aw-text-meta); font-weight: 600; color: var(--aw-ink); white-space: nowrap; cursor: pointer; }
 .d1-chip:hover { background: #435056; color: var(--aw-ink-bright); }
 .d1-chip[aria-pressed="true"] { background: var(--aw-ink-bright); color: var(--aw-bg); }
 .d1-close { flex: none; display: inline-grid; place-items: center; width: var(--d1-tap); height: var(--d1-tap); padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--aw-ink-2); cursor: pointer; }
@@ -405,7 +410,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 
 /* Result: a modal over the whole screen, the winner or a draw, how it ended, rating changes, the decisive
    moments, the next start; the colony's colour down its side. Centred at every width, scrolling inside when taller. */
-.d1-dialog.d1-result-dialog { width: min(440px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 24px); margin: auto; border-radius: 14px; overflow: auto; }
+.d1-dialog.d1-result-dialog { width: min(440px, calc(100vw - 24px)); max-width: none; max-height: calc(100dvh - 24px); margin: auto; border-radius: 14px; overflow: auto; font-size: var(--aw-text-body); }
 /* The 2D board shows the same modal outside the deck: it carries the deck's text resets itself. */
 .d1-result-dialog :where(p, ol, ul) { margin: 0; padding: 0; }
 .d1-result-dialog :where(ol, ul) { list-style: none; }
@@ -484,7 +489,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-deck { grid-template-columns: minmax(0, 1fr); grid-template-areas: "score" "t0" "t1"; }
   .d1-score { width: 100%; }
   .d1-team-head { flex-wrap: wrap; }
-  .d1-name { font-size: 14px; }
+  .d1-name { font-size: var(--aw-text-lead); }
   .d1-sel, .d1-sel:has(> .d1-sel-recent[hidden]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "order" "lines" "recent"; }
   .d1-gauge { grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr); grid-template-rows: 22px 12px; row-gap: 6px; padding-bottom: 8px; }
   .d1-gauge > .d1-glabel { grid-column: 1 / -1; grid-row: 1; }
@@ -550,29 +555,29 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-lane:has(.d1-caption:not([data-kind="none"])) { flex-wrap: wrap; align-content: center; row-gap: 4px; }
   .d1-caption { display: grid; grid-template-columns: 4px auto minmax(0, 1fr); grid-template-areas: "bar what what" "bar when who"; column-gap: 8px; row-gap: 1px; align-items: baseline; }
   .d1-caption:not([data-kind="none"]) { flex: 1 0 100%; }
-  .d1-cap-bar { grid-area: bar; height: 36px; align-self: center; }
-  .d1-cap-what { grid-area: what; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 14px; line-height: 18px; }
-  .d1-cap-when { grid-area: when; font-size: 11px; }
+  .d1-cap-bar { grid-area: bar; height: calc(36em / 13); align-self: center; }
+  .d1-cap-what { grid-area: what; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--aw-text-lead); line-height: 1.125rem; }
+  .d1-cap-when { grid-area: when; font-size: var(--aw-text-label); }
   /* The run is not a box here: its words and its colony each keep their own row and their own ellipsis. */
   .d1-cap-text { display: contents; }
-  .d1-cap-who { grid-area: who; min-width: 0; margin-left: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+  .d1-cap-who { grid-area: who; min-width: 0; margin-left: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--aw-text-label); }
   .d1-cap-when:not(:empty) + .d1-cap-text > .d1-cap-who { margin-left: -4px; }
   .d1-cap-when:not(:empty) + .d1-cap-text > .d1-cap-who::before { content: "· "; }
-  .d1-caption[data-kind="fall"] .d1-cap-what { font-size: 20px; line-height: 24px; }
-  .d1-caption[data-kind="fall"] .d1-cap-who { font-size: 12px; }
+  .d1-caption[data-kind="fall"] .d1-cap-what { font-size: calc(20em / 12); line-height: 1.2; }
+  .d1-caption[data-kind="fall"] .d1-cap-who { font-size: var(--aw-text-meta); }
   .d1-below { grid-column: 1; grid-row: 4; border-radius: 0; box-shadow: none; }
   .d1-deck { padding: 8px 8px 0; }
   /* The economy in two rows of cells, so each figure keeps its width. */
   .d1-econ, .d1-econ.has-flyers { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px; }
   /* Each agent row a 44 px target. */
   .d1-agent { min-height: 44px; padding: 4px 4px 4px 10px; column-gap: 8px; border-radius: 0; border-bottom: 1px solid var(--d1-hair); font-size: 12px; }
-  .d1-title { font-size: 13px; }
+  .d1-title { font-size: var(--aw-text-body); }
   .d1-model { font-size: 11.5px; }
   /* A player line's model keeps its name's size. */
-  .d1-who .d1-model, .d1-team-player-name > .d1-model { font-size: 13px; }
-  .d1-tl-entry { min-height: 28px; line-height: 28px; }
-  .d1-tl-entry.is-arrival { line-height: 18px; padding-block: 5px; }
-  .d1-said { font-size: 12px; }
+  .d1-who .d1-model, .d1-team-player-name > .d1-model { font-size: var(--aw-text-body); }
+  .d1-tl-entry { min-height: 28px; line-height: 1.75rem; }
+  .d1-tl-entry.is-arrival { line-height: 1.125rem; padding-block: 5px; }
+  .d1-said { font-size: var(--aw-text-meta); }
   .d1-history-line { min-height: 44px; }
   .d1-chip { min-height: 44px; padding: 0 16px; }
   .d1-deck-end { padding: 20px 8px 16px; border-bottom: 1px solid var(--d1-hair); }
@@ -611,77 +616,76 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 }
 
 /* The board's point-of-view choice: Full view or one colony's fog-of-war view, first in the board controls. */
-.d1 .aw-team-view { height: var(--d1-tap); max-width: 46vw; padding: 0 10px; border: 0; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; box-shadow: inset 0 0 0 1px var(--aw-line); }
+.d1 .aw-team-view { height: max(var(--d1-tap), calc(1.125rem + 18px)); max-width: 46vw; padding: 0 10px; border: 0; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font: inherit; font-size: var(--aw-text-meta); font-weight: 600; cursor: pointer; box-shadow: inset 0 0 0 1px var(--aw-line); }
 .d1 .aw-team-view:hover { background: var(--aw-raise-hover); color: var(--aw-ink-bright); }
 /* After a click or tap it shows no focus ring, like the round controls beside it; by keyboard it keeps the shared ring. */
 .d1 .aw-team-view[data-pointer]:focus-visible { outline: none; }
 
 /* Victory banner: winner-colour header, player roster and one final-rating column. */
-.d1-dialog.d1-result-dialog { width: min(580px, calc(100vw - 32px)); border-radius: 18px; font-family: Arial, sans-serif; line-height: 1.4; }
-.d1-result-dialog .d1-result { padding: 0; gap: 0; box-shadow: none; }
+.d1-dialog.d1-result-dialog { width: min(36.25rem, calc(100vw - 32px)); border-radius: 18px; font-family: var(--aw-sans); line-height: 1.4; }
+.d1-result-dialog .d1-result { padding: 0; gap: 0; box-shadow: none; grid-template-columns: minmax(0, 1fr); }
 .d1-result-dialog .d1-result-top { padding: 28px 28px 24px; gap: 12px; position: relative; }
 .d1-result-dialog .rd-hero { min-width: 0; flex: 1; }
-.d1-result-dialog .rd-eyebrow, .d1-result-dialog .rd-label { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.d1-result-dialog .rd-eyebrow, .d1-result-dialog .rd-label { font-size: var(--aw-text-body); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .d1-result-dialog .rd-eyebrow { color: #b4c0c3; margin-bottom: 14px; }
-.d1-result-dialog .d1-result-head { padding: 0; display: flex; flex-direction: column; gap: 0; font-size: 36px; font-weight: 700; line-height: 1.12; letter-spacing: -.035em; overflow-wrap: normal; }
+.d1-result-dialog .d1-result-head { padding: 0; display: flex; flex-direction: column; gap: 0; font-weight: 700; line-height: 1.12; letter-spacing: -.035em; overflow-wrap: normal; }
 .d1-result-dialog .rd-winner-name, .d1-result-dialog .rd-outcome { white-space: nowrap; }
 .d1-result-dialog .rd-outcome { font-weight: 400; color: #f0f4f5; }
-.d1-result-dialog .d1-result-how { margin-top: 14px; font-size: 14px; font-weight: 600; color: #bac4c7; }
+.d1-result-dialog .d1-result-how { margin-top: 14px; font-size: var(--aw-text-lead); font-weight: 600; color: #bac4c7; }
 .d1-result-dialog .d1-close { width: 36px; height: 36px; min-width: 36px; background: rgba(255,255,255,.06); }
 .d1-result-dialog .rd-standings { padding: 0 28px; }
-.d1-result-dialog .rd-columns, .d1-result-dialog .d1-rating { display: grid; grid-template-columns: minmax(0,1fr) 132px; gap: 16px; align-items: center; }
+.d1-result-dialog .rd-columns, .d1-result-dialog .d1-rating { display: grid; grid-template-columns: minmax(0, 1fr) calc(132em / 13); gap: 16px; align-items: center; }
 .d1-result-dialog .rd-columns { padding: 12px 0; border-top: 1px solid #394348; color: #b4c0c3; }
 .d1-result-dialog .rd-rating-label { text-align: right; }
-.d1-result-dialog .d1-ratings { margin: 0; gap: 0; font-size: 13px; }
+.d1-result-dialog .d1-ratings { margin: 0; gap: 0; font-size: var(--aw-text-body); }
 .d1-result-dialog .d1-rating { padding: 13px 0; border-top: 1px solid #303a3e; }
 .d1-result-dialog .rd-identity { display: grid; gap: 4px; min-width: 0; }
-.d1-result-dialog .rd-colony { display: flex; align-items: center; gap: 7px; color: #c3cdd0; font-size: 13px; white-space: nowrap; }
-.d1-result-dialog .rd-colony::before { content: ''; width: 7px; height: 7px; border-radius: 2px; background: var(--rd-colony); flex: none; }
-.d1-result-dialog .rd-player { display: flex; align-items: center; gap: 6px; }
-.d1-result-dialog .d1-rating-name { color: #f2f5f6; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.d1-result-dialog .rd-colony { display: flex; align-items: center; gap: 7px; color: #c3cdd0; font-size: var(--aw-text-body); white-space: nowrap; }
+.d1-result-dialog .rd-colony::before { content: ''; width: calc(7em / 13); height: calc(7em / 13); border-radius: 2px; background: var(--rd-colony); flex: none; }
+.d1-result-dialog .rd-player { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.d1-result-dialog .d1-rating-name { color: #f2f5f6; font-size: var(--aw-text-lead); font-weight: 600; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .d1-result-dialog .rd-numbers { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .d1-result-dialog .rd-after { color: #f2f5f6; font-weight: 600; }
 .d1-result-dialog .rd-standings:not(.is-rated) .d1-rating, .d1-result-dialog .rd-standings:not(.is-rated) .rd-columns { grid-template-columns: minmax(0,1fr); }
-.d1-result-dialog .rd-note { padding: 10px 0 0; font-size: 13px; color: #b4c0c3; }
+.d1-result-dialog .rd-note { padding: 10px 0 0; font-size: var(--aw-text-body); color: #b4c0c3; }
 .d1-result-dialog .rd-decisive { margin: 20px 28px 0; padding: 14px 16px; border-radius: 8px; background: rgba(255,255,255,.04); }
 .d1-result-dialog .rd-decisive > .rd-label { color: #b4c0c3; margin-bottom: 7px; }
 .d1-result-dialog .d1-moments { margin: 0; gap: 8px; }
-.d1-result-dialog .d1-moment { display: grid; grid-template-columns: 36px minmax(0,max-content) minmax(max-content,1fr); gap: 8px; font-size: 13px; align-items: baseline; }
-.d1-result-dialog .d1-moment-what { color: #f2f5f6 !important; min-width: 0; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.d1-result-dialog .d1-moment-who { grid-column: auto; white-space: nowrap; font-size: 13px; }
+.d1-result-dialog .d1-moment { display: grid; grid-template-columns: calc(36em / 13) minmax(0, max-content) minmax(max-content, 1fr); gap: 8px; font-size: var(--aw-text-body); align-items: baseline; }
+.d1-result-dialog .d1-moment-what { color: #f2f5f6 !important; min-width: 0; white-space: normal; overflow-wrap: break-word; display: block; overflow: visible; }
+.d1-result-dialog .d1-moment-who { grid-column: auto; white-space: nowrap; font-size: var(--aw-text-body); }
 .d1-result-dialog .d1-moment-who .aw-colony-name { color: inherit !important; }
-.d1-result-dialog .d1-when { font-size: 13px; color: #b4c0c3; }
+.d1-result-dialog .d1-when { font-size: var(--aw-text-body); color: #b4c0c3; }
 .d1-result-dialog .rd-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 24px 28px; }
-.d1-result-dialog .d1-result-next { margin: 0; color: #b4c0c3; font-size: 13px; white-space: nowrap; }
-.d1-result-dialog .d1-share { margin: 0; min-height: 36px; padding: 0 16px; font-family: Arial, sans-serif; font-size: 14px; white-space: nowrap; }
+.d1-result-dialog .d1-result-next { margin: 0; color: #b4c0c3; font-size: var(--aw-text-body); white-space: nowrap; }
+.d1-result-dialog .d1-share { margin: 0; min-height: 36px; padding: 0 16px; font-family: var(--aw-sans); font-size: var(--aw-text-lead); white-space: nowrap; }
 @media (max-width: 37.5em) {
  .d1-dialog.d1-result-dialog { width: calc(100vw - 24px); border-radius: 14px; }
  .d1-result-dialog .d1-result-top { padding: 18px 20px 16px; }
- .d1-result-dialog .d1-result-head { font-size: 30px; }
- .d1-result-dialog .rd-eyebrow { font-size: 13px; margin-bottom: 12px; }
- .d1-result-dialog .d1-result-how { font-size: 14px; }
+ .d1-result-dialog .rd-eyebrow { font-size: var(--aw-text-body); margin-bottom: 12px; }
+ .d1-result-dialog .d1-result-how { font-size: var(--aw-text-lead); }
  .d1-result-dialog .rd-standings { padding: 0 20px; }
- .d1-result-dialog .rd-columns { grid-template-columns: minmax(0,1fr) auto; gap: 8px 12px; font-size: 13px; }
+ .d1-result-dialog .rd-columns { grid-template-columns: minmax(0,1fr) auto; gap: 8px 12px; font-size: var(--aw-text-body); }
  .d1-result-dialog .rd-columns > .rd-label:first-child { grid-column: 1 / -1; }
  .d1-result-dialog .rd-rating-label { text-align: left; }
  .d1-result-dialog .d1-rating { grid-template-columns: minmax(0,1fr) auto; gap: 7px 12px; padding: 10px 0; }
  .d1-result-dialog .rd-identity { grid-column: 1 / -1; }
- .d1-result-dialog .rd-numbers { text-align: left; padding-left: 0; font-size: 14px; }
- .d1-result-dialog .d1-rating-name { font-size: 14px; }
+ .d1-result-dialog .rd-numbers { text-align: left; padding-left: 0; font-size: var(--aw-text-lead); }
+ .d1-result-dialog .d1-rating-name { font-size: var(--aw-text-lead); }
  .d1-result-dialog .rd-decisive { margin: 12px 20px 0; padding: 12px 14px; }
  .d1-result-dialog .rd-footer { flex-direction: column; align-items: stretch; gap: 12px; padding: 16px 20px; }
  .d1-result-dialog .d1-share { min-height: 44px; }
  .d1-result-dialog .d1-result-next { text-align: center; order: 1; }
 }
 @media (min-width: 37.5625em) {
- .d1-result-dialog .rd-standings:not(.is-rated) .rd-identity { grid-template-columns: 112px minmax(0,1fr); align-items: center; gap: 12px; }
+ .d1-result-dialog .rd-standings:not(.is-rated) .rd-identity { grid-template-columns: calc(112em / 13) minmax(0,1fr); align-items: center; gap: 12px; }
 }
 
-.d1-result-dialog .d1-tag { font-size: 13px; }
+.d1-result-dialog .d1-tag { font-size: var(--aw-text-body); }
 .d1-dialog.d1-result-dialog { background: #141c21; border-radius: 4px; box-shadow: 0 24px 80px #000a; }
 .d1-result-dialog .d1-result-top { background: var(--d1-side); padding: 24px 28px 28px; }
-.d1-result-dialog .d1-result-head { color: #102126 !important; font-size: 42px; }
-.d1-result-dialog .rd-outcome { color: #102126; font-weight: 800; text-transform: uppercase; font-size: 60px; line-height: 1; letter-spacing: -.05em; margin-top: 4px; }
+.d1-result-dialog .d1-result-head { color: #102126 !important; font-size: calc(var(--aw-text-display) * 1.4); }
+.d1-result-dialog .rd-outcome { color: #102126; font-weight: 800; text-transform: uppercase; font-size: calc(var(--aw-text-display-lg) * 1.25); line-height: 1; letter-spacing: -.05em; margin-top: 4px; }
 .d1-result-dialog .rd-eyebrow, .d1-result-dialog .d1-result-how { color: #102126; }
 .d1-result-dialog .rd-eyebrow { font-weight: 800; }
 .d1-result-dialog .d1-close { color: #102126; background: #10212618; }
@@ -692,8 +696,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 @media (max-width: 37.5em) {
  .d1-dialog.d1-result-dialog { border-radius: 4px; }
  .d1-result-dialog .d1-result-top { padding: 18px 20px; }
- .d1-result-dialog .d1-result-head { font-size: 30px; }
- .d1-result-dialog .rd-outcome { font-size: 48px; }
+ .d1-result-dialog .d1-result-head { font-size: var(--aw-text-display); }
+ .d1-result-dialog .rd-outcome { font-size: var(--aw-text-display-lg); }
  .d1-result-dialog .rd-standings { padding-top: 8px; }
 }
 
@@ -705,12 +709,12 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band.d1-hud { grid-template-rows: auto 4px auto 16px minmax(244px, 1fr) minmax(36px, auto); overflow-y: auto; }
 .score-band .d1-below { display: contents; }
 .score-band .d1-deck {
-  --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) 54px;
+  --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) max(54px, calc(3.75rem - 6px));
   display: grid; grid-template-columns: var(--sb-columns); grid-template-areas: none; gap: 0 8px;
   padding: 12px; overflow: visible; border-radius: 14px; background: var(--aw-surface); box-shadow: inset 0 0 0 1px var(--aw-line);
 }
 .score-band .d1-deck:has(.d1-econ.has-flyers:not([hidden])) {
-  --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(60px, .6fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) 54px;
+  --sb-columns: minmax(300px, 3fr) minmax(76px, .8fr) minmax(80px, .8fr) minmax(60px, .6fr) minmax(65px, .7fr) minmax(90px, .9fr) minmax(84px, .85fr) minmax(160px, 1.6fr) minmax(90px, .9fr) max(54px, calc(3.75rem - 6px));
 }
 .sb-band { grid-column: 1 / -1; display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; padding: 0 0 12px; }
 .sb-clock-map { display: flex; flex-direction: column; gap: 10px; padding: 2px 10px 0 2px; border-right: 1px solid var(--aw-line); }
@@ -743,7 +747,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-team.c3 { --sb-ink: var(--aw-k3); }
 .sb-identity { grid-column: 1; grid-row: 1; min-width: 0; }
 .score-band .d1-team-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; }
-.score-band .d1-name { flex: none !important; display: inline-flex; align-items: center; gap: 5px; font-size: 15px; color: var(--sb-ink); overflow: visible; text-overflow: clip; }
+.score-band .d1-name { flex: none !important; display: inline-flex; align-items: center; gap: 5px; font-size: var(--aw-text-title); color: var(--sb-ink); overflow: visible; text-overflow: clip; }
+.score-band .d1-name::before { width: calc(8em / 15); height: calc(8em / 15); }
 .score-band .d1-team-members { flex: none; flex-wrap: nowrap; gap: 4px; }
 /* Every seat reserves the old idle glyph's space, so activity never moves its badge or focus target. */
 .score-band .d1-member { display: inline-flex; align-items: center; gap: 2px; }
@@ -752,32 +757,37 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-member:hover > .sb-seat-badge { background: var(--aw-raise); }
 .score-band .d1-member[aria-expanded="true"] > .sb-seat-badge { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 .sb-seat-badge { display: inline-grid; place-items: center; flex: none; }
-.sb-idle { display: inline-grid; place-items: center; flex: none; width: 14px; height: 14px; visibility: hidden; color: var(--aw-ink-3); }
+.sb-seat-badge > svg { width: calc(16em / 13); height: calc(16em / 13); }
+.sb-idle { display: inline-grid; place-items: center; flex: none; width: calc(14em / 13); height: calc(14em / 13); visibility: hidden; color: var(--aw-ink-3); }
+.sb-idle svg { width: 100%; height: 100%; }
 .sb-idle.is-idle { visibility: visible; }
-.score-band .d1-team-player { display: flex; flex: 1 0 100%; width: 100%; padding-left: 13px; margin-top: 3px; font-size: 12px; flex-wrap: wrap; row-gap: 3px; }
+.score-band .d1-team-player { display: flex; flex: 1 0 100%; width: 100%; padding-left: 13px; margin-top: 3px; font-size: var(--aw-text-meta); flex-wrap: wrap; row-gap: 3px; }
 /* Name and model may occupy separate lines; each label remains one line in its own box. */
 .score-band .d1-team-player-name { display: inline-flex; flex-wrap: wrap; gap: 3px 4px; max-width: 100%; overflow: visible; }
 .score-band .d1-agents { max-height: none; overflow: visible; }
-.score-band .d1-agent { padding: 2px 0 2px 13px; grid-template-columns: minmax(0, 1fr); min-height: 24px; box-shadow: none; font-size: 12px; }
+.score-band .d1-agent { padding: 2px 0 2px 13px; grid-template-columns: minmax(0, 1fr); min-height: 24px; box-shadow: none; font-size: var(--aw-text-meta); }
 .score-band .d1-agent > .d1-badge { display: none; }
 .score-band .d1-who { display: flex; flex-wrap: wrap; gap: 3px 5px; overflow: visible; }
 /* Match the tables: extreme identity text ends inside its box, never across a score cell.
    The complete label stays in the DOM and its hover title; badges never shrink. */
 .score-band :is(.d1-title-box, .d1-model-box) { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 100%; align-items: baseline; gap: 4px; }
 .score-band :is(.d1-title, .d1-model) { min-width: 0; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.score-band .d1-model, .score-band .d1-title { font-size: 12px; }
+.score-band .d1-model, .score-band .d1-title { font-size: var(--aw-text-meta); }
+.score-band .d1-sel-title > .d1-model { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: normal; }
+.d1-sel-title .d1-model-word { white-space: nowrap; }
 .score-band .d1-econ, .score-band .d1-econ.has-flyers { display: contents; }
 .score-band .d1-cell { grid-row: 1; display: flex; align-items: center; min-width: 0; }
 .score-band .d1-cell > .d1-ml { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.score-band .d1-mv { color: var(--aw-ink-bright); font-size: 15px; }
+.score-band .d1-mv { color: var(--aw-ink-bright); font-size: var(--aw-text-title); }
 .score-band .d1-next { color: var(--sb-ink); }
 .sb-queen-value { display: flex; gap: 8px; align-items: center; width: 100%; }
 .score-band .d1-lamps { flex: 1; flex-direction: row; gap: 3px; min-width: 0; }
-.score-band .d1-lamp { min-width: 22px; }
+.score-band .d1-lamp { min-width: 2.2em; }
 .score-band .d1-lamp-fill { background: var(--sb-ink); }
 /* Match the legacy colony-specific specificity so both layers fill from the same edge. */
 .score-band .d1-lamps :is(.d1-lamp-fill, .d1-lamp-hp.is-on) { clip-path: inset(0 calc(100% - var(--d1-f, 100%)) 0 0); }
-.sb-history { grid-row: 1; display: grid; place-items: center; justify-self: end; width: 44px; height: 44px; background: var(--aw-raise); color: var(--aw-ink); border: 0; border-radius: 50%; font-size: 20px !important; cursor: pointer; }
+.sb-history > svg { display: block; width: 1em; height: 1em; }
+.sb-history { grid-row: 1; display: grid; place-items: center; justify-self: end; width: max(44px, calc(1em + 24px)); height: max(44px, calc(1em + 24px)); background: var(--aw-raise); color: var(--aw-ink); border: 0; border-radius: 50%; font-size: calc(20em / 13) !important; cursor: pointer; }
 .sb-history:hover { background: var(--aw-raise-hover); }
 .sb-history[aria-expanded="true"] { background: var(--aw-ink-bright); color: var(--aw-bg); }
 .sb-history[aria-expanded="true"]:hover { background: var(--aw-ink); }
@@ -787,19 +797,19 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-selected { grid-column: 1 / -1; grid-row: 2; padding: 12px 0 0; max-height: none; overflow: visible; }
 .score-band .d1-timeline { flex: none; display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 0; max-height: none; overflow: visible; padding: 0; }
 .score-band .d1-tl { flex: none; max-height: none; overflow: visible; }
-.score-band .d1-tl-entry { min-height: 18px; line-height: 18px; align-items: start; }
+.score-band .d1-tl-entry { min-height: 18px; line-height: 1.125rem; align-items: start; }
 .score-band .d1-tl-entry.d1-log { align-items: start; }
-.score-band .d1-tl-entry.d1-log.is-refused { grid-template-columns: 38px 14px 13px minmax(0, max-content) auto; }
-.score-band .d1-log .d1-when { line-height: 18px; }
-.score-band .d1-log-who { margin-top: 2px; }
-.score-band .d1-log-icon { margin-top: 2.5px; }
-.score-band .d1-log-refused { justify-self: start; line-height: 18px; }
+.score-band .d1-tl-entry.d1-log.is-refused { grid-template-columns: calc(38em / 12) calc(14em / 12) calc(13em / 12) minmax(0, max-content) auto; }
+.score-band .d1-log .d1-when { line-height: 1.125rem; }
+.score-band .d1-log-who { margin-top: calc(2em / 12); }
+.score-band .d1-log-icon { margin-top: calc(2.5em / 12); }
+.score-band .d1-log-refused { justify-self: start; line-height: 1.125rem; }
 .score-band .d1-tl-what { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; word-break: normal; }
 .score-band .d1-tl-none { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: break-word; word-break: normal; }
 .score-band .d1-log.is-arrival .d1-tl-what { overflow-wrap: break-word; word-break: normal; }
 .score-band .d1-log-intent { margin-left: 0; }
 .score-band .d1-log-mark { margin-left: 0; max-width: 100%; align-items: flex-start; }
-.score-band .d1-log-mark > .d1-log-icon { margin-top: 2.5px; }
+.score-band .d1-log-mark > .d1-log-icon { margin-top: calc(2.5em / 12); }
 .score-band .d1-log-mark > .d1-log-text { min-width: 0; overflow-wrap: break-word; }
 .sb-detail-stat { display: inline-flex; align-items: baseline; gap: 6px; margin: 0; white-space: nowrap; }
 .sb-detail-stat > dt, .sb-detail-stat > dd { margin: 0; white-space: nowrap; }
@@ -842,11 +852,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   }
   .score-band .sb-history-strip .sb-history-kicker { display: none; }
   .sb-history-col-name {
-    display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 11px; font-weight: 700;
-    line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: var(--aw-text-label); font-weight: 700;
+    line-height: var(--aw-lh-badge-sm); letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink); white-space: nowrap;
   }
   .sb-history-col-name::before {
-    content: ''; flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--sb-ink, currentColor);
+    content: ''; flex: none; display: inline-block; width: calc(8em / 11); height: calc(8em / 11); border-radius: 2px; background: var(--sb-ink, currentColor);
   }
   /* Below the measured one-line fit for "Lake Skinner Colony" + "Hatched 9,999" (274 px in Liberation Sans;
      e.g. 4 open columns at 1200 px = 262 px), stack Hatched cleanly on its own line under the colony name. */
@@ -900,9 +910,9 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .sb-clock-map { display: flex; flex-direction: column; align-items: start; justify-content: space-between; padding: 12px 0; border: 0; gap: var(--aw-space-1); }
   .score-band .sb-clock-map .d1-map { flex-wrap: wrap; justify-content: start; column-gap: var(--aw-space-2); }
   .sb-columns { display: none; }
-  .score-band .d1-team { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 12px 6px; padding: 12px 0; border-top: 1px solid var(--d1-hair); border-bottom: 0; }
+  .score-band .d1-team { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 6px; padding: 12px 0; border-top: 1px solid var(--d1-hair); border-bottom: 0; }
   .score-band .d1-team:has(> .sb-sticky-bar:not([hidden])) { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
-  .score-band .sb-sticky-bar { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; column-gap: 6px; min-height: 44px; background: var(--aw-surface); overflow-anchor: none; }
+  .score-band .sb-sticky-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 6px; min-height: 44px; background: var(--aw-surface); overflow-anchor: none; }
   .score-band .d1-team.is-history-open > .sb-sticky-bar { position: sticky; top: 0; z-index: 2; padding-block: 4px; margin-block: -4px; }
   .score-band .sb-sticky-bar > .d1-team-head { padding-right: 0; grid-column: 1; grid-row: 1; }
   .score-band .sb-sticky-bar > .sb-history { grid-column: 2; grid-row: 1; align-self: center; }
@@ -927,7 +937,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-econ > .sb-next { grid-column: 1 / 5; grid-row: 2; }
   .score-band .d1-econ > .sb-ants { grid-column: 5 / 9; grid-row: 2; }
   .score-band .d1-econ > .sb-queen-kills { grid-column: 9 / 13; grid-row: 2; }
-  .score-band .d1-cell { grid-row: auto; display: grid; grid-template-rows: 14px 20px; align-items: start; gap: 2px; }
+  .score-band .d1-cell { grid-row: auto; display: grid; grid-template-rows: minmax(var(--aw-lh-badge-sm), auto) minmax(var(--aw-lh-title), auto); align-items: start; gap: 2px; }
   .score-band .d1-cell > .d1-ml { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
   .score-band .sb-queens { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; gap: 10px; }
   .sb-queen-value { flex: 1; }
@@ -956,12 +966,13 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-below { grid-row: 4; }
   .score-band .d1-below > .d1-lane > .d1-caption:not([data-kind="none"]) { flex: 1 0 100%; }
   .score-band .d1-below > .d1-lane > .d1-controls { flex: 1 1 100%; }
-  .score-band .d1-name { font-size: 14px; letter-spacing: .02em; }
+  .score-band .d1-name { font-size: var(--aw-text-lead); letter-spacing: .02em; }
+  .score-band .d1-name::before { width: calc(8em / 14); height: calc(8em / 14); }
   .score-band .d1-legend { left: 4px; max-width: calc(100% - 8px); padding-inline: 4px; }
-  .score-band :is(.d1-title, .d1-model) { font-size: 13px; }
+  .score-band :is(.d1-title, .d1-model) { font-size: var(--aw-text-body); }
   .score-band .d1-dot { margin-right: 5px; }
   .sb-metadata { padding: 8px 8px 4px; }
-  .score-band .d1-tl-entry { min-height: 28px; line-height: 18px; padding-block: 5px; }
+  .score-band .d1-tl-entry { min-height: 28px; line-height: 1.125rem; padding-block: 5px; }
 }
 /* Under 24em the point-of-view select takes its own row and the four round controls take the next. */
 @media (max-width: 23.99em) {
@@ -1058,9 +1069,10 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
    Gauge figures move to another row when measured content no longer fits. */
 @media (min-width: 320px) {
   .score-band :is(.d1-map-name, .d1-agent-button) { white-space: normal; }
-  .score-band .aw-replay-state { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  .score-band .aw-replay-state { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
   .score-band .d1-agent-button { text-align: center; }
   .score-band .sb-key .sb-key-term { display: inline-block; max-width: 100%; }
+  .score-band .d1-tl-none { white-space: nowrap; }
 }
 @media (min-width: 320px) and (max-width: 74.9375em) {
   .score-band .sb-gauge.sb-wrap-figures .sb-values:not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1072,7 +1084,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 @media (max-width: 239px) {
   .score-band .d1-team > .d1-timeline .sb-history-head { display: grid; grid-template-columns: auto; justify-content: start; row-gap: 4px; }
   .score-band .d1-tl-entry.d1-log, .score-band .d1-tl-entry.d1-log.is-refused {
-    grid-template-columns: 14px 13px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 6px; row-gap: 2px;
+    grid-template-columns: calc(14em / 12) calc(13em / 12) minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 6px; row-gap: 2px;
   }
   .score-band .d1-tl-entry.d1-log.is-arrival { grid-template-rows: auto; row-gap: 0; }
   .score-band .d1-log > .d1-when { grid-column: 1 / -1; grid-row: 1; justify-self: start; }
@@ -1086,8 +1098,72 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-log.is-arrival > .d1-tl-what { grid-row: 1; }
 }
 
+/* At high text magnification on zoom-narrow phones, the glyph columns would leave less
+   than a word of room. Keep the timestamp and refusal together, then the icons, then the full description. */
+@media (max-width: 239px) and (max-width: 9.99em) {
+  .score-band .d1-log > .d1-log-refused { margin-left: calc(44em / 11); }
+  .score-band .d1-log > .d1-tl-what,
+  .score-band .d1-log.is-arrival > .d1-tl-what { grid-column: 1 / -1; grid-row: 3; }
+  .score-band .d1-log-lead { display: inline-block; }
+  .score-band .d1-log-mark { flex-wrap: wrap; }
+}
+
+/* At the smallest zoomed width with enlarged text, reclaim the deck's 8px gutters
+   for prose only: even the full description row would otherwise split ordinary words. */
+@media (max-width: 239px) and (max-width: 5.5em) {
+  .score-band .d1-log > .d1-tl-what { margin-inline: -8px; }
+}
+
 /* Independent sibling actions: the row selects the agent, the name opens Users. */
 .d1-agent { position: relative; isolation: isolate; }
 .d1-agent-pick { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; z-index: 1; }
 .d1-agent :is(.aw-user-link,.d1-ast-mark,.d1-elo[data-rd]) { position: relative; z-index: 2; }
 .d1-agent-pick:focus-visible { outline-offset: -2px; }
+
+/* On narrow screens with enlarged text, give each group enough room before shortening a name. */
+@media (min-width: 320px) and (max-width: 19.99em) {
+  .score-band .d1-econ > .d1-cell, .score-band .d1-econ.has-flyers > .d1-cell { grid-column: span 6; grid-row: auto; }
+  .score-band .d1-econ > .sb-queens, .score-band .d1-econ.has-flyers > .sb-queens { grid-column: 1 / -1; order: 1; }
+  .score-band .d1-player-rating { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .score-band .sb-sticky-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+  .score-band .sb-sticky-bar > .d1-team-head { display: contents; }
+  .score-band .sb-sticky-bar .d1-name { display: block; flex: 1 0 100% !important; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score-band .sb-sticky-bar .d1-name::before { margin-right: 5px; }
+  .score-band .sb-sticky-bar > .sb-history { margin-left: auto; }
+  .d1-sel > .d1-sel-head > .d1-sel-names { grid-column: 1 / -1; grid-row: 2; }
+  .d1-sel-ant .d1-sel-title { --d1-fit-ant: 1; font-size: var(--d1-ant-fit, var(--aw-text-lead)); }
+  .d1-sel-ant > .d1-sel-head > .d1-close { grid-column: 2; grid-row: 1; }
+  .d1-sel:not(.d1-sel-ant) > .d1-sel-head > .d1-close { grid-column: 3; grid-row: 1; }
+  .d1 .aw-replay-controls { grid-template-rows: var(--d1-tap) var(--d1-tap); border-radius: calc(var(--d1-tap) / 2); }
+  .d1 .aw-replay-controls > label { grid-column: 1; grid-row: 1; }
+  .d1 .aw-replay-controls > .aw-replay-time { grid-column: 3; grid-row: 1; justify-self: end; }
+  .d1 .aw-replay-controls > input[type="range"] { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+  .d1-history-line { grid-template-columns: calc(38em / 12) calc(14em / 12) minmax(0, 1fr); row-gap: 4px; }
+  .d1-history-line > :is(.d1-chip, .d1-gone) { grid-column: 1 / -1; justify-self: end; }
+  .d1-result-dialog .d1-moment { grid-template-columns: calc(36em / 13) minmax(0, 1fr); }
+  .d1-result-dialog .d1-moment-who { grid-column: 2; }
+  /* Without a refusal, its empty status column and gap belong to the description. */
+  .score-band .d1-log:not(.is-arrival) > .d1-tl-what:last-child { grid-column: 4 / -1; }
+  /* Arrival descriptions need the whole row, rather than the space left after the time and icons. */
+  .score-band .d1-log.is-arrival > .d1-tl-what { grid-column: 1 / -1; grid-row: 2; }
+  .score-band .d1-log-lead { display: inline-block; }
+  .score-band .d1-log-mark { flex-wrap: wrap; }
+  .d1-sel-recent > .d1-kicker,
+  .d1-result-dialog .rd-eyebrow,
+  .d1-result-dialog .d1-result-next,
+  .d1-result-dialog .rd-decisive > .rd-label,
+  .score-band .aw-replay-state { white-space: normal; overflow-wrap: normal; word-break: normal; }
+  /* Available width divided by the widest supported wording in em. */
+  .d1-result-dialog .rd-winner-name { font-size: min(1em, calc((100vw - 64px) / 5.9)); }
+  .score-band .d1-tl-none { font-size: min(var(--aw-text-meta), calc((100vw - 16px) / 15.8)); }
+}
+
+@media (max-width: 21.99em) {
+  .d1-result-dialog .d1-result-top { flex-wrap: wrap; }
+  .d1-result-dialog .d1-result-top > .d1-close { order: -1; margin-left: auto; }
+  .d1-result-dialog .rd-hero { flex: 1 0 100%; }
+}
+
+@media (min-width: 320px) and (max-width: 11.99em) {
+  .score-band .d1-econ > :is(.sb-next, .sb-queen-kills), .score-band .d1-econ.has-flyers > :is(.sb-next, .sb-queen-kills) { grid-column: 1 / -1; }
+}

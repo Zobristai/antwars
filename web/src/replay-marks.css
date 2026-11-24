@@ -10,6 +10,12 @@
   --aw-mark-chip-h: 20px; --aw-mark-font: 11px; --aw-mark-icon: 12px; --aw-mark-row: 28px; --aw-mark-list-w: 240px;
   --aw-mark-sep: transparent; --aw-mark-reserve: 84px;
 }
+.d1 .aw-replay-controls {
+  --aw-mark-count-width: calc(19em / 10); --aw-mark-count-h: calc(14em / 10); --aw-mark-count-font: var(--aw-text-badge-sm);
+  --aw-mark-chip-h: calc(20em / 11); --aw-mark-font: var(--aw-text-badge); --aw-mark-icon: calc(12em / 11); --aw-mark-row: calc(28em / 11); --aw-mark-list-w: min(calc(240em / 11), 100%);
+}
+.d1 .aw-mark-label { box-sizing: border-box; width: max-content; max-width: 100%; height: auto; min-height: var(--aw-mark-chip-h); white-space: normal; line-height: calc(16em / 11); }
+.d1 .aw-mark-label .aw-mark-words b { white-space: nowrap; }
 .aw-marks {
   --aw-thumb-r: 8px;
   position: absolute; z-index: 1; pointer-events: none;
@@ -79,8 +85,20 @@
 @media (max-width: 559px) {
   .d1 .aw-replay-controls {
     --aw-mark-gap: 28px; --aw-mark-size: 20px; --aw-mark-hit-w: 28px; --aw-mark-hit-h: 44px;
-    --aw-mark-count-width: 26px; --aw-mark-count-h: 18px; --aw-mark-count-font: 11px;
-    --aw-mark-chip-h: 28px; --aw-mark-font: 12px; --aw-mark-icon: 20px; --aw-mark-row: 44px; --aw-mark-list-w: 250px;
+    --aw-mark-count-width: calc(26em / 11); --aw-mark-count-h: calc(18em / 11); --aw-mark-count-font: var(--aw-text-badge);
+    --aw-mark-chip-h: calc(28em / 12); --aw-mark-font: var(--aw-text-meta); --aw-mark-icon: calc(20em / 12); --aw-mark-row: calc(44em / 12); --aw-mark-list-w: min(calc(250em / 12), 100%);
     --aw-mark-sep: rgba(233, 239, 240, 0.08);
   }
+  .d1 .aw-replay-controls .aw-mark-label { line-height: calc(16em / 12); }
+}
+
+/* In an enlarged phone HUD, the label can be wider than the entire transport. Keep
+   the list in the flow below the rail (never above the phone scroller), let rows
+   grow by whole words, and keep the time intact. */
+@media (min-width: 320px) and (max-width: 19.99em) {
+  .d1 .aw-mark-label { position: static; grid-column: 1 / -1; justify-self: start; }
+  .d1 .aw-mark-list { position: static; grid-column: 1 / -1; width: 100%; min-width: 0; grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
+  .d1 .aw-mark-row { min-height: var(--aw-mark-row); height: auto; padding-block: 0.25em; white-space: normal; }
+  .d1 .aw-mark-row .aw-mark-words { min-width: 0; }
+  .d1 .aw-mark-row .aw-mark-words b { white-space: nowrap; }
 }

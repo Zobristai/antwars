@@ -3,12 +3,20 @@ import { describe, expect, it } from "vitest";
 import { createServer } from "vite";
 import { chromium } from "playwright-core";
 import { applyTextSize, fontconfigFor } from "../../../web/render-check/fonts.ts";
+import { judgePage, RULE_LIMITS } from "../../../web/render-check/rules.ts";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
+import { D1_ICON } from "../../../web/src/ui/deck/icons.ts";
 import { fitLegendLine } from "../../../web/src/ui/deck/hud.ts";
 import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
 import { markup } from "./port-markup.ts";
 import { roster } from "../../../web/src/ui/deck/model.ts";
+import { readFixtures } from "../../../web/render-check/serve.ts";
+import { FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY } from "../../../web/render-check/check.ts";
+import { decodeMessage } from "../../../src/live/format.ts";
+import { unpackMessages } from "../../../src/live/snapshot.ts";
+import { mountTeams } from "../../../web/src/ui/deck/pane.ts";
+import type { HudActions } from "../../../web/src/ui/types.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
 describe("scrolling HUD fit evidence", () => {
@@ -77,17 +85,18 @@ describe("scrolling HUD fit evidence", () => {
   it("keeps zoom-narrow score groups readable with the browser default font setting", async () => {
     const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
-    for (const defaultFontSize of [16, 32]) {
-      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
+    for (const font of ["Roboto", "Liberation Sans", "system-ui"] as const) for (const defaultFontSize of [16, 32]) {
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`],
+        env: font === "system-ui" ? process.env : { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
       try {
         const page = await browser.newPage();
         await page.setContent("<span>Browser default</span>");
         expect(await page.locator("span").evaluate(e => getComputedStyle(e).fontSize)).toBe(`${defaultFontSize}px`);
         const metrics = [["workers", "Workers", "224"], ["soldiers", "Soldiers", "58"], ["flyers", "Flyers", "0"], ["food", "Food", "4,457"], ["next", "Next spawn", "—"], ["ants", "Ants", "282/512"], ["queen-kills", "Queen kills", "—"]];
-        const card = `<section class="d1-team"><div class="sb-identity"><header class="d1-team-head"><h2 class="d1-name">Lake Hodges Colony</h2><span class="d1-team-members">◇ ◇ ◇ ◇</span></header><div class="d1-who"><span class="d1-title">Claude Sonnet 5.5</span><span class="d1-model">GPT-6.1 Terra</span></div></div><div class="d1-econ has-flyers">${metrics.map(([key, label, value]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">${value}</span></div>`).join("")}</div><button class="sb-history">≡</button></section>`;
-        for (const width of [160, 195, 320, 390]) for (const font of ["Roboto", "Liberation Sans"]) {
+        const card = `<section class="d1-team"><div class="sb-sticky-bar"><header class="d1-team-head"><h2 class="d1-name" title="Lake Hodges Colony" aria-label="Lake Hodges Colony">Lake Hodges Colony</h2><span class="d1-team-members">◇ ◇ ◇ ◇</span></header><button class="sb-history" aria-label="History">${D1_ICON.history}</button></div><div class="sb-identity"><div class="d1-who"><span class="d1-title">Claude Sonnet 5.5</span><span class="d1-model">GPT-6.1 Terra</span></div></div><div class="d1-econ has-flyers">${metrics.map(([key, label, value]) => `<div class="d1-cell sb-${key}"><span class="d1-ml">${label}</span><span class="d1-mv">${value}</span></div>`).join("")}</div></section>`;
+        for (const width of [160, 195, 320, 390]) {
           await page.setViewportSize({ width, height: 900 });
-          await page.setContent(`<style>body{margin:0}:root{--aw-sans:'${font}',sans-serif}${tokens}${css}.d1{position:relative;inset:auto}.d1-frame{margin-top:8px;--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="d1-window"></div></section><div class="d1-below"><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-lane"></div><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></div></main>`);
+          await page.setContent(`<style>body{margin:0}${tokens}${css}.d1{--aw-sans:${font},sans-serif}.d1{position:relative;inset:auto}.d1-frame{margin-top:8px;--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="d1-window"></div></section><div class="d1-below"><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-lane"></div><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></div></main>`);
           await page.evaluate(() => document.fonts.ready);
           const line = await page.evaluateHandle(() => {
             const node = (selector: string) => document.querySelector<HTMLElement>(selector)!;
@@ -111,7 +120,14 @@ describe("scrolling HUD fit evidence", () => {
           await line.dispose();
           const items = await page.evaluate(measureLabels, ".d1-name,.d1-title,.d1-model,.d1-ml,.d1-mv,.d1-clock,.d1-map-name,.d1-glabel,.d1-mode,.d1-legend-rest,.sb-meta-item,.sb-history");
           const visible = items.filter(i => i.target);
-          expect(visible.filter(i => i.clipped || i.outside), `${width}px ${font} default${defaultFontSize}: cut`).toEqual([]);
+          // Range rectangles include the unpainted tail of an ellipsized heading. At enlarged
+          // phone sizes use the render gate's accessible, full-row check for that heading only.
+          const pinned = defaultFontSize === 32 && width >= 320;
+          if (pinned) {
+            const { failures } = await page.evaluate(judgePage, RULE_LIMITS);
+            expect(failures.filter(f => f.element.endsWith("h2.d1-name")), `${width}px ${font}: heading`).toEqual([]);
+          }
+          expect(visible.filter(i => (i.clipped || i.outside) && !(pinned && i.cls === "d1-name")), `${width}px ${font} default${defaultFontSize}: cut`).toEqual([]);
           expect(visible.filter(i => i.overlaps.some(index => visible.some(other => other.index === index))), `${width}px ${font} default${defaultFontSize}: overlap`).toEqual([]);
           if (width >= 320) expect(visible.filter(i => i.lines > 1), "ordinary labels stay whole").toEqual([]);
           const brokenWords = await page.locator(".d1-name,.d1-title,.d1-model,.d1-ml,.d1-legend-rest,.sb-meta-item").evaluateAll(nodes => nodes.flatMap(e => {
@@ -277,6 +293,177 @@ describe("scrolling HUD fit evidence", () => {
       expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
     } finally { await browser.close(); }
   });
+  it("keeps each identity unit in the two recorded phone replays whole, even on two rows", async () => {
+    const fixtures = await readFixtures(["web/render-check/fixtures.json"]);
+    const css = ["design-system/tokens.css", "ui/deck/deck.css"].map(path => readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");
+    for (const id of [FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY]) {
+      // Use the committed replay identities; mounting the pane exercises the real public name links, badges and grouping.
+      const bytes = fixtures[`/replays/${id}`]?.bytes;
+      if (!bytes) throw Error(`Missing replay excerpt: ${id}`);
+      const full = decodeMessage(unpackMessages(bytes)[0]!).full!;
+      const frame = scoreFrame(full.setup.queens.length); frame.board!.agents = full.agents; frame.board!.setup = full.setup;
+      const port = dom();
+      const teams = mountTeams(port.doc, {} as HudActions, { search: () => "", economy: full.setup.queens.map(() => port.doc.createElement("div")) });
+      teams.setWide(false);
+      const rosterHandles = new Map(full.agents.map(a => [a.identity!.displayName, a.identity!.displayName]));
+      teams.update({ frame, rosterHandles, selected: null, selectedAgent: -1, connection: "live", board: "3d", mode: null, stalled: false }, false);
+      const html = teams.teams.map(team => markup(team as unknown as ElementPort)).join("");
+      for (const font of ["Roboto", "Liberation Sans"] as const) {
+        const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+        try {
+          const page = await browser.newPage({ deviceScaleFactor: 2 });
+          for (const width of [320, 390]) for (const size of [16, 32] as const) {
+            await page.setViewportSize({ width, height: 844 }); await applyTextSize(page, size);
+            await page.setContent(`<style>body{margin:0}:root{--aw-sans:sans-serif}${css}</style><main class="d1 d1-hud score-band"><div class="d1-below"><div class="d1-deck"><div class="sb-deck-table">${html}</div></div></div></main>`);
+            await page.evaluate(() => document.fonts.ready);
+            const rows = await page.locator(".d1-who:visible,.d1-team-player:visible").evaluateAll(nodes => nodes.map(row => {
+              const groups = row.matches(".d1-who") ? [".d1-title-box", ".d1-model-box"] : [".d1-team-player-name,.d1-tags", ".d1-elo,.d1-seats"];
+              const box = row.getBoundingClientRect();
+              const units = groups.map(selector => {
+                const rects: DOMRect[] = []; let cut = false;
+                for (const part of row.querySelectorAll(selector)) {
+                  const walker = document.createTreeWalker(part, NodeFilter.SHOW_TEXT);
+                  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                    if (!n.textContent?.trim() || !n.parentElement!.checkVisibility()) continue;
+                    const range = new Range(); range.selectNodeContents(n);
+                    const leaf = n.parentElement!.getBoundingClientRect();
+                    for (const r of range.getClientRects()) {
+                      rects.push(r);
+                      if (r.left < Math.max(0, box.left, leaf.left) - 1 || r.right > Math.min(innerWidth, box.right, leaf.right) + 1) cut = true;
+                    }
+                  }
+                }
+                return { present: !!rects.length, whole: Math.max(...rects.map(r => r.top)) < Math.min(...rects.map(r => r.bottom)), cut,
+                  top: Math.min(...rects.map(r => r.top)), bottom: Math.max(...rects.map(r => r.bottom)),
+                  left: Math.min(...rects.map(r => r.left)), right: Math.max(...rects.map(r => r.right)) };
+              });
+              return { text: (row as HTMLElement).innerText.replace(/\s+/g, " "), width: Math.round(box.width), units };
+            }));
+            const label = `${id} at ${width}px, ${size}px text, ${font}`;
+            expect(rows, label).toHaveLength(id === FREE_FOR_ALL_REPLAY ? 4 : 2);
+            for (const row of rows) {
+              expect(row.width, label).toBe(width - 16);
+              for (const unit of row.units) expect(unit, `${label}: ${row.text}`).toMatchObject({ present: true, whole: true, cut: false });
+              const [a, b] = row.units as [typeof row.units[number], typeof row.units[number]];
+              const stacked = b.top >= a.bottom - 1;
+              expect(stacked || b.left >= a.right - 1, label).toBe(true);
+              const needsTwo = size === 32 && (id === FREE_FOR_ALL_REPLAY || row.text.includes("Muse") && (width === 320 || font === "Liberation Sans"));
+              expect(stacked, `${label}: ${row.text}`).toBe(needsTwo);
+            }
+          }
+        } finally { await browser.close(); }
+      }
+    }
+  }, 60_000);
+  it("fits selected titles and single and grouped seek marks at enlarged phone widths", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/hud-fit") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end(`<meta name="viewport" content="width=device-width,initial-scale=1"><main class="d1 score-band"><section class="d1-deck"></section><section id="rail"></section></main>`);
+    });
+    await server.listen();
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      for (const font of ["Roboto", "Liberation Sans"] as const) {
+        const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+          args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+        try {
+          const page = await browser.newPage({ viewport: { width: 320, height: 844 } });
+          await applyTextSize(page, 32);
+          await page.goto(`http://127.0.0.1:${addr.port}/hud-fit`);
+          await page.addScriptTag({ type: "module", content: `
+            import '/web/src/design-system/tokens.css'; import '/web/src/ui/deck/deck.css';
+            import { mountTeams } from '/web/src/ui/deck/pane.ts'; import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+            import { mountReplayControls } from '/web/src/replay-controls.ts';
+            const teams = mountTeams(document, {}, {search: () => '', economy: [0,1].map(() => document.createElement('div'))});
+            document.querySelector('.d1-deck').append(...teams.teams); teams.setWide(false);
+            const frame = scoreFrame(2);
+            window.selectModel = label => {frame.board.agents[0].modelLabel = label; teams.update({frame, connection:"live", selected:null, selectedAgent:0, board:"3d", mode:null}, false);};
+            teams.update({frame, connection: 'live', selected: {antId: 123456, agent: -1, colony: 0}, selectedAgent: -1, board:'3d', mode:null}, false);
+            const marks = [0,1,1].map(colony => ({kind:'nest', ms:12000, tick:120, colony}));
+            marks.push({kind:"nest",ms:1200000,tick:12000,colony:1});
+            const controls = mountReplayControls(document, {duration:1220000, rate:1, error:null, position:0, events:marks, seek(){}}, ["Very Large Colony","Lake Skinner Colony"]);
+            document.querySelector('#rail').append(controls.el);
+            // The live HUD updates after mount. Its first layout without a connected seek bar has zero travel.
+            requestAnimationFrame(() => requestAnimationFrame(() => { controls.update(); document.querySelector('.aw-mark.group').click(); }));
+          ` });
+          const title = page.locator(".d1-sel-ant .d1-sel-title");
+          await page.locator(".aw-mark-list:visible").waitFor();
+          for (const width of [320, 390, 393, 412, 430, 559, 560, 639]) {
+            await page.setViewportSize({ width, height: 844 });
+            // The mounted card refits after layout delivers its size observer.
+            await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+            const t = await title.evaluate(el => {
+              const range = new Range(); range.selectNodeContents(el);
+              const line = range.getBoundingClientRect(), box = el.getBoundingClientRect();
+              return { text: el.textContent, lines: range.getClientRects().length, fits: line.right <= box.right + 0.5,
+                fontSize: parseFloat(getComputedStyle(el).fontSize) };
+            });
+            expect(t, `${width}px ${font}`).toMatchObject({ text: "Ant 123456 · Very Large Colony", lines: 1, fits: true });
+            expect(t.fontSize).toBeGreaterThan(14);
+            if (width === 639) expect(t.fontSize).toBe(28);
+            const menuTop = (await page.locator(".aw-mark-list:visible").boundingBox())!.y;
+            const seek = (await page.locator('.aw-replay-controls input[type="range"]').boundingBox())!;
+            expect(menuTop).toBeGreaterThanOrEqual(seek.y + seek.height - 0.5);
+            const rows = page.locator(".aw-mark-list:visible .aw-mark-row");
+            expect(await rows.count()).toBe(3);
+            const fits = await rows.evaluateAll(nodes => nodes.every(row => {
+              const box = row.getBoundingClientRect(), words = row.querySelector(".aw-mark-words")!;
+              const range = new Range(); range.selectNodeContents(words);
+              const next = row.nextElementSibling?.getBoundingClientRect();
+              return box.right <= innerWidth + 0.5 && (!next || box.bottom <= next.top + 0.5) &&
+                [...range.getClientRects()].every(r => r.right <= box.right + 0.5 && r.left >= box.left - 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5);
+            }));
+            expect(fits, `${width}px ${font}: mark words and time inside their own row`).toBe(true);
+          }
+          for (const width of [320, 390]) {
+            await page.setViewportSize({ width, height: 844 });
+            const group = page.locator(".aw-mark.group");
+            if (await group.getAttribute("aria-expanded") !== "true") await group.evaluate(el => (el as HTMLElement).click());
+            const single = page.locator("button.aw-mark.nest");
+            for (const show of [() => page.locator(".aw-mark-list:visible .aw-mark-row").last().evaluate(el => (el as HTMLElement).click()), () => single.focus(), () => single.evaluate(el => (el as HTMLElement).click())]) {
+              await show();
+              const chip = page.locator(".aw-mark-label:visible");
+              const bounds = await chip.evaluate(el => {
+                const row = el.getBoundingClientRect(), rail = el.parentElement!.getBoundingClientRect();
+                const words = document.createTreeWalker(el.querySelector(".aw-mark-words")!, NodeFilter.SHOW_TEXT);
+                const bad: string[] = [];
+                for (let n = words.nextNode(); n; n = words.nextNode()) for (const match of n.textContent!.matchAll(/[^\s]+/g)) {
+                  const r = new Range(); r.setStart(n, match.index); r.setEnd(n, match.index + match[0].length);
+                  const b = r.getBoundingClientRect();
+                  if (r.getClientRects().length !== 1 || b.left < row.left - .5 || b.right > row.right + .5 || b.top < row.top - .5 || b.bottom > row.bottom + .5) bad.push(match[0]);
+                }
+                return { bad, time: el.querySelector("b")!.textContent, fits: row.left >= Math.max(0, rail.left) - .5 && row.right <= Math.min(innerWidth, rail.right) + .5 };
+              });
+              expect(bounds).toMatchObject({ bad: [], fits: true });
+              expect(["0:12", "20:00"]).toContain(bounds.time);
+            }
+            for (const size of [16, 32] as const) {
+              await applyTextSize(page, size);
+              for (const model of ["Alpha", "Alpha Echo Delta Alpha Echo Delta Alpha Echo Delta Alpha Echo", "W".repeat(64)]) {
+                await page.evaluate(label => (window as unknown as { selectModel(label: string): void }).selectModel(label), model);
+                const label = page.getByRole("group", { name: model, exact: true });
+                expect(await label.getAttribute("title")).toBe(model);
+                const fit = await label.evaluate(el => {
+                  const box = el.getBoundingClientRect(), card = el.closest(".d1-sel")!.getBoundingClientRect();
+                  const words = [...el.querySelectorAll(".d1-model-word")].map(w => { const r = new Range(); r.selectNodeContents(w); return [...r.getClientRects()]; });
+                  return { size: getComputedStyle(el).fontSize, fits: box.left >= card.left - .5 && box.right <= Math.min(innerWidth, card.right) + .5,
+                    // A designed ellipsis can yield multiple range fragments at the same baseline.
+                    whole: words.every(rs => new Set(rs.map(r => r.top)).size === 1), lines: new Set(words.flat().map(r => r.top)).size,
+                    clipped: el.scrollWidth > el.clientWidth + 1, overflow: getComputedStyle(el).textOverflow };
+                });
+                expect(fit, `${width}px ${size} ${font}: ${model}`).toMatchObject({ size: `${13 * size / 16}px`, fits: true, whole: true, clipped: model.startsWith("W") });
+                if (model.includes(" ")) expect(fit.lines).toBeGreaterThan(1);
+                if (model.startsWith("W")) expect(fit.overflow).toBe("ellipsis");
+              }
+            }
+          }
+        } finally { await browser.close(); }
+      }
+    } finally { await server.close(); }
+  }, 60_000);
   it("moves only the waiting message when the legend cannot fit, at default or enlarged text", async () => {
     const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
     server.middlewares.use((req, res, next) => {
@@ -381,6 +568,7 @@ describe("scrolling HUD fit evidence", () => {
     } finally { await browser.close(); }
   });
   it("reserves idle slots and lets the footer Key expand without clipping or breaking its controls", async () => {
+    const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
     try {
@@ -390,7 +578,7 @@ describe("scrolling HUD fit evidence", () => {
         const seats = Array.from({ length: 4 }, (_, i) => `<button class="d1-member" aria-label="Seat ${i}"><span class="sb-seat-badge"><svg width="16" height="16"></svg></span><span class="sb-idle" aria-hidden="true"><svg width="14" height="14"></svg></span></button>`).join("");
         const deck = `<section class="d1-deck"><div class="sb-identity"><div class="d1-team-members">${seats}</div></div></section>`;
         const frame = `<section class="d1-frame"><div class="sb-metadata">Match</div><div class="d1-window"></div><div class="d1-lane"></div></section>`;
-        await page.setContent(`<style>body{margin:0;font:12px/18px 'Liberation Sans',sans-serif}*{box-sizing:border-box}:root{--aw-bg:#111;--aw-ink:#eee;--aw-ink-3:#bbb;--aw-ink-bright:white}${css}</style><main class="d1 d1-hud score-band"><header class="d1-top">Match</header>${width === 390 ? frame + '<div class="d1-below">' + deck + footer + '</div>' : '<div class="d1-below">' + deck + '</div>' + frame + footer}</main>`);
+        await page.setContent(`<style>body{margin:0;font:12px/18px 'Liberation Sans',sans-serif}*{box-sizing:border-box}:root{--aw-bg:#111;--aw-ink:#eee;--aw-ink-3:#bbb;--aw-ink-bright:white}${tokens}${css}</style><main class="d1 d1-hud score-band"><header class="d1-top">Match</header>${width === 390 ? frame + '<div class="d1-below">' + deck + footer + '</div>' : '<div class="d1-below">' + deck + '</div>' + frame + footer}</main>`);
         const buttons = page.locator(".d1-member");
         const before = await buttons.evaluateAll(nodes => nodes.map(e => { const b = e.getBoundingClientRect(); return [b.x, b.y, b.width, b.height]; }));
         await buttons.first().focus();
@@ -450,14 +638,15 @@ describe("scrolling HUD fit evidence", () => {
     } finally { await browser.close(); }
   });
   it("contains supported-limit identity text without shrinking labels or badges", async () => {
+    const tokens = readFileSync(new URL("../../../web/src/design-system/tokens.css", import.meta.url), "utf8");
     const css = readFileSync(new URL("../../../web/src/ui/deck/deck.css", import.meta.url), "utf8");
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
     const model = "W".repeat(64), username = "N".repeat(32);
     try {
       for (const width of [390, 1280]) {
         const page = await browser.newPage({ viewport: { width, height: 900 } });
-        await page.setContent(`<style>body{margin:0;font:12px/16px Arial}*{box-sizing:border-box}${css}</style>
-          <main class="score-band"><div class="d1-below"><section class="d1-deck">
+        await page.setContent(`<style>body{margin:0;font:12px/16px Arial}*{box-sizing:border-box}${tokens}${css}</style>
+          <main class="d1 score-band"><div class="d1-below"><section class="d1-deck">
           <article class="d1-team"><div class="sb-identity"><header class="d1-team-head">
           <span class="d1-team-player"><span class="d1-team-player-name"><span class="d1-title">${username}</span> <span class="d1-model">${model}</span></span><span class="d1-tags"><span class="d1-tag">MAX</span><span class="d1-tag">FAST</span></span></span>
           </header></div></article>
@@ -512,16 +701,16 @@ describe("scrolling HUD fit evidence", () => {
     const roboto400 = readFileSync(new URL("../../../node_modules/@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf", import.meta.url)).toString("base64");
     const roboto600 = readFileSync(new URL("../../../node_modules/@expo-google-fonts/roboto/600SemiBold/Roboto_600SemiBold.ttf", import.meta.url)).toString("base64");
     const stateText = "Duration unavailable — playback continues";
-    const cases: { width: number; height: number; defaultFontSize: number; stacked: boolean; oneLine: boolean }[] = [
-      { width: 1280, height: 800, defaultFontSize: 16, stacked: false, oneLine: true },
-      { width: 640, height: 400, defaultFontSize: 16, stacked: true, oneLine: true },
-      { width: 390, height: 844, defaultFontSize: 16, stacked: true, oneLine: true },
-      { width: 320, height: 844, defaultFontSize: 16, stacked: true, oneLine: true },
-      { width: 195, height: 422, defaultFontSize: 16, stacked: true, oneLine: false },
-      { width: 160, height: 422, defaultFontSize: 16, stacked: true, oneLine: false },
-      { width: 1280, height: 800, defaultFontSize: 32, stacked: true, oneLine: true },
-      { width: 390, height: 844, defaultFontSize: 32, stacked: true, oneLine: true },
-      { width: 320, height: 844, defaultFontSize: 32, stacked: true, oneLine: true },
+    const cases: { width: number; height: number; defaultFontSize: number; stacked: boolean }[] = [
+      { width: 1280, height: 800, defaultFontSize: 16, stacked: false },
+      { width: 640, height: 400, defaultFontSize: 16, stacked: true },
+      { width: 390, height: 844, defaultFontSize: 16, stacked: true },
+      { width: 320, height: 844, defaultFontSize: 16, stacked: true },
+      { width: 195, height: 422, defaultFontSize: 16, stacked: true },
+      { width: 160, height: 422, defaultFontSize: 16, stacked: true },
+      { width: 1280, height: 800, defaultFontSize: 32, stacked: true },
+      { width: 390, height: 844, defaultFontSize: 32, stacked: true },
+      { width: 320, height: 844, defaultFontSize: 32, stacked: true },
     ];
     for (const defaultFontSize of [16, 32]) {
       const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox", `--blink-settings=defaultFontSize=${defaultFontSize}`] });
@@ -555,7 +744,8 @@ describe("scrolling HUD fit evidence", () => {
               const caption = rect(".d1-caption");
               const controls = rect(".d1-controls");
               const row1 = [".aw-replay-controls label", ".aw-replay-controls input", ".aw-replay-controls output"].map(rect);
-              const splitWords: string[] = [];
+              const splitWords: string[] = [], cutWords: string[] = [];
+              const lines = new Set<number>();
               const textNode = chipEl.firstChild;
               if (textNode && textNode.nodeType === Node.TEXT_NODE) {
                 const value = textNode.textContent ?? "";
@@ -565,10 +755,13 @@ describe("scrolling HUD fit evidence", () => {
                   range.setEnd(textNode, m.index! + m[0].length);
                   const rects = [...range.getClientRects()].filter(r => r.width > 0.5 && r.height > 0.5);
                   const ys = new Set(rects.map(r => Math.round(r.top)));
+                  ys.forEach(y => lines.add(y));
                   if (ys.size > 1) splitWords.push(m[0]);
+                  if (!rects.length || rects.some(r => r.left < chip.left - 0.5 || r.right > chip.right + 0.5 ||
+                    r.top < chip.top - 0.5 || r.bottom > chip.bottom + 0.5)) cutWords.push(m[0]);
                 }
               }
-              return { chip, pill, below, win, meta, caption, controls, row1, scrollWidth: document.documentElement.scrollWidth, belowScrollW: document.querySelector(".d1-below")!.scrollWidth, belowClientW: document.querySelector(".d1-below")!.clientWidth, splitWords };
+              return { chip, pill, below, win, meta, caption, controls, row1, scrollWidth: document.documentElement.scrollWidth, belowScrollW: document.querySelector(".d1-below")!.scrollWidth, belowClientW: document.querySelector(".d1-below")!.clientWidth, lines: lines.size, cutWords, splitWords };
             });
             const overlap = (a: { left: number; right: number; top: number; bottom: number }, b: { left: number; right: number; top: number; bottom: number }) =>
               Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
@@ -579,7 +772,12 @@ describe("scrolling HUD fit evidence", () => {
             expect(atRest.chip.right).toBeLessThanOrEqual(atRest.pill.right + 0.5);
             expect(atRest.chip.right).toBeLessThanOrEqual(c.width + 0.5);
             expect(atRest.chip.bottom).toBeLessThanOrEqual(atRest.pill.bottom + 0.5);
-            if (c.oneLine) expect(atRest.chip.height).toBeLessThanOrEqual(22);
+            const cell = `${c.width}px, ${defaultFontSize}px text, ${font}`;
+            expect(atRest.cutWords, cell).toEqual([]);
+            expect(atRest.lines, cell).toBeGreaterThan(0);
+            const phoneWrap = defaultFontSize === 32 && c.width >= 320 && c.width < 20 * defaultFontSize;
+            // A zoomed phone below 320 CSS px may use as many whole lines as it needs.
+            if (c.width >= 320) expect(atRest.lines, cell).toBeLessThanOrEqual(phoneWrap ? 2 : 1);
             expect(overlap(atRest.chip, atRest.meta)).toBe(false);
             expect(overlap(atRest.chip, atRest.caption)).toBe(false);
             expect(overlap(atRest.chip, atRest.controls)).toBe(false);

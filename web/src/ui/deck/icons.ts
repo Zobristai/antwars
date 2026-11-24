@@ -16,6 +16,7 @@ export const CASTE_ICON_PATH = {
 } as const;
 
 export const D1_ICON = {
+  history: svg('<path d="M5 6.5h10m-10 3.5h10m-10 3.5h10" stroke-linecap="butt"/>', 20, 20, 1.5),
   /** The whole board: a frame's four corners (ui/hud.ts ICONS.whole). */
   get whole() { return domIcon("whole", svg('<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/>', 16, 20, 1.8)); },
   get close() { return domIcon("close", svg('<path d="M6 6l12 12M18 6 6 18"/>', 16)); },

@@ -119,7 +119,7 @@ describe("Score Band in a four-colony match", () => {
     const teams = host.byClass("d1-team").filter(shownIn);
     expect(teams).toHaveLength(4);
     expect(teams.map(t => one(t, "d1-name").textContent)).toEqual(NAMES);
-    expect(teams.map(t => one(t, "d1-name").title)).toEqual(NAMES.map(n => colonyNameNote(n)));
+    expect(teams.map(t => one(t, "d1-name").title)).toEqual(NAMES.map(n => `${n} · ${colonyNameNote(n)}`));
     expect(teams.map(t => t.byClass("d1-title").find(shownIn)!.textContent)).toEqual(["seat-0", "seat-1", "seat-2", "seat-3"]);
     for (const team of teams) {
       expect(team.byClass("d1-cell")).toHaveLength(8);
@@ -315,6 +315,7 @@ describe("in a browser, a four-colony match's colony names", () => {
         expect(await names.count()).toBe(4);
         for (let c = 0; c < 4; c++) {
           const name = names.nth(c);
+          expect(await page.getByRole("heading", { level: 2, name: `${NAMES[c]} · ${colonyNameNote(NAMES[c]!)}`, exact: true }).count()).toBe(1);
           await name.scrollIntoViewIfNeeded();
           const box = (await name.boundingBox())!;
           await page.mouse.move(box.x + Math.min(6, box.width / 2), box.y + box.height / 2);
@@ -331,7 +332,7 @@ describe("in a browser, a four-colony match's colony names", () => {
           const colour = SUPERCOLONY_NAMES[c]!.colour;
           const rgb = (n: number) => `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
           expect(seen.colour, NAMES[c]).toBe(rgb(colour));
-          expect(seen, NAMES[c]).toMatchObject({ hovered: true, tooltip: colonyNameNote(NAMES[c]!), lines: 1, clipped: false, outShown: c === 1 });
+          expect(seen, NAMES[c]).toMatchObject({ hovered: true, tooltip: `${NAMES[c]} · ${colonyNameNote(NAMES[c]!)}`, lines: 1, clipped: false, outShown: c === 1 });
           expect(seen.rowHeight, NAMES[c]).toBeGreaterThan(0);
           expect(seen.background, NAMES[c]).toBe("rgba(0, 0, 0, 0)");
         }

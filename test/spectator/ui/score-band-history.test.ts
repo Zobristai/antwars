@@ -95,7 +95,7 @@ function desktopPageHtml(
   }).join("");
 
   return `
-    <style>${ROBOTO_FACES}${ROOT_TOKENS}${TOKENS}html,body{margin:0;height:100%;overflow:hidden;background:var(--aw-bg);color:var(--aw-ink)}:root{--aw-sans:'${font}',sans-serif;--aw-k0:#ffb000;--aw-k1:#00c2ff;--aw-k2:#ff1e1e;--aw-k3:#009078}${CSS}</style>
+    <style>${ROBOTO_FACES}${ROOT_TOKENS}${TOKENS}html,body{margin:0;height:100%;overflow:hidden;background:var(--aw-bg);color:var(--aw-ink)}.d1,.d1-top{--aw-sans:'${font}',sans-serif}:root{--aw-k0:#ffb000;--aw-k1:#00c2ff;--aw-k2:#ff1e1e;--aw-k3:#009078}${CSS}</style>
     <div class="d1 d1-hud score-band">
       <header class="d1-top"><div class="d1-brand"><a class="d1-home" href="/"><span class="d2-wordmark">Antwars</span></a><span class="d1-top-credit">AI vs AI</span></div></header>
       <div class="d1-below">
@@ -132,7 +132,7 @@ function narrowHistoryHtml(font: string, repeatRows = 0): string {
     `<li class="d1-tl-entry d1-log"><span class="d1-when">${Math.floor(k / 60)}:${String(k % 60).padStart(2, "0")}</span><span class="d1-log-who"></span><span class="d1-log-icon"></span><span class="d1-tl-what"><span class="d1-log-text">Queen 2 founded</span></span></li>`
   ).join("");
   return `
-    <style>${ROBOTO_FACES}${ROOT_TOKENS}${TOKENS}html,body{margin:0;height:100%;overflow:hidden;background:var(--aw-bg);color:var(--aw-ink)}:root{--aw-sans:'${font}',sans-serif;--aw-k0:#ffb000;--aw-k1:#00c2ff;--aw-k2:#ff1e1e;--aw-k3:#009078}${CSS}</style>
+    <style>${ROBOTO_FACES}${ROOT_TOKENS}${TOKENS}html,body{margin:0;height:100%;overflow:hidden;background:var(--aw-bg);color:var(--aw-ink)}.d1,.d1-top{--aw-sans:'${font}',sans-serif}:root{--aw-k0:#ffb000;--aw-k1:#00c2ff;--aw-k2:#ff1e1e;--aw-k3:#009078}${CSS}</style>
     <div class="d1 d1-hud score-band">
       <header class="d1-top"><div class="d1-brand"><a class="d1-home" href="/"><span class="d2-wordmark">Antwars</span></a></div></header>
       <section class="d1-frame"><div class="d1-window"></div><div class="d1-lane"></div></section>
@@ -155,7 +155,7 @@ function narrowHistoryHtml(font: string, repeatRows = 0): string {
                 <li class="d1-tl-entry d1-log" data-kind="defend"><span class="d1-when">10:05</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-text">DEFEND · soldier · 30 requested · 30 answered</span></span></li>
                 <li class="d1-tl-entry d1-log" data-kind="intent"><span class="d1-when">10:04</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-text">attack Lake Hodges Colony's Queen 10</span> <span class="d1-log-intent">${longIntent}</span></span></li>
                 <li class="d1-tl-entry d1-log is-refused" data-kind="refused"><span class="d1-when">10:03</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon"></span><span class="d1-tl-what"><span class="d1-log-text">count mark</span></span><span class="d1-log-refused">refused</span></li>
-                <li class="d1-tl-entry d1-log is-arrival" data-kind="arrival"><span class="d1-when"></span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-lead">On arrival</span><span class="d1-log-text">attack</span> <span class="d1-log-intent">“rally at the nest”</span> <span class="d1-log-mark"><span class="d1-log-mark-word">mark</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-log-text">GATHER · any · 4 requested · 4 answered</span></span></span></li>
+                <li class="d1-tl-entry d1-log is-arrival" data-kind="arrival"><span class="d1-when"></span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-lead">On arrival</span><span class="d1-log-text">attack</span> <span class="d1-log-intent">“rally at the nest without overextending”</span> <span class="d1-log-mark"><span class="d1-log-mark-word">mark</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-log-text">GATHER · any · 4 requested · 4 answered</span></span></span></li>
                 <li class="d1-tl-entry d1-log" data-kind="unspaced"><span class="d1-when">9:58</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-text">attack</span> <span class="d1-log-intent">${unspaced}</span></span></li>
                 ${filler}
               </ol>
@@ -390,7 +390,8 @@ describe("Score Band side-by-side History ledger", () => {
                   brokenWords,
                   refOverlap,
                   refGap,
-                  right: Math.round(what.getBoundingClientRect().right),
+                  left: what.getBoundingClientRect().left,
+                  right: what.getBoundingClientRect().right,
                 };
               });
 
@@ -430,6 +431,7 @@ describe("Score Band side-by-side History ledger", () => {
               expect(row.ellipsis, `${width}px ${font} ${row.kind}: ellipsis`).toBe(false);
               expect(row.brokenWords, `${width}px ${font} ${row.kind}: broken words`).toEqual([]);
               expect(row.refOverlap, `${width}px ${font} ${row.kind}: refused overlap`).toBe(false);
+              expect(row.left, `${width}px ${font} ${row.kind}: left`).toBeGreaterThanOrEqual(-0.5);
               expect(row.right, `${width}px ${font} ${row.kind}: right`).toBeLessThanOrEqual(width + 1);
               if (row.kind === "refused" && width >= 240) {
                 expect(row.refGap).toBeGreaterThanOrEqual(0);
@@ -481,7 +483,12 @@ describe("Score Band side-by-side History ledger", () => {
     show(makeFrame(2));
     const team0 = teams.teams[0] as unknown as ElementPort;
     const btn0 = team0.byClass("sb-history")[0]!;
+    expect(btn0.html).toContain("<svg");
+    expect(btn0.html).toContain('aria-hidden="true"');
+    expect(btn0.getAttribute("aria-label")).toBe("Very Large Colony history");
+    expect(team0.byClass("d1-name")[0]!.title).toBe("Very Large Colony");
     btn0.click();
+    expect(btn0.getAttribute("aria-expanded")).toBe("true");
 
     // First contact event row has no agent badge SVG.
     const rows = team0.byClass("d1-tl-entry");

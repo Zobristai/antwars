@@ -15,7 +15,7 @@ class Element {
   style: Record<string, string> & { setProperty(name: string, value: string): void } =
     Object.assign(Object.create({ setProperty(this: Record<string, string>, name: string, value: string) { this[name] = value; } }) as Record<string, string>, {}) as never;
   // Layout as the 3D deck's desktop row measures it (capture of the replay screen at 1280px).
-  offsetLeft = 111.4; offsetTop = 4; offsetWidth = 230.4; offsetHeight = 28; clientWidth = 419.7;
+  offsetLeft = 111.4; offsetTop = 4; offsetWidth: number; offsetHeight = 28; clientWidth = 419.7;
   /** The box's top in the window: the deck's replay row sits at the foot of an 800px desktop window. */
   rectTop = 756; scrollTop = 0;
   getBoundingClientRect() { return { top: this.rectTop }; }
@@ -34,7 +34,7 @@ class Element {
   owner: { activeElement: Element | null; tracksFocus: boolean } | null = null;
   readonly classes = new Set<string>();
   classList = { toggle: (name: string, on: boolean) => { if (on) this.classes.add(name); else this.classes.delete(name); } };
-  constructor(readonly tagName: string) {}
+  constructor(readonly tagName: string) { this.offsetWidth = tagName === "span" ? 19 : 230.4; }
   append(...nodes: Element[]) { for (const n of nodes) { n.parent?.children.splice(n.parent.children.indexOf(n), 1); n.parent = this; this.children.push(n); } }
   replaceChildren(...nodes: Element[]) { this.children = []; this.append(...nodes); }
   contains(node: Element | null): boolean { return node === this || this.children.some(c => c.contains(node)); }
@@ -408,11 +408,16 @@ describe("marks on the scrubber", () => {
       expect(4 + 44 * i - scroll).toBeGreaterThanOrEqual(0);
       expect(4 + 44 * (i + 1) - scroll).toBeLessThanOrEqual(height);
     }
+    // Less than two rows of room: use the actual enlarged line, not a pixel fallback.
+    el.rectTop = stage.rectTop + 20;
+    const create = doc.createElement.bind(doc);
+    vi.spyOn(doc, "createElement").mockImplementation(tag => Object.assign(create(tag), tag === "button" ? { offsetHeight: 88 } : {}));
     // Opened again, the list starts at its first line.
     list.scrollTop = 300;
     marks[0]!.onclick!({ detail: 1 });
     marks[0]!.onclick!({ detail: 0 });
     expect(list.scrollTop).toBe(0);
+    expect(list.style.maxHeight).toBe("228px");
     controls.close();
   });
 

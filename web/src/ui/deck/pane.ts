@@ -148,6 +148,8 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const head = h(doc, "header", "d1-team-head");
     const name = h(doc, "h2", `d1-name c${colony}`, colonyName(colony));
     name.id = `d1-team-${colony}`;
+    name.title = colonyName(colony);
+    name.setAttribute("aria-label", name.title);
     section.setAttribute("aria-labelledby", name.id);
     // One icon per member, then the one player's name, which gives way before its Elo, always shown in full.
     const members = h(doc, "span", "d1-team-members"), player = h(doc, "span", "d1-team-player");
@@ -157,7 +159,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     playerName.append(playerTitle, " ", playerModel);
     const playerTags = h(doc, "span", "d1-tags"), playerElo = h(doc, "span", "d1-tag d1-elo");
     const playerSeats = h(doc, "span", "d1-seats"), playerResult = h(doc, "span", `d1-tag d1-outcome c${colony}`);
-    player.append(playerName, playerTags, playerElo, playerSeats, playerResult);
+    const rating = h(doc, "span", "d1-player-rating");
+    rating.append(playerElo, playerSeats);
+    player.append(playerName, playerTags, rating, playerResult);
     // Hidden until a colony has one player holding several seats (writePlayer).
     setHidden(player, true);
     head.append(name, members, player);
@@ -187,7 +191,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     identity.append(head, rows);
     const historyButton = h(doc, "button", "sb-history");
     historyButton.type = "button";
-    historyButton.textContent = "≡";
+    historyButton.innerHTML = D1_ICON.history;
     historyButton.setAttribute("aria-label", `${colonyName(colony)} history`);
     line.id = `colony-history-${colony}`;
     historyButton.setAttribute("aria-controls", line.id);
@@ -567,6 +571,32 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   const antTitle = h(doc, "p", "d1-sel-title"), antLine = h(doc, "p", "d1-sel-sub");
   const antNames = h(doc, "div", "d1-sel-names");
   antNames.append(antTitle, antLine);
+  // Fit the actual words (id, colony and face all vary). A resize or a new pick can
+  // restore the full token. Measure at candidate sizes: hinted glyph widths do not
+  // scale exactly in proportion to font size.
+  const fitAntTitle = () => {
+    if (!antTitle.isConnected || antCard.hidden || !antTitle.textContent) return;
+    antTitle.style.removeProperty("--d1-ant-fit");
+    const style = win.getComputedStyle(antTitle);
+    if (!style.getPropertyValue("--d1-fit-ant")) return;
+    const range = doc.createRange();
+    range.selectNodeContents(antTitle);
+    const room = antTitle.getBoundingClientRect().width, full = parseFloat(style.fontSize);
+    if (room <= 0 || range.getBoundingClientRect().width <= room) return;
+    let low = 0, high = Math.ceil(full * 4);
+    while (high - low > 1) {
+      const mid = Math.floor((high + low) / 2);
+      antTitle.style.setProperty("--d1-ant-fit", `${mid / 4}px`);
+      if (range.getBoundingClientRect().width <= room) low = mid; else high = mid;
+    }
+    antTitle.style.setProperty("--d1-ant-fit", `${low / 4}px`);
+  };
+  let antRoom = -1;
+  const antResize = win?.ResizeObserver ? new win.ResizeObserver(([entry]) => {
+    if (entry && entry.contentRect.width !== antRoom) { antRoom = entry.contentRect.width; fitAntTitle(); }
+  }) : null;
+  antResize?.observe(antNames);
+  if (doc.fonts) listen(doc.fonts, "loadingdone", fitAntTitle);
   const antClose = h(doc, "button", "d1-close");
   antClose.type = "button";
   antClose.setAttribute("aria-label", PAGE_WORDS.close);
@@ -616,9 +646,13 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   const writeSelected = (sel: Selected, board: Board | null) => {
     place(sel);
     setHidden(card, sel.kind !== "agent");
+    const openingAnt = antCard.hidden;
     setHidden(antCard, sel.kind !== "ant");
     if (sel.kind === "ant") {
-      setText(antTitle, sel.title);
+      if (openingAnt || antTitle.textContent !== sel.title) {
+        setText(antTitle, sel.title);
+        fitAntTitle();
+      }
       setText(antLine, sel.line);
       antCard.style.setProperty("--d1-side", COLONY_CSS[sel.colony]);
       return;
@@ -631,7 +665,12 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       card.style.setProperty("--d1-side", COLONY_CSS[sel.colony]);
       setMarkup(cardBadge, sel.badge);
       cardName.replaceChildren(userName(doc, handle, sel.title));
-      setText(cardModel, sel.model);
+      cardName.title = sel.title;
+      // Browser wrap opportunities belong between model words, not inside an identifier (hyphens included).
+      cardModel.replaceChildren(...sel.model.split(/(\s+)/).filter(Boolean).map(s => /\S/.test(s) ? h(doc, "span", "d1-model-word", s) : s));
+      cardModel.title = sel.model;
+      setAttr(cardModel, "role", "group");
+      setAttr(cardModel, "aria-label", sel.model || null);
       setHidden(cardModel, sel.model === "");
       cardTags.replaceChildren(...sel.badges.map(text => h(doc, "span", "d1-tag", text)));
       setHidden(cardTags, sel.badges.length === 0);
@@ -697,16 +736,18 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   let arrived: Arrival | null = null;
   let lastSeed: readonly HistoryRow[] = [];
   /** The colony names the headings show: the match's own, else the rated names; written again only when they change. */
-  let shownNames = colonies.map(c => colonyName(c)).join("\n");
+  let shownNames = "";
   const writeNames = (setup: Board["setup"] | null) => {
-    const names = colonies.map(c => colonyName(c, setup)).join("\n");
+    // The same names in a drawn match have source notes; rated names do not.
+    const names = setup?.colonyNames?.join("\n") ?? "";
     if (names === shownNames) return;
     shownNames = names;
     for (const colony of colonies) {
       const node = teamNodes[colony]!, named = colonyName(colony, setup), note = colonyNote(colony, setup);
       node.name.textContent = named;
       node.colName.textContent = named;
-      if (note) node.name.title = note; else node.name.removeAttribute("title");
+      node.name.title = note ? `${named} · ${note}` : named;
+      node.name.setAttribute("aria-label", node.name.title);
       node.rows.setAttribute("aria-label", `${named} agents`);
       node.line.setAttribute("aria-label", `${named} ${D1_COPY.history.toLowerCase()}`);
       node.historyButton.setAttribute("aria-label", `${named} history`);
@@ -810,6 +851,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       resultModal.update(frame, view.share ?? null, eligible);
     },
     destroy() {
+      antResize?.disconnect();
       for (const off of listeners.splice(0)) off();
       if (targetFor >= 0) light(-1);
       tip.remove();
