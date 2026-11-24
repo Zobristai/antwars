@@ -400,7 +400,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       snapshot = { body, digest: policy.digest, expires: published + 60_000 };
       return body;
     }).catch(error => {
-      if (signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 60_000 };
+      if (signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
       throw error;
     }).finally(() => { flight = undefined; });
     return { reply: untilAborted(work, signal), settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };

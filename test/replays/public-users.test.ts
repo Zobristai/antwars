@@ -11,6 +11,9 @@ import type { HistorySource, HistorySummary } from "../../src/replays/history-so
 import { createRatings, encodeRating, type LeaderboardEntry } from "../../src/rating/ratings.ts";
 import { createTestRecordings } from "../../src/replays/test-recordings.ts";
 import { neverJoined } from "../../web/src/ui/format.ts";
+import { createIdentities } from "../../src/identity/identities.ts";
+import { createLobbies } from "../../src/lobby/lobbies.ts";
+import { wakingStore } from "../../src/slots/wake.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
 
@@ -231,7 +234,7 @@ it("cancels the ranking transport when the last Users reader leaves, without aff
   expect(await ratings.leaderboard()).toEqual({ ok: true, value: { entries: [] } });
 });
 
-it.each(["upstream failure", "deadline"])("keeps the data-free 503 and retry delay after %s", async reason => {
+it.each(["upstream failure", "deadline"])("retries after 10 seconds and logs a data-free 503 after %s", async reason => {
   let now = 0, healthy = false;
   const scan = vi.fn(async function* (signal: AbortSignal) {
     if (!healthy) {
@@ -245,7 +248,7 @@ it.each(["upstream failure", "deadline"])("keeps the data-free 503 and retry del
     const origin = await listen(sourceWith(scan), undefined, { usersNow: () => now, usersDeadlineMs: 100,
       ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
     const read = () => fetch(origin + "/matches/users");
-    expect((await read()).status).toBe(503); healthy = true; now = 59_999;
+    expect((await read()).status).toBe(503); healthy = true; now = 9_999;
     expect((await read()).status).toBe(503); expect(scan).toHaveBeenCalledTimes(1);
     expect(log.mock.calls).toEqual([["Users listing unavailable (503)"], ["Users listing unavailable (503)"]]);
     ++now; expect((await read()).status).toBe(200); expect(scan).toHaveBeenCalledTimes(2);
@@ -317,6 +320,32 @@ it("joins a ranking sibling's rollback before returning the failure or retrying"
   await nextTurn(); expect(active).toBe(1); expect(returned).toBe(false);
   const other = visitor(handler); expect(starts).toEqual([0]);
   rollback.resolve(); expect(await first).toBe(503); expect(await other.done).toBe(503);
-  failing = false; now += 60_000;
+  failing = false; now += 10_000;
   expect(await visitor(handler).done).toBe(200); expect(starts).toEqual([0, 0]); expect(active).toBe(0);
+});
+
+it.each(["get", "transaction"])("cancels the waking lobby store's %s read when the Users build loses its reader", async phase => {
+  const entered = Promise.withResolvers<void>(), stopped = Promise.withResolvers<void>();
+  const lobbyId = randomUUID(), wake = vi.fn();
+  let rollbacks = 0;
+  const store = createFirestore({ projectId: "fixture", namespace: "lobby", emulatorHost: "localhost:8080", request: async (url, init) => {
+    if (String(url).endsWith(":rollback")) { ++rollbacks; return Response.json({}); }
+    if (String(url).endsWith(":beginTransaction")) return Response.json({ transaction: "fixture" });
+    if (phase === "transaction" && String(url).endsWith(`/lobbies/${lobbyId}`)) {
+      return Response.json({ fields: { state: { stringValue: "waiting" }, createdAt: { stringValue: "0" } } });
+    }
+    const target = phase === "get" ? `/lobbies/${lobbyId}` : ":batchGet";
+    if (!String(url).endsWith(target)) throw Error("unexpected read");
+    entered.resolve(); await once(init!.signal!, "abort"); stopped.resolve(); throw init!.signal!.reason;
+  } });
+  const lobbies = createLobbies(wakingStore(store, wake), createIdentities(store), { now: () => 1 });
+  let builds = 0;
+  const source = sourceWith(async function* () { if (++builds === 1) yield [oneMatch()]; });
+  const handler = historyRoutes(source, async (_id, signal) => {
+    const lobby = await lobbies.readLobby(lobbyId, signal);
+    return lobby.ok ? lobby.value : null;
+  });
+  const first = visitor(handler); await entered.promise; first.leave(); await stopped.promise; await first.done;
+  expect(await visitor(handler).done).toBe(200); expect(builds).toBe(2);
+  expect(rollbacks).toBe(phase === "transaction" ? 1 : 0); expect(wake).not.toHaveBeenCalled();
 });
