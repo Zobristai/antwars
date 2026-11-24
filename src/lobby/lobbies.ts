@@ -354,7 +354,7 @@ export interface Lobbies {
    */
   adoptMatch(lobbyId: string, slot: string, runId: string, fromRunId: string, colonyNames?: ColonyNamePair): Promise<LobbyOutcome<null>>;
   /** The lobby; a waiting one is settled first, taking a free unwithheld slot if one exists. */
-  readLobby(lobbyId: string, signal?: AbortSignal): Promise<LobbyOutcome<Lobby>>;
+  readLobby(lobbyId: string): Promise<LobbyOutcome<Lobby>>;
   /** Public lobbies that are open, waiting or holding a slot, oldest first; a test lobby (Lobby.test) is left out. */
   listPublic(): Promise<readonly Lobby[]>;
   /**
@@ -759,7 +759,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
    * Commits only when a waiter takes a slot or a stale hold is released; otherwise
    * nothing is written, not even queue pruning, and the fields read are returned unchanged.
    */
-  async function settledIfWaiting(lobbyId: string, fields: Fields, signal?: AbortSignal): Promise<Fields> {
+  async function settledIfWaiting(lobbyId: string, fields: Fields): Promise<Fields> {
     const unsettled = (lobby: Fields, at: number) => (lobby.state === "waiting" && !isExpired(lobby, at)) || holdLapsed(lobby, at);
     if (!unsettled(fields, now())) return fields;
     return store.transaction<Fields>(async (read) => {
@@ -770,7 +770,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       if (settled.handedTo.length === 0 && settled.released.length === 0) return { result: current, writes: [] };
       const own = settled.writes.find((write) => write.path === lobbyPath(lobbyId));
       return { result: own?.op === "update" ? { ...current, ...own.fields } : current, writes: settled.writes };
-    }, signal);
+    });
   }
 
   /** Starts an open player-created lobby in the caller's transaction, always unrated. */
@@ -1008,9 +1008,9 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
   }
 
   /** The lobby; a waiting one is settled first (Lobbies.readLobby). */
-  async function readLobby(lobbyId: string, signal?: AbortSignal): Promise<LobbyOutcome<Lobby>> {
-    const fields = await store.get(lobbyPath(lobbyId), signal);
-    return fields ? ok(toLobby(lobbyId, await settledIfWaiting(lobbyId, fields, signal), now())) : refuse("no_such_lobby");
+  async function readLobby(lobbyId: string): Promise<LobbyOutcome<Lobby>> {
+    const fields = await store.get(lobbyPath(lobbyId));
+    return fields ? ok(toLobby(lobbyId, await settledIfWaiting(lobbyId, fields), now())) : refuse("no_such_lobby");
   }
 
   /** Whether identityId is the antwars username's handle named handle, by stored owner, in the caller's transaction. */
