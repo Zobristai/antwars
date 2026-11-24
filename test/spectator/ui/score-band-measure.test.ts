@@ -275,11 +275,12 @@ describe("scrolling HUD fit evidence", () => {
         const page = await browser.newPage({ viewport: { width: 320, height: 844 }, isMobile: true, deviceScaleFactor: 2 });
         await applyTextSize(page, size);
         await page.goto(`http://127.0.0.1:${addr.port}/legend-test`);
+        await page.addStyleTag({ content: readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8") });
         await page.addScriptTag({ type: "module", content: `
           import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
           import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
           const hud = mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions: {} });
-          const view = { frame: scoreFrame(2), connection: 'Reconnecting…', mode: { label: 'LIVE', detail: '', link: null }, board: '2d', selected: null, selectedAgent: -1, stalled: true };
+          const view = { frame: scoreFrame(2, 0), connection: 'Reconnecting…', mode: { label: 'LIVE', detail: '', link: null }, board: '2d', selected: null, selectedAgent: -1, stalled: true };
           hud.update(view);
           window.addEventListener('online', () => hud.update({...view, connection:''}));
         ` });
@@ -304,6 +305,20 @@ describe("scrolling HUD fit evidence", () => {
         expect(await moved.count()).toBe(0);
         expect(await rest.textContent()).toContain("Waiting for new data");
         expect(await rest.textContent()).not.toContain("Reconnecting");
+        // The same match with no agents offers a replay. Its full name remains available
+        // when only the shorter label fits, including after returning to the narrow layout.
+        const full = "Watch a recorded agent match", short = "Watch an agent replay";
+        const offer = page.getByRole("link", { name: new RegExp(full) });
+        for (const width of [320, 390, 320]) {
+          await page.setViewportSize({ width, height: 844 });
+          const label = width === 320 && size === 32 ? short : full;
+          await expect.poll(() => offer.textContent()).toBe(label);
+          expect(await offer.evaluate(el => {
+            const range = document.createRange(); range.selectNodeContents(el);
+            const rects = [...range.getClientRects()];
+            return { size: getComputedStyle(el).fontSize, lines: rects.length, inside: rects.every(r => r.left >= 0 && r.right <= innerWidth) };
+          })).toEqual({ size: `${13 * size / 16}px`, lines: 1, inside: true });
+        }
         await page.close();
       }
     } finally { await browser.close(); await server.close(); }

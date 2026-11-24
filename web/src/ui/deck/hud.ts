@@ -14,6 +14,7 @@ import { STEPPE_LOOK } from "../steppe-look.ts";
 import { navigation } from "../nav.ts";
 import { boardHref, keep } from "../format.ts";
 import { COLONY_INK, h, setAttr, setColonyText, setHidden, setText } from "../dom.ts";
+import { OFFER_TEXT } from "../../replay.ts";
 import { INSPIRED_BY_URL, PAGE_COPY } from "../../story.ts";
 import { ZOOM_STEP } from "../../camera.ts";
 import { D2_COPY, OVERVIEW_LABEL } from "../hud.ts";
@@ -187,6 +188,16 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // One Bring your agent button: in the top bar from 32.5em (520 px at default text); narrower, at the deck's end before the footer.
   const mq = (query: string) => (typeof win.matchMedia === "function" ? win.matchMedia(query) : null);
+  // At 32 px browser text the full offer needs 378 px before insets. Keep its full name
+  // available to assistive technology even when the visible label changes below 384 px.
+  const compactOffer = mq("(width < 12em)");
+  const fitOffer = () => {
+    const label = compactOffer?.matches ? "Watch an agent replay" : OFFER_TEXT;
+    setText(teams.offer, label);
+    setAttr(teams.offer, "aria-label", label === OFFER_TEXT ? null : `${label}: ${OFFER_TEXT}`);
+  };
+  fitOffer();
+  if (compactOffer) listen(compactOffer, "change", fitOffer);
   const wide = mq(BUTTON_IN_BAR);
   const placeButton = () => {
     const inBar = wide === null || wide.matches;

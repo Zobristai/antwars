@@ -861,7 +861,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-legend-rest { overflow: visible; white-space: nowrap; text-overflow: clip; }
 .score-band .d1-foot { flex-wrap: wrap; min-height: 36px; align-content: center; font-size: var(--aw-text-meta); }
 .score-band .d1-foot-credit { font-size: inherit; }
-.score-band .d1-offer { font-size: var(--aw-text-body); max-width: 100%; white-space: normal; text-align: center; }
+.score-band .d1-offer { font-size: var(--aw-text-body); }
 .score-band .d1-deck-end > .d1-agent-button { font-size: var(--aw-text-lead); padding-block: .5em; }
 .sb-rules-key { display: inline-flex; align-items: center; gap: 12px; flex: none; white-space: nowrap; }
 .sb-key-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; white-space: nowrap; cursor: pointer; }
@@ -1002,6 +1002,13 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1 .d1-top { flex-wrap: wrap; }
   .d1 .d1-top > .d1-brand { flex: 1 0 100%; }
   .d1 .d1-top > .d1-pages { margin-left: calc(-1 * var(--aw-space-2)); }
+}
+
+/* Give the no-agent offer the full row before shortening its label. At 12em it still has
+   380 of 384 px with doubled text; the longer label needs 378 px in Liberation Sans. */
+@media (width < 13.5em) {
+  .score-band .d1-foot:has(> .d1-offer:not([hidden])) { padding-inline: 2px; }
+  .score-band .d1-offer { flex: 1 0 100%; padding-inline: 0; }
 }
 
 /* At 320 px with doubled text the footer credit needs more than the 304 px between its usual insets. */
