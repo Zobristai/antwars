@@ -393,7 +393,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const listPage = (token: string | undefined, signal: AbortSignal) =>
     publicHistoryPage(source, token, signal, options.publicVisibility, continuations, raw => serveVisible(raw, signal));
 
-  async function* userBatches(signal: AbortSignal, policy: PublicVisibility | undefined, facts: ReturnType<typeof snapshotContributions>) {
+  async function scanContributions(signal: AbortSignal, policy: PublicVisibility | undefined, facts: ReturnType<typeof snapshotContributions>) {
     if (!source.scan) throw new Error("History scan unavailable");
     const stop = new AbortController(), reading = AbortSignal.any([signal, stop.signal]);
     const iterator = source.scan(reading)[Symbol.asyncIterator]();
@@ -403,7 +403,6 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     const originals = new WeakMap<TypedHistorySummary, TypedHistorySummary>();
     function remember(rows: TypedHistorySummary[]) {
       for (const row of rows) if (!neverJoined(row) && row.seats.some(s => s.handle && !isHouseHandle(s.handle.toLowerCase()))) facts.add(originals.get(row)!);
-      return rows;
     }
     async function project(matches: HistorySummary[]) {
       const page = projection(policy, reading, originals);
@@ -425,9 +424,9 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         const work = project(structuredClone(batch.value));
         pages.push(work);
         void work.catch(error => stop.abort(error)); // cancel the sibling; both are drained below
-        if (pages.length === 2) yield remember(await pages.shift()!);
+        if (pages.length === 2) remember(await pages.shift()!);
       }
-      if (pages.length) yield remember(await pages.shift()!);
+      if (pages.length) remember(await pages.shift()!);
     } finally {
       stop.abort();
       await Promise.allSettled(pages);
@@ -437,44 +436,58 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const configuredPolicy = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));
   const policyNow = () => { const policy = configuredPolicy(); return { ...policy, digest: `${usersRevision()}:${policy.digest}` }; };
   const usersDeadline = options.usersDeadlineMs ?? 120_000, usersNow = options.usersNow ?? Date.now;
-  type Snapshot = { body?: Buffer; expires: number; digest: string; facts?: ReturnType<typeof snapshotContributions>; checking?: Promise<Buffer> };
+  type Facts = ReturnType<typeof snapshotContributions>;
+  type Policy = ReturnType<typeof policyNow>;
+  type Snapshot = { body?: Buffer; expires: number; digest: string; facts?: Facts };
   let snapshot: Snapshot | undefined;
-  type Flight = { reply: Promise<Buffer>; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
+  type Flight = { reply: Promise<Buffer>; checking?: Promise<Buffer | undefined>; background: boolean; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
   const readerLeft = new Error("Users reader disconnected");
   const invalidated = new Error("Users listing invalidated");
   let flight: Flight | undefined;
-  function begin(policy: ReturnType<typeof policyNow>): Flight {
+
+  // Use the same fresh database reads for both an expired answer and publication. An ownership
+  // write or hide on another instance doesn't advance our process-local revision.
+  async function checked(facts: Facts, policy: Policy, signal: AbortSignal) {
+    const page = projection(policy.visibility, signal);
+    async function* batches() {
+      for (const rows of facts.batches()) {
+        signal.throwIfAborted();
+        const [visible, marked] = await joinReads([page.visibleRows(rows, signal),
+          options.testRecordings?.marked(rows.map(row => row.id), signal, true)]);
+        const allowed = visible.filter(row => !marked?.has(row.id));
+        if (!allowed.length) continue;
+        if (!options.currentRosterSeats) throw new Error("Roster ownership unavailable");
+        yield await attributeRoster(allowed, lobbies, options.currentRosterSeats, signal, "directory");
+      }
+    }
+    const users = await publicUsers(batches(), options.ratings, signal);
+    return Buffer.from(JSON.stringify({ users }));
+  }
+
+  function begin(policy: Policy, prior?: Facts): Flight {
     const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
     const started = usersNow();
-    const facts = snapshotContributions();
-    const work = publicUsers(userBatches(signal, policy.visibility, facts), options.ratings, signal).then(rows => {
+    // Only arrivals during this one in-flight expiry check can use its answer. Later arrivals
+    // join publication instead of rechecking again or reusing a no-longer-verified answer.
+    let checking = prior && checked(prior, policy, signal).catch(() => undefined);
+    const work = (async () => {
+      if (checking) { await checking; checking = undefined; }
       signal.throwIfAborted();
-      const body = Buffer.from(JSON.stringify({ users: rows }));
+      const facts = snapshotContributions();
+      await scanContributions(signal, policy.visibility, facts);
+      const body = await checked(facts, policy, signal);
+      signal.throwIfAborted();
       const published = usersNow();
       if (policy.digest !== policyNow().digest) throw invalidated;
       if (published - started >= usersDeadline) throw new Error("Listing expired");
-      snapshot = { body, facts, digest: policy.digest, expires: published + 60_000 };
+      snapshot = { body, facts: facts.retainable ? facts : undefined, digest: policy.digest, expires: published + 60_000 };
       return body;
-    }).catch(error => {
+    })().catch(error => {
       if (error !== invalidated && signal.reason !== invalidated && signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
       throw error;
     }).finally(() => { flight = undefined; });
-    return { reply: work, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
-  }
-  // Re-tally only contributions from this snapshot, with today's claims, visibility and test
-  // markers. No recording bodies, and no lifetime extension. Share only a still-running check.
-  function checked(prior: Snapshot, policy: ReturnType<typeof policyNow>) {
-    return prior.checking ??= (async () => {
-      const signal = AbortSignal.timeout(usersDeadline);
-      const rows = prior.facts!.rows()!;
-      const [visible, marked] = await joinReads([projection(policy.visibility, signal).visibleRows(rows, signal),
-        options.testRecordings?.marked(rows.map(row => row.id), signal, true)]);
-      const allowed = visible.filter(row => !marked?.has(row.id));
-      if (allowed.length && !options.currentRosterSeats) throw new Error("Roster ownership unavailable");
-      const matches = allowed.length ? await attributeRoster(allowed, lobbies, options.currentRosterSeats!, signal, "directory") : [];
-      const users = await publicUsers((async function* () { yield matches; })(), options.ratings, signal);
-      return Buffer.from(JSON.stringify({ users }));
-    })().finally(() => { prior.checking = undefined; });
+    const build: Flight = { reply: work, get checking() { return checking; }, background: !!prior, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
+    return build;
   }
   async function users(signal: AbortSignal): Promise<Buffer> {
     for (;;) {
@@ -485,16 +498,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         if (snapshot.body) return snapshot.body;
         throw new Error("Users listing temporarily unavailable");
       }
-      if (snapshot?.facts?.available && !flight?.signal.aborted) {
-        const prior = snapshot;
-        let body: Buffer | undefined;
-        try { body = await untilAborted(checked(prior, policy), signal); }
-        catch { signal.throwIfAborted(); } // A failed check waits for the full build; never serve unchecked bytes.
-        if (policy.digest !== policyNow().digest || snapshot !== prior) continue;
-        if (body) { flight ??= begin(policy); return body; }
-        snapshot = undefined;
-      }
-      const build = flight ??= begin(policy);
+      const build = flight ??= begin(policy, snapshot?.facts);
       if (++build.admissions > 128) throw new Error("Listing busy");
       if (build.digest !== policy.digest) {
         build.stop.abort(invalidated);
@@ -506,13 +510,15 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       build.signal.throwIfAborted();
       build.waiters++;
       try {
-        const body = await untilAborted(build.reply, AbortSignal.any([build.signal, signal]));
+        const waiting = AbortSignal.any([build.signal, signal]);
+        const early = build.checking && await untilAborted(build.checking, waiting);
+        const body = early ?? await untilAborted(build.reply, waiting);
         if (build.digest === policyNow().digest) return body;
       } catch (error) {
         // Rejoin under the new revision, keeping this visitor's original deadline/disconnect signal.
         if (error !== invalidated) throw error;
       }
-      finally { if (--build.waiters === 0 && flight === build) build.stop.abort(signal.reason); }
+      finally { if (--build.waiters === 0 && !build.background && flight === build) build.stop.abort(signal.reason); }
     }
   }
   const picks = options.topMatches ?? shippedTopMatchList();

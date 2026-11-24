@@ -7,19 +7,20 @@ let revision = 0;
 export const usersRevision = () => revision;
 export function invalidateUsers() { ++revision; }
 
-/** Only the old listing's tally inputs, not a source for the next storage scan. If the complete
- * set won't fit, keep none: a partial set must never certify the counts of a whole snapshot. */
+/** Keep the complete inputs until publication, even if they're too large to retain for expiry.
+ * Each database check decodes only one batch. Nothing here can replace a storage scan. */
 export function snapshotContributions() {
-  let bytes = 0, entries: string[] | undefined = [];
+  let bytes = 0;
+  const entries: string[] = [];
   return {
     add({ id, startedAt, status, winner, reason, decidedBy, matchType, colonyNames, seats }: TypedHistorySummary) {
-      if (!entries) return;
       const text = JSON.stringify({ id, startedAt, status, winner, reason, decidedBy, matchType, colonyNames, seats } satisfies UserMatch);
+      entries.push(text);
       bytes += Buffer.byteLength(text);
-      if (bytes > 2 * 1024 * 1024) entries = undefined;
-      else entries.push(text);
     },
-    rows: () => entries?.map(text => JSON.parse(text) as UserMatch),
-    get available() { return entries !== undefined; },
+    *batches() {
+      for (let i = 0; i < entries.length; i += 100) yield entries.slice(i, i + 100).map(text => JSON.parse(text) as UserMatch);
+    },
+    get retainable() { return bytes <= 2 * 1024 * 1024; },
   };
 }
