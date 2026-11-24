@@ -38,6 +38,31 @@ const DECK_FIRST = "(min-width: 75em)";
 /** On short narrow screens (phones at doubled text or 200% zoom), the board window joins the scroller at full height. */
 const WINDOW_IN_SCROLLER = "(max-width: 19.99em) and (max-height: 24.99em)";
 
+interface LegendLine {
+  legend: HTMLElement; mode: HTMLElement; rest: HTMLElement; metadata: HTMLElement;
+  back: HTMLElement | null; wait: HTMLElement | null;
+  full: string; withoutWaiting: string; noFacts: boolean;
+}
+
+/** Fit one line at its current width: preserve the connection, then spend spacing, not type size. */
+export function fitLegendLine({ legend, mode, rest, metadata, back, wait, full, withoutWaiting, noFacts }: LegendLine): void {
+  // At phone zoom the detail can wrap instead of overflowing horizontally; LIVE is one line.
+  const overflows = () => rest.scrollWidth > rest.clientWidth || rest.offsetHeight > mode.offsetHeight;
+  legend.classList.remove("is-compact");
+  if (rest.textContent !== full) rest.textContent = full;
+  const separate = wait !== null && withoutWaiting !== "" && overflows();
+  if (separate) rest.textContent = withoutWaiting;
+  if (overflows()) legend.classList.add("is-compact");
+  const move = separate || (wait !== null && overflows());
+  if (move && wait) {
+    if (!withoutWaiting) { rest.textContent = ""; legend.classList.remove("is-compact"); }
+    if (!wait.parentElement) metadata.insertBefore(wait, back);
+  } else {
+    wait?.remove();
+  }
+  metadata.hidden = noFacts && !move;
+}
+
 export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const { doc, host, tips, replay, teamView, actions } = context;
   const win = doc.defaultView!;
@@ -190,9 +215,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // One Bring your agent button: in the top bar from 32.5em (520 px at default text); narrower, at the deck's end before the footer.
   const mq = (query: string) => (typeof win.matchMedia === "function" ? win.matchMedia(query) : null);
-  // At 32 px browser text the full offer needs 378 px before insets. Keep its full name
-  // available to assistive technology even when the visible label changes below 384 px.
-  const compactOffer = mq("(width < 12em)");
+  // At doubled text the 390 px row gives the full label 386 px: 8 px beyond its measured width.
+  const compactOffer = mq("(width < 12.1875em)");
   const fitOffer = () => {
     const label = compactOffer?.matches ? "Watch an agent replay" : OFFER_TEXT;
     setText(teams.offer, label);
@@ -336,7 +360,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // ---------------------------------------------------------------- painting
   let legendKey = "";
-  let fitWaiting: (() => void) | undefined;
+  let fitLegend: (() => void) | undefined;
   /** Keep connection state intact; other mode facts retain individual, unbroken metadata cells. */
   const paintLegend = (l: Legend, four: boolean) => {
     const keyNow = `${four}|${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
@@ -355,24 +379,15 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     const noFacts = !facts.length && !l.back;
     metadata.replaceChildren(...facts.map(word => h(doc, "span", "sb-meta-item", word)), back);
     setHidden(metadata, noFacts);
-    fitWaiting = undefined;
-    if (state.includes(D1_COPY.waiting)) {
-      const wait = h(doc, "span", "sb-meta-item", D1_COPY.waiting);
+    legendEl.classList.remove("is-compact");
+    fitLegend = undefined;
+    if (state.length) {
+      const wait = state.includes(D1_COPY.waiting) ? h(doc, "span", "sb-meta-item", D1_COPY.waiting) : null;
       const other = state.filter(word => word !== D1_COPY.waiting);
       const withoutWaiting = other.length ? `\u00a0· ${other.join(" · ")}` : "";
-      // Move only the waiting message, and only if the full legend overflows at its actual size.
-      fitWaiting = () => {
-        setText(rest, full);
-        const move = rest.scrollWidth > rest.clientWidth;
-        if (move) {
-          setText(rest, withoutWaiting);
-          if (!wait.parentElement) metadata.insertBefore(wait, back);
-        } else {
-          wait.remove();
-        }
-        setHidden(metadata, noFacts && !move);
-      };
-      fitWaiting();
+      const line = { legend: legendEl, mode, rest, metadata, back, wait, full, withoutWaiting, noFacts };
+      fitLegend = () => fitLegendLine(line);
+      fitLegend();
     }
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
@@ -442,7 +457,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let footerH = -1;
   let laneH = -1;
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(entries => {
-    if (entries.some(e => e.target === frameEl || e.target === mode)) fitWaiting?.();
+    if (entries.some(e => e.target === frameEl || e.target === mode)) fitLegend?.();
     const next = legendEl.offsetHeight;
     const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight, nextLane = lane.offsetHeight;
     if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH || nextLane !== laneH)) scheduleRefit();

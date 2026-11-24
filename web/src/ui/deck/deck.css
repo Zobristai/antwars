@@ -865,6 +865,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band .d1-back { margin-left: auto; }
 .score-band .d1-legend { display: flex; top: calc(-1 * var(--d1-legend-half)); font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); white-space: nowrap; letter-spacing: .02em; }
 .score-band .d1-legend-rest { overflow: visible; white-space: nowrap; text-overflow: clip; }
+.score-band .d1-frame > .d1-legend.is-compact { left: 0; max-width: 100%; padding-inline: 0; letter-spacing: normal; }
+.score-band .d1-legend.is-compact .d1-dot { margin-right: 2px; }
 .score-band .d1-foot { flex-wrap: wrap; min-height: 36px; align-content: center; font-size: var(--aw-text-meta); }
 .score-band .d1-foot-credit { font-size: inherit; }
 .score-band .d1-offer { font-size: var(--aw-text-body); }
@@ -1003,15 +1005,12 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1[data-menu="open"] .d1-top .d2-nav-link[aria-current="page"]::after { left: var(--aw-space-3); right: var(--aw-space-3); bottom: 9px; }
 }
 @media (max-width: 12.49em) {
-  /* At enlarged text, keep LIVE uppercase but use the connection message’s own case to fit the frame. */
-  .score-band .d1-legend-rest { text-transform: none; letter-spacing: normal; }
   .d1 .d1-top { flex-wrap: wrap; }
   .d1 .d1-top > .d1-brand { flex: 1 0 100%; }
   .d1 .d1-top > .d1-pages { margin-left: calc(-1 * var(--aw-space-2)); }
 }
 
-/* Give the no-agent offer the full row before shortening its label. At 12em it still has
-   380 of 384 px with doubled text; the longer label needs 378 px in Liberation Sans. */
+/* Give the no-agent offer the full row before shortening its label; leave room on either side. */
 @media (width < 13.5em) {
   .score-band .d1-foot:has(> .d1-offer:not([hidden])) { padding-inline: 2px; }
   .score-band .d1-offer { flex: 1 0 100%; padding-inline: 0; }

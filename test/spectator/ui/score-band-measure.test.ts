@@ -4,6 +4,7 @@ import { createServer } from "vite";
 import { chromium } from "playwright-core";
 import { applyTextSize, fontconfigFor } from "../../../web/render-check/fonts.ts";
 import { measureLabels } from "../../../web/capture/match-label-fit.ts";
+import { fitLegendLine } from "../../../web/src/ui/deck/hud.ts";
 import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
 import { markup } from "./port-markup.ts";
@@ -88,6 +89,26 @@ describe("scrolling HUD fit evidence", () => {
           await page.setViewportSize({ width, height: 900 });
           await page.setContent(`<style>body{margin:0}:root{--aw-sans:'${font}',sans-serif}${tokens}${css}.d1{position:relative;inset:auto}.d1-frame{margin-top:8px;--d1-window-h:80px}</style><main class="d1 score-band"><section class="d1-frame"><p class="d1-legend"><span class="d1-dot"></span><span class="d1-mode">LIVE</span><span class="d1-legend-rest"> · Waiting for new data</span></p><div class="d1-window"></div></section><div class="d1-below"><div class="sb-metadata"><span class="sb-meta-item">rated match</span><span class="sb-meta-item">300 s policy delay</span></div><div class="d1-lane"></div><div class="d1-deck"><header class="sb-clock-map"><p class="d1-clock">10:04 · 19:56 left</p><div class="d1-map"><span class="d1-glabel">Map</span><span class="d1-map-name">Three Crossings v2</span></div></header>${card}</div></div></main>`);
           await page.evaluate(() => document.fonts.ready);
+          const line = await page.evaluateHandle(() => {
+            const node = (selector: string) => document.querySelector<HTMLElement>(selector)!;
+            const wait = document.createElement("span"); wait.className = "sb-meta-item"; wait.textContent = "Waiting for new data";
+            return { legend: node(".d1-legend"), mode: node(".d1-mode"), rest: node(".d1-legend-rest"),
+              metadata: node(".sb-metadata"), wait, full: "\u00a0· Waiting for new data", withoutWaiting: "", back: null, noFacts: false };
+          });
+          // Measure the unwrapped words with the maximum allowed space, independently of the fitter.
+          const fits = await line.evaluate(({ legend, rest, full }) => {
+            legend.classList.add("is-compact"); rest.style.whiteSpace = "nowrap"; rest.textContent = full;
+            const range = new Range(); range.selectNodeContents(rest);
+            // A fraction of a pixel over the available width can wrap a whole word.
+            const fits = range.getBoundingClientRect().width <= rest.getBoundingClientRect().width;
+            rest.style.removeProperty("white-space"); legend.classList.remove("is-compact");
+            return fits;
+          });
+          await page.evaluate(fitLegendLine, line);
+          const copies = await line.evaluate(({ legend, metadata }) => [legend, metadata].map(el =>
+            (el.textContent?.match(/Waiting for new data/g) ?? []).length));
+          expect(copies, `${width}px ${font} default${defaultFontSize}: waiting placement`).toEqual(fits ? [1, 0] : [0, 1]);
+          await line.dispose();
           const items = await page.evaluate(measureLabels, ".d1-name,.d1-title,.d1-model,.d1-ml,.d1-mv,.d1-clock,.d1-map-name,.d1-glabel,.d1-mode,.d1-legend-rest,.sb-meta-item,.sb-history");
           const visible = items.filter(i => i.target);
           expect(visible.filter(i => i.clipped || i.outside), `${width}px ${font} default${defaultFontSize}: cut`).toEqual([]);
@@ -289,6 +310,11 @@ describe("scrolling HUD fit evidence", () => {
         expect(await rest.textContent()).not.toContain("Waiting for new data");
         expect(await rest.textContent()).toContain("Reconnecting");
         expect(await rest.evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+        expect(await rest.evaluate(e => getComputedStyle(e).textTransform)).toBe("uppercase");
+        const compact = page.locator(".d1-legend.is-compact");
+        await expect.poll(() => compact.count()).toBe(size === 32 ? 1 : 0);
+        await page.setViewportSize({ width: 390, height: 844 });
+        await expect.poll(() => compact.count()).toBe(0);
         await page.setViewportSize({ width: 1280, height: 800 });
         await moved.waitFor({ state: "hidden" });
         expect(await rest.textContent()).toContain("Waiting for new data");
@@ -314,15 +340,22 @@ describe("scrolling HUD fit evidence", () => {
         // when only the shorter label fits, including after returning to the narrow layout.
         const full = "Watch a recorded agent match", short = "Watch an agent replay";
         const offer = page.getByRole("link", { name: new RegExp(full) });
-        for (const width of [320, 390, 320]) {
+        for (const width of [320, 389, 390, 389, 320]) {
           await page.setViewportSize({ width, height: 844 });
-          const label = width === 320 && size === 32 ? short : full;
+          const label = width < 390 && size === 32 ? short : full;
           await expect.poll(() => offer.textContent()).toBe(label);
           expect(await offer.evaluate(el => {
             const range = document.createRange(); range.selectNodeContents(el);
             const rects = [...range.getClientRects()];
             return { size: getComputedStyle(el).fontSize, lines: rects.length, inside: rects.every(r => r.left >= 0 && r.right <= innerWidth) };
           })).toEqual({ size: `${13 * size / 16}px`, lines: 1, inside: true });
+          if (size === 32 && width === 390) {
+            const spare = await offer.evaluate(el => {
+              const range = new Range(); range.selectNodeContents(el);
+              return el.clientWidth - range.getBoundingClientRect().width;
+            });
+            expect(spare).toBeGreaterThanOrEqual(8);
+          }
         }
         await page.close();
       }
