@@ -77,6 +77,7 @@ function badges(doc: Document, kinds: BadgeKinds): HTMLElement | null {
     badge.title = kinds.level;
   } else if (kinds.level !== null) badge.append(kinds.level);
   if (kinds.fast) badge.append(bolt(doc));
+  tags.setAttribute("aria-hidden", "true");
   tags.append(badge);
   return tags;
 }
@@ -97,11 +98,14 @@ function player(doc: Document, parts: PlayerParts): HTMLElement[] {
     const href = userHref(parts.rosterUser);
     if (href) {
       const link = held(doc, h(doc, "a"), parts.user);
-      link.href = href; link.title = parts.user; builder.append(link);
-    } else held(doc, builder, parts.user);
+      link.href = href; builder.append(link);
+    } else { held(doc, builder, parts.user); builder.setAttribute("aria-hidden", "true"); }
     name.append(builder);
   }
-  if (parts.model !== null) name.append(held(doc, h(doc, "span", "aw-model"), parts.user !== null ? ` ${parts.model}` : parts.model));
+  if (parts.model !== null) {
+    const model = held(doc, h(doc, "span", "aw-model"), parts.user !== null ? ` ${parts.model}` : parts.model);
+    model.setAttribute("aria-hidden", "true"); name.append(model);
+  }
   name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
   watchCut(doc, name);
   // The name's place on the line: where a line never wraps, never narrower than its first letter and its whole ellipsis
@@ -132,24 +136,25 @@ function playerLine(doc: Document, side: TileSide | null, winner: boolean): HTML
     return block;
   }
   const line = h(doc, "span", `aw-row aw-player${winner ? " is-winner" : ""}${side !== null && side.seats > 1 ? ` is-team${side.seats > 2 ? seatMarks(side.seats) : ""}` : ""}`);
-  if (side === null) { line.append(h(doc, "span", "aw-name", NOT_JOINED)); return line; }
+  if (side === null) { line.setAttribute("aria-hidden", "true"); line.append(h(doc, "span", "aw-name", NOT_JOINED)); return line; }
   line.append(...player(doc, side.groups[0]!.parts));
   return line;
 }
 
 /** One player in words: name and model, then its badges with "retired model". */
-function playerWords({ user, model, badges: kinds }: PlayerParts): string {
+function playerWords({ user, rosterUser, model, badges: kinds }: PlayerParts, colony: number): string {
   const shown = badgeWords({ ...kinds, retired: false });
   const extra = [...shown, ...(kinds.retired ? ["retired model"] : [])];
-  return [user, model].filter(word => word !== null).join(" ") + (hasBadges(kinds) && extra.length ? ` (${extra.join(", ")})` : "");
+  // A linked player's name is spoken by its own control, not repeated in the replay summary.
+  return [user && userHref(rosterUser) ? `Colony ${colony + 1}` : user, model].filter(word => word !== null).join(" ") + (hasBadges(kinds) && extra.length ? ` (${extra.join(", ")})` : "");
 }
 
 /** A side in words, for the tile's accessible name: its player and its seats; where its seats differ, each seat group
  * joined by "and", a group of more than one seat with its count, as Matches reads a group. */
-function sideWords(side: TileSide | null): string {
+function sideWords(side: TileSide | null, colony: number): string {
   if (side === null) return NOT_JOINED;
-  if (side.groups.length === 1) return playerWords(side.groups[0]!.parts) + (side.seats > 1 ? `, ${side.seats} seats` : "");
-  return side.groups.map(group => playerWords(group.parts) + (group.seats > 1 ? `, ${group.seats} seats` : "")).join(" and ");
+  if (side.groups.length === 1) return playerWords(side.groups[0]!.parts, colony) + (side.seats > 1 ? `, ${side.seats} seats` : "");
+  return side.groups.map(group => playerWords(group.parts, colony) + (group.seats > 1 ? `, ${group.seats} seats` : "")).join(" and ");
 }
 
 /** Words in a list: "a", "a and b", "a, b and c". */
@@ -203,6 +208,7 @@ export function topMatchTile(doc: Document, r: Recording, search: string, result
     typeName.append(type.kind);
     if (type.size !== null) typeName.append(" · ", h(doc, "span", "aw-keep", type.size));
   }
+  meta.setAttribute("aria-hidden", "true");
   meta.append(typeName);
   tile.append(meta);
   // The players block. A free-for-all: every colony in colony order, filled across then down, where it starts on the map;
@@ -213,23 +219,24 @@ export function topMatchTile(doc: Document, r: Recording, search: string, result
   tile.append(lines);
   if (ended !== null) {
     const howRow = h(doc, "span", "aw-row aw-how");
+    howRow.setAttribute("aria-hidden", "true");
     howRow.append(h(doc, "span", "aw-name", tileEnding(ended, colonies)));
     tile.append(howRow);
   }
   const dateRow = h(doc, "span", "aw-row aw-date");
+  dateRow.setAttribute("aria-hidden", "true");
   dateRow.append(h(doc, "span", "aw-name", date));
   if (results === "shown") dateRow.append(h(doc, "span", "aw-len", length ?? ""));
   tile.append(dateRow);
 
   const typeWords = type === null ? null : type.size === null ? type.kind : `${type.kind} · ${type.size}`;
-  const sideList = order.map(colony => sideWords(sides[colony] ?? null));
+  const sideList = order.map(colony => sideWords(sides[colony] ?? null, colony));
   const sidesWords = results === "hidden" ? (sideList.length > 2 ? listWords(sideList) : sideList.join(" versus "))
     : winner === null ? sideList.join(" v ")
     : `${sideList[0]} beat ${listWords(sideList.slice(1))}`;
   const label = [sidesWords, typeWords, ended, length === null ? null : length.replace(" min", " minutes"), date].filter(word => word !== null && word !== "").join(", ");
   link.setAttribute("aria-label", label);
   link.title = label;
-  tile.setAttribute("role", "group"); tile.setAttribute("aria-label", label);
   item.append(tile);
   return item;
 }

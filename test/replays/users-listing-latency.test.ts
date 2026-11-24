@@ -32,13 +32,18 @@ it("builds the five-match listing with bounded reads, including cold and expired
   const latency = async () => { ++dbReads; await sleep(25); };
   store.getMany = async paths => { await latency(); return new Map(paths.map(key => [key, docs.get(key) ?? null])); };
   const visibility = createPublicVisibility(store, { async replayLobby() { await latency(); return { state: "found", lobbyId }; } }, [excluded]);
+  // Serve only prebuilt fixture bodies; no part of the request is copied into the response.
+  const bodies = new Map(ids.map(id => [`/storage/v1/b/fixture/o/${id}.json`, JSON.stringify({
+    format: "antwar.match", version: 1, id, startedAt: "2026-11-01T00:00:00.000Z", endedAt: null,
+    simulationEndedAt: null, result: { winner: 1, reason: "time_up", decidedBy: "territory" }, setup: { rated: true },
+    seats: ["sample-amber-wing/leaf", "sample-blue-mound"].map((handle, seat) => ({ seat, colony: seat, handle, modelLabel: "Sample model" })),
+    status: "complete", unavailable: [], events: [],
+  })]));
   const objects = createServer(async (req, res) => {
-    const id = /\/([^/]+)\.json/.exec(req.url!)![1];
+    const body = bodies.get(req.url?.split("?", 1)[0] ?? "");
+    if (body === undefined) { res.writeHead(404).end(); return; }
     peak = Math.max(peak, ++active); ++bodyReads; await sleep(100); --active;
-    res.end(JSON.stringify({ format: "antwar.match", version: 1, id, startedAt: "2026-11-01T00:00:00.000Z", endedAt: null,
-      simulationEndedAt: null, result: { winner: 1, reason: "time_up", decidedBy: "territory" }, setup: { rated: true },
-      seats: ["sample-amber-wing/leaf", "sample-blue-mound"].map((handle, seat) => ({ seat, colony: seat, handle, modelLabel: "Sample model" })),
-      status: "complete", unavailable: [], events: [] }));
+    res.writeHead(200, { "content-type": "application/json" }).end(body);
   });
   objects.listen(0, "127.0.0.1"); await once(objects, "listening");
   const local = `http://127.0.0.1:${(objects.address() as AddressInfo).port}`;
@@ -52,6 +57,7 @@ it("builds the five-match listing with bounded reads, including cold and expired
   const site = createServer((req, res) => { void handler(req, res, undefined as never); });
   site.listen(0, "127.0.0.1"); await once(site, "listening");
   try {
+    expect((await fetch(`${local}/storage/v1/b/fixture/o/unknown.json`)).status).toBe(404);
     for (const build of ["cold", "hit", "expired"]) {
       if (build === "expired") now += 60_001;
       bodyReads = dbReads = peak = 0;

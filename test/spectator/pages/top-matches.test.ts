@@ -71,7 +71,7 @@ describe("a top-match tile", () => {
     expect(link(tile).title).toBe(label);
   });
 
-  it("names a builder without a model on the tile and in the link label, with either result setting", () => {
+  it("speaks a linked name only on its roster link, and an unlinked name only in the replay label", () => {
     const { doc } = dom();
     const r = recording({ seats: [{ ...seat(0, 0, "wren"), rosterUser: "sample-arc" }, seat(1, 1, "sample-plain")] });
     for (const results of ["hidden", "shown"] as const) {
@@ -81,7 +81,11 @@ describe("a top-match tile", () => {
       expect(tagged(tile.byClass("aw-name").find(n => text(n) === "sample-plain")!, "a")).toHaveLength(0);
       expect(link(tile).querySelectorAll("a")).toHaveLength(0);
       expect(tagged(tile, "b").map(text).sort()).toEqual(["sample-plain", "wren"]);
-      expect(link(tile).getAttribute("aria-label")).toContain("wren");
+      expect(text(player)).toBe("wren");
+      expect(tile.byClass("aw-tile")[0]!.getAttribute("aria-label")).toBeNull();
+      expect(link(tile).getAttribute("aria-label")).not.toContain("wren");
+      expect(link(tile).getAttribute("aria-label")).toContain("sample-plain");
+      expect(tagged(tile, "b").find(n => text(n) === "sample-plain")!.getAttribute("aria-hidden")).toBe("true");
     }
   });
 

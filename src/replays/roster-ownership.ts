@@ -50,10 +50,18 @@ export function agreedHandles(seats: readonly Seat[], current: ReadonlyMap<strin
  * The directory counts the current handle; the archive retains the historical text with a separate destination. */
 export async function attributeRoster(rows: TypedHistorySummary[], lookup: RecordingLobbyLookup | undefined,
   current: CurrentRosterSeats, signal: AbortSignal, mode: "directory" | "archive"): Promise<TypedHistorySummary[]> {
-  const lobbies = await joinReads(rows.map(row => lookup?.(row.id, signal)));
+  // Only the archive can serve a recording without its optional roster link. Never turn a
+  // cancellation into a successful response or publish an incomplete directory.
+  function noProof(error: unknown): undefined {
+    signal.throwIfAborted();
+    if (mode === "directory") throw error;
+    return undefined;
+  }
+  const lobbies = await joinReads(rows.map(row => lookup?.(row.id, signal).catch(noProof)));
   const eligible = lobbies.map(lobby => lobby && lobby !== "pending" && !lobby.test ? lobby.colonies : []);
-  const names = await current(eligible.flat(2), signal);
+  const names = await current(eligible.flat(2), signal).catch(noProof);
   return rows.map((row, i) => {
+    if (!names || (mode === "archive" && lobbies[i] === undefined)) return row;
     const colonies = eligible[i]!.map(seats => agreedHandles(seats, names));
     return { ...row, seats: row.seats.map(seat => {
       if (!seat.handle || isHouseHandle(seat.handle.toLowerCase())) return seat;

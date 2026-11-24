@@ -68,6 +68,16 @@ it("keeps every committed replay excerpt readable whole and long enough to be ju
   }
 });
 
+it("gives each of the four colonies a distinct linked player in the free-for-all excerpt", async () => {
+  const fixtures = await readFixtures([FIXTURES]);
+  const head = decodeMessage(unpackMessages(fixtures[`/replays/${FREE_FOR_ALL_REPLAY}`]!.bytes!)[0]!);
+  const players = head.full!.agents.map(a => a.identity!.displayName);
+  expect(new Set(head.full!.agents.map(a => a.colony)).size).toBe(4);
+  expect(new Set(players).size).toBe(4);
+  const links = fixtures[`/matches/users/links/replay/${FREE_FOR_ALL_REPLAY}`]!.body as { handles: [string, string][] };
+  expect(new Map(links.handles)).toEqual(new Map(players.map(name => [name, name])));
+});
+
 it("plays a grouped-seat excerpt: a colony whose seats all belong to one player, joined out of seat order", async () => {
   const fixtures = await readFixtures([FIXTURES]);
   const head = decodeMessage(unpackMessages(fixtures[`/replays/${GROUPED_SEATS_REPLAY}`]!.bytes!)[0]!);

@@ -736,7 +736,6 @@ export const rdShown = (identity: StreamAgent["identity"]): string =>
  * it holds, and the colony's result once the match has ended.
  */
 export interface Player {
-  readonly handle?: string;
   readonly name: string;
   readonly model: string;
   readonly badges: readonly string[];
@@ -751,7 +750,6 @@ export interface Player {
  * and its calls are the history's.
  */
 export interface Row {
-  readonly handle?: string;
   readonly index: number;
   readonly colony: Colony;
   readonly shade: string;
@@ -772,6 +770,8 @@ export interface Row {
   /** "± RD" beside the rating, shown on hover, tap or focus; "" where the stream carries none. */
   readonly rd: string;
   readonly result: ColonyResult | null;
+  /** Selection action and seat details when the title is spoken by a separate name link. */
+  readonly linkedPickLabel: string;
   /** Everything the row shows, for assistive technology: its visible title first, its badge's shape word last. */
   readonly label: string;
 }
@@ -878,7 +878,7 @@ export function roster(frame: Frame): Roster {
     const found = teamPlayer(members.map(e => b.agents[e.index]!));
     const player: Player | null = found && (() => {
       const parts = lineParts(first, reported);
-      return { handle: found.name, name: rowName(found.name, undefined).name, model: parts.model, badges: [...parts.badges, ...parts.modelBadges],
+      return { name: rowName(found.name, undefined).name, model: parts.model, badges: [...parts.badges, ...parts.modelBadges],
         elo: found.elo, rd: rdShown(first.identity), seats: members.length, result };
     })();
     // One player: its heading carries its line once and its member icons are the player icons.
@@ -889,9 +889,11 @@ export function roster(frame: Frame): Roster {
       const rd = rdShown(a.identity);
       // The accessible name leads with the shown name in full, then its badges.
       const shown = named ? [named.name, ...badges].join(" ") : title ? [title, ...badges].join(" ") : handle;
-      const label = [shown, e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", colonyNamesOf(b.setup)[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
+      const details = [e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", colonyNamesOf(b.setup)[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
         result ?? "", e.name || e.model ? `badge ${handle}` : "", e.idle ? "idle" : ""].filter(Boolean).join(" · ");
-      return { handle: a.identity?.displayName, index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
+      const label = [shown, details].filter(Boolean).join(" · ");
+      const linkedPickLabel = ["Select agent", ...badges, details].filter(Boolean).join(" · ");
+      return { linkedPickLabel, index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
     });
     groups.push({ colony, heading: `${colonyNamesOf(b.setup)[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });
   }
@@ -911,7 +913,7 @@ export type Selected =
   | { readonly kind: "none" }
   | { readonly kind: "ant"; readonly key: string; readonly colony: Colony; readonly title: string; readonly line: string }
   | {
-    readonly handle?: string; readonly kind: "agent"; readonly key: string; readonly index: number; readonly colony: Colony; readonly shade: string; readonly badge: string;
+    readonly kind: "agent"; readonly key: string; readonly index: number; readonly colony: Colony; readonly shade: string; readonly badge: string;
     readonly title: string; readonly model: string; readonly asterisk: boolean;
     /** The model's level and tier badges, after the model (or after the title where the model is the title). */
     readonly badges: readonly string[];
@@ -943,7 +945,7 @@ export function selected(frame: Frame | null, picked: AntInfo | null, pickedAgen
     const detail = agentDetail(frame, agent);
     const orderLine = `Squad order: ${orderText(a, orderTarget(a.orderX, a.orderY, b))}`;
     return {
-      handle: a.identity?.displayName, kind: "agent", key: `agent:${agent}`, index: agent, colony, shade, badge: badge(agent, shade, 18),
+      kind: "agent", key: `agent:${agent}`, index: agent, colony, shade, badge: badge(agent, shade, 18),
       // The name as the rows name it; the model beside it and its asterisk are unchanged.
       title: name !== null ? rowName(name, a.thinkingLevel).name : shownModel?.name ?? agentHandle(agent),
       model: name ? shownModel?.name ?? "" : "", badges: shownModel?.badges ?? [], asterisk: selfReported(b) && a.modelLabel !== "",

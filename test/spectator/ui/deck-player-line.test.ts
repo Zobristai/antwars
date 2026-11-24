@@ -66,6 +66,10 @@ describe("a colony panel's player line", () => {
     const builder = m.team(1).byClass("aw-user-link")[0]!;
     expect(builder.href).toBe("/?page=users&user=kite");
     const pick = m.team(1).byClass("d1-agent-pick")[0]!;
+    expect(pick.getAttribute("aria-label")).toMatch(/^Select agent.*Rating 1540.*badge/);
+    expect(pick.getAttribute("aria-label")).not.toContain("kite");
+    expect(rows[1]!.byClass("d1-title")[0]!.getAttribute("aria-hidden")).toBeNull();
+    expect(rows[0]!.byClass("d1-title")[0]!.getAttribute("aria-hidden")).toBe("true");
     expect(pick.contains(builder)).toBe(false); pick.click(); expect(m.picked).toEqual([1]);
     expect(m.team(0).byClass("aw-user-link").length).toBe(0);
     const all = m.team(0).textContent + m.team(1).textContent;

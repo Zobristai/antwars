@@ -59,10 +59,10 @@ describe("the team section's agent rows", () => {
     expect(elo).not.toMatch(/var\(--aw-ink|#7ddc9a|font-size|padding|border-radius|font-weight/);
     expect(CSS.indexOf(".d1-elo {")).toBeGreaterThan(CSS.indexOf(".d1-tag {"));
     expect(CSS).not.toMatch(/\.d1-elo \{ font-size|, \.d1-elo \{/);
-    // No rating, no badge; the row's accessible label is unchanged.
+    // No rating, no badge; selection still has a label independent of the name link.
     const write = body("writeRow");
     expect(write).toContain("setHidden(node.elo, row.elo === null);");
-    expect(write).toContain('setAttr(node.button, "aria-label", row.label);');
+    expect(write).toContain('setAttr(node.button, "aria-label", linked ? row.linkedPickLabel : row.label);');
     expect(make).toContain('badge.setAttribute("aria-hidden", "true");');
   });
 

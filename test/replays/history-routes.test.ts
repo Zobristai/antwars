@@ -405,6 +405,40 @@ describe("GET /matches with a lobby lookup", () => {
     expect(listed.matches.map(match => match.matchType)).toEqual([{ kind: "challenge", size: 1 }, null]);
   });
 
+  it.each(["lobby", "current owner"])("serves the archive without unproven links after a %s read rejects, but refuses the directory", async failure => {
+    const ids = ["2026-10-31T10-00-00-000Z-1", "2026-10-31T10-10-00-000Z-1"];
+    const rows = ids.map(id => row(id, [{ colony: 0, handle: "sample-reed" }]));
+    const source: HistorySource = { async list() { return page(...rows); }, async *scan() { yield rows; },
+      async summary(id) { return rows.find(r => r.id === id) ?? null; }, async open() { return null; } };
+    let broken = true;
+    const handler = historyRoutes(source, async id => {
+      if (broken && failure === "lobby" && id === ids[0]) throw Error("Lobby unavailable");
+      return { kind: "public", size: 1, mode: null, colonies: [[seat(id, "sample-reed")]] };
+    }, { topMatches: { ids, leftOff: [] }, async currentRosterSeats(seats) {
+      if (broken && failure === "current owner") throw Error("Ownership unavailable");
+      return new Map(seats.map(s => [s.id, "sample-wing"]));
+    }, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+    const server = createServer((req, res) => { void handler(req, res, undefined as never); });
+    server.listen(0, "127.0.0.1"); await once(server, "listening");
+    close.push(() => new Promise(resolve => server.close(() => resolve())));
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    for (const fails of [true, false]) {
+      broken = fails;
+      for (const path of ["/matches", "/matches/top"]) {
+        const response = await fetch(origin + path);
+        expect(response.status).toBe(200);
+        const { matches } = await response.json();
+        expect(matches.map((match: HistorySummary) => match.id)).toEqual(ids);
+        for (const [i, match] of matches.entries()) {
+          expect(match.seats[0].handle).toBe("sample-reed");
+          if (broken && (i === 0 || failure === "current owner")) expect(match.seats[0]).not.toHaveProperty("rosterUser");
+          else expect(match.seats[0].rosterUser).toBe("sample-wing");
+        }
+      }
+      if (broken) expect((await fetch(origin + "/matches/users")).status).toBe(503);
+    }
+  });
+
   it("reads each recording's lobby once for both the handle fill and the match type", async () => {
     const id = "2026-10-31T10-20-00-000Z-1";
     const source: HistorySource = {

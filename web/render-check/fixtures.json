@@ -3,7 +3,7 @@
  "fixtures": {
   "/matches/users/links/replay/2026-11-17T08-55-08-583Z-151632020035470": {
    "label": "Confirmed roster seats in the sample replay",
-   "body": { "handles": [["SampleIris", "SampleIris"], ["SampleMoth", "SampleMoth"], ["SampleReed", "SampleReed"]] }
+   "body": { "handles": [["SampleIris", "SampleIris"], ["SampleMoth", "SampleMoth"], ["SampleReed", "SampleReed"], ["SampleFern", "SampleFern"]] }
   },
   "/matches/users/links/replay/2026-11-16T09-21-43-735Z-11240848029112": {
    "label": "Confirmed roster seats in the sample replay",
@@ -40,7 +40,7 @@
     "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/14.replay.jsonl",
     "snapshot/bodies/2026-11-17T08-55-08-583Z-151632020035470-6000-6110/15.replay.jsonl"
    ],
-   "sha256": "0e5aad0bde528c3a639f455063a10f627c56b1d94c727406666e952658beba30"
+   "sha256": "ce915e59d66b18c41bbb5ecb08cb4d26991ba2c0a8e06a03b13b2e2de85362bf"
   },
   "/matches/2026-11-17T08-55-08-583Z-151632020035470": {
    "label": "Free-for-all replay's full record, left out: it is 8.4 MB and the page stops reading a record after 256 KiB, as it does on a 404",

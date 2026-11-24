@@ -252,10 +252,22 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
       const parts = [...run.children].filter(p => !p.matches(".d1p-sr"));
       const words = parts.map(p => p.textContent).join("").trim();
       const tile = run.closest(".aw-tile");
+      if (tile) {
+        // The stretched replay link speaks the plain names and models. A linked builder's name
+        // is spoken by its own control instead. A title on their common container is not enough.
+        const replay = tile.querySelector("a.aw-tile-replay[href]");
+        if (!replay || replay.closest('[aria-hidden="true"]')) continue;
+        const label = replay.getAttribute("aria-label") ?? "";
+        const builder = run.querySelector("b"), link = builder?.querySelector("a[href]");
+        if (link) {
+          const spoken = link.getAttribute("aria-label") ?? link.textContent;
+          if (link.closest('[aria-hidden="true"]') || !spoken || spoken !== builder!.textContent
+            || !label.includes(parts.filter(p => p !== builder).map(p => p.textContent).join("").trim())) continue;
+        } else if (!label.includes(words)) continue;
+      }
       if (cs.textOverflow !== "ellipsis" || cs.overflowX !== "hidden" || !["pre", "nowrap"].includes(cs.whiteSpace)
         || !["block", "inline-block"].includes(cs.display) || parts.some(p => style(p).display !== "inline")
-        || !words || !(run.title === words || run.title.startsWith(`${words} (`)) || run.closest('[aria-hidden="true"]')
-        || (tile && !tile.getAttribute("aria-label")?.includes(words))) continue;
+        || !words || !(run.title === words || run.title.startsWith(`${words} (`)) || run.closest('[aria-hidden="true"]')) continue;
       // A box too narrow even for a letter and its ellipsis can show a plain clip instead.
       if (run.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) >= 1.5 * parseFloat(cs.fontSize) - 0.5) designedEnds.add(run);
     }
