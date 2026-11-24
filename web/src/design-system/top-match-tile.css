@@ -29,14 +29,14 @@
 /* a player's name sits in its place on the line (aw-who), no box of its own except where a line never wraps (below) */
 .aw-who { display: contents; }
 /* the builder's name, exactly as stored, before the model */
-.aw-name > b { font-weight: var(--aw-bold); color: var(--aw-ink-bright); }
+.aw-name b { font-weight: var(--aw-bold); color: var(--aw-ink-bright); }
 .aw-tags { flex: none; display: inline-flex; flex-wrap: wrap; gap: var(--aw-space-1); }
 .aw-badge { display: inline-flex; align-items: center; gap: 1px; padding: 0 var(--aw-space-1); border-radius: var(--aw-radius-badge); background: var(--aw-raise); font-size: var(--aw-text-badge-sm); line-height: var(--aw-lh-badge-sm); font-weight: var(--aw-strong); letter-spacing: var(--aw-track-badge); text-transform: uppercase; white-space: nowrap; color: var(--aw-ink-2); }
 .aw-bolt { display: inline-block; flex: none; width: 6px; height: 9px; margin-left: 1px; background: currentColor; clip-path: path("M3.6 0 0 5h2.4L1.8 9 6 3.6H3.4z"); }
 @media (forced-colors: active) { .aw-bolt { forced-color-adjust: none; background: CanvasText; } }
 /* the winner's band: the only colony colour on the tile, drawn as Recordings draws a winner cell */
 .aw-player.is-winner { margin: 0 calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad); background: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); box-shadow: inset 2px 0 0 var(--tile-accent); }
-.aw-player.is-winner .aw-name, .aw-player.is-winner .aw-name > b { color: var(--tile-accent); }
+.aw-player.is-winner .aw-name, .aw-player.is-winner .aw-name b { color: var(--tile-accent); }
 /* a side fielding two seats: one edge rule per seat at the line's left edge, in the tile's padding, so the line's width is unchanged.
    The winner's in its colony colour (its single rule doubled); the other side's in ink-3. */
 .aw-player.is-team { --seat-ink: var(--aw-ink-3); margin: 0 calc(-1 * var(--tile-pad)); padding: 0 var(--tile-pad); box-shadow: none;
@@ -53,7 +53,7 @@
   background-position: 0 0.125rem, 4px 0.125rem; background-size: 2px calc(100% - 0.25rem), 2px calc(100% - 0.25rem); }
 .aw-side.is-winner { background-color: color-mix(in srgb, var(--tile-accent) var(--aw-winner-fill), transparent); }
 .aw-side.is-winner > .aw-player { --seat-ink: var(--tile-accent); }
-.aw-side.is-winner .aw-name, .aw-side.is-winner .aw-name > b { color: var(--tile-accent); }
+.aw-side.is-winner .aw-name, .aw-side.is-winner .aw-name b { color: var(--tile-accent); }
 /* a side, or a seat group, of three or four alike seats: still one mark per seat, in the same 6 px column pair the two-seat
    side uses, so the line's text keeps its x. The marks stand two across and two down, each 2 px wide and half the line less
    0.1875rem tall (7 px at default text), 0.125rem apart and 0.125rem from the line's top and bottom, so they scale with the line
@@ -211,3 +211,9 @@
 @media (max-width: 17.999em) and (min-width: 320px) {
   .aw-lines .aw-name { padding-inline-end: 0; margin-inline-end: 0; }
 }
+
+/* The replay owns the tile except for the in-place player links above it. */
+.aw-tile { position: relative; isolation: isolate; }
+.aw-tile-replay { position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
+.aw-tile:has(.aw-tile-replay:focus-visible) { border-color: var(--aw-accent); }
+.aw-name a { position: relative; z-index: 2; color: inherit; text-decoration: underline; text-underline-offset: .2em; }

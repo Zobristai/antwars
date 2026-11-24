@@ -1,3 +1,4 @@
+import { readRosterHandles } from "./ui/user-link.ts";
 import { mountDeckHud } from "./ui/deck/hud.ts";
 import type { HudView, Mounted } from "./ui/types.ts";
 import type { ModeCopy } from "./replay.ts";
@@ -388,13 +389,15 @@ export class Overlays {
   private readonly hudBoard: HudView["board"];
   private hudMode: ModeCopy | null = null;
   private hudStalled = false;
+  private rosterHandles?: ReadonlyMap<string, string>;
+  private rosterRead?: AbortController;
   private hudShare: string | null = null;
   /** The scene option `overlays`: whether the HUD shows. */
   private visible = true;
   private hudView(): HudView {
     return {
       frame: this.hudFrame, connection: this.hudConnection, board: this.hudBoard, selected: this.selected, selectedAgent: this.selectedAgent,
-      mode: this.hudMode, stalled: this.hudStalled, share: this.hudShare,
+      mode: this.hudMode, stalled: this.hudStalled, share: this.hudShare, rosterHandles: this.rosterHandles,
     };
   }
   private publishHud(): void {
@@ -472,7 +475,14 @@ export class Overlays {
   /** The public link the result's Share on X names (source.ts watchUrl), as the board's source gives it. */
   setShare(url: string | null): void {
     if (url === this.hudShare) return;
+    this.rosterRead?.abort(); this.rosterHandles = undefined;
     this.hudShare = url; this.publishHud();
+    const win = this.parent.ownerDocument.defaultView;
+    if (!url || !win?.fetch) return;
+    const read = this.rosterRead = new AbortController();
+    void readRosterHandles(url, win.fetch.bind(win), AbortSignal.any([read.signal, AbortSignal.timeout(15_000)])).then(handles => {
+      if (!read.signal.aborted) { this.rosterHandles = handles; this.publishHud(); }
+    }).catch(() => { /* With no proof the names remain plain text. */ });
   }
 
   /**

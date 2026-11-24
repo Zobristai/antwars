@@ -1,6 +1,7 @@
 // One name/badge/rating style for every row that names a player or model:
 // the Leaderboard, Matches' Live now and its Recordings all draw a name, its level/Fast
 // badges and, where shown, its rating through here, each place keeping its own other fields. No page keeps its own copy.
+import { userName } from "../ui/user-link.ts";
 import { h } from "../ui/dom.ts";
 import type { LeaderboardRow } from "../leaderboard.ts";
 import { benchmarkLabel } from "../leaderboard-page/view.ts";
@@ -36,7 +37,7 @@ export function nameNodes(doc: Document, parts: ShownName): Node[] {
  * level and Fast badges, only with a model; a builder that named no model shows its username alone. The username and model
  * are one span, so the badges stay one unit after them as on every other row. */
 export function builderNameNodes(doc: Document, row: Pick<LeaderboardRow, "displayName" | "model" | "thinkingLevel" | "serviceTier">): Node[] {
-  const name = h(doc, "span", undefined, row.displayName);
+  const name = h(doc, "span"); name.append(userName(doc, row.displayName, row.displayName));
   const named = row.model ? seatModelName(row.model, row.displayName) : null;
   if (named === null || named === row.displayName) return [name];
   name.append(" ", h(doc, "span", "d1p-mname", named));

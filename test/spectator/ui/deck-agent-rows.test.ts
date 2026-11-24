@@ -37,7 +37,7 @@ describe("the team section's agent rows", () => {
 
   it("writes a row's badge, then its line in the Matches order: name, model, badges, asterisk, rating and result, and nothing of its order or calls", () => {
     const make = body("makeRow");
-    expect(make).toContain("button.append(badge, who);");
+    expect(make).toContain("surface.append(button, badge, who);");
     expect(make).toContain("who.append(titleBox, modelBox, tags, ast, elo, result);");
     // The rating is the figure alone: no "Rating" word on the row.
     expect(body("writeRow")).toContain('setText(node.elo, row.elo ?? "");');
@@ -59,11 +59,11 @@ describe("the team section's agent rows", () => {
     expect(elo).not.toMatch(/var\(--aw-ink|#7ddc9a|font-size|padding|border-radius|font-weight/);
     expect(CSS.indexOf(".d1-elo {")).toBeGreaterThan(CSS.indexOf(".d1-tag {"));
     expect(CSS).not.toMatch(/\.d1-elo \{ font-size|, \.d1-elo \{/);
-    // No rating, no badge; the row's accessible label is unchanged.
+    // No rating, no badge; selection still has a label independent of the name link.
     const write = body("writeRow");
     expect(write).toContain("setHidden(node.elo, row.elo === null);");
-    expect(write).toContain('setAttr(node.button, "aria-label", row.label);');
-    expect(make).toContain('for (const child of button.children) child.setAttribute("aria-hidden", "true");');
+    expect(write).toContain('setAttr(node.button, "aria-label", linked ? row.linkedPickLabel : row.label);');
+    expect(make).toContain('badge.setAttribute("aria-hidden", "true");');
   });
 
   it("keeps the row's existing behaviour: pointing or focus lights its squad and order tile, choosing opens its card", () => {

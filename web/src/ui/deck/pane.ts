@@ -9,6 +9,7 @@ import type { AgentLineModel } from "../hud-model.ts";
 import { tps } from "../hud-model.ts";
 import { ICON, crownIcon, markIcon, orderIcon } from "../icons.ts";
 import { h, setAttr, setHidden, setMarkup, setText } from "../dom.ts";
+import { userName, rosterHandle } from "../user-link.ts";
 import { keep } from "../format.ts";
 import { OFFER_TEXT } from "../../replay.ts";
 import { SCORE_COPY } from "../../story.ts";
@@ -76,6 +77,7 @@ interface RowNode {
 }
 
 export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks): Teams {
+  let eligible: ReadonlyMap<string, string> | undefined;
   const colonies = hooks.economy.map((_, c) => c);
   const win = doc.defaultView!;
   const listeners: (() => void)[] = [];
@@ -281,7 +283,8 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   const rowNodes = new Map<number, RowNode>();
   const makeRow = (index: number): RowNode => {
     const item = h(doc, "li", "d1-agent-item");
-    const button = h(doc, "button", "d1-agent");
+    const surface = h(doc, "div", "d1-agent");
+    const button = h(doc, "button", "d1-agent-pick");
     button.type = "button";
     const badge = h(doc, "span", "d1-badge");
     const who = h(doc, "span", "d1-who"), title = h(doc, "span", "d1-title"), model = h(doc, "span", "d1-model");
@@ -300,9 +303,11 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // cyan badge (the figure, its "± RD" in the tip), then the colony's result once the match has ended.
     const elo = h(doc, "span", "d1-tag d1-elo"), result = h(doc, "span", "d1-tag d1-outcome");
     who.append(titleBox, modelBox, tags, ast, elo, result);
-    button.append(badge, who);
-    for (const child of button.children) child.setAttribute("aria-hidden", "true");
-    item.append(button);
+    // The selection button speaks the row's details. Only a separate name link speaks its own title.
+    for (const detail of [modelBox, tags, ast, elo, result]) detail.setAttribute("aria-hidden", "true");
+    badge.setAttribute("aria-hidden", "true");
+    surface.append(button, badge, who);
+    item.append(surface);
     listen(ast, "pointerenter", () => showTip(ast));
     listen(ast, "click", e => { e.stopPropagation(); showTip(ast); });
     listen(ast, "pointerleave", leaveTip);
@@ -319,15 +324,21 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     return node;
   };
 
-  const writeRow = (node: RowNode, row: Row) => {
+  const seatLink = (board: Board | null, index: number | undefined) =>
+    index === undefined ? null : rosterHandle(eligible, board?.agents[index]?.identity?.displayName);
+
+  const writeRow = (node: RowNode, row: Row, handle: string | null) => {
     const isSelected = row.index === selectedAgent;
-    const written = [row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.elo, row.rd, row.result, row.label, isSelected].join("|");
+    const written = [handle, row.shade, row.title, row.badges.join(" "), row.model, row.modelBadges.join(" "), row.asterisk, row.elo, row.rd, row.result, row.label, isSelected].join("|");
     if (node.written === written) return;
     node.written = written;
     node.item.className = `d1-agent-item c${row.colony}${isSelected ? " is-selected" : ""}`;
     setAttr(node.button, "aria-current", isSelected ? "true" : null);
     setMarkup(node.badge, row.badge);
-    setText(node.title, row.title);
+    const name = userName(doc, handle, row.title);
+    const linked = name.hasAttribute("href");
+    setAttr(node.title, "aria-hidden", linked ? null : "true");
+    node.title.replaceChildren(name);
     node.title.title = row.title;
     // Provider text is set as text, never markup.
     node.tags.replaceChildren(...row.badges.map(text => h(doc, "span", "d1-tag", text)));
@@ -347,7 +358,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     setText(node.result, row.result ?? "");
     setHidden(node.result, row.result === null);
     node.result.className = `d1-tag d1-outcome c${row.colony}`;
-    setAttr(node.button, "aria-label", row.label);
+    setAttr(node.button, "aria-label", linked ? row.linkedPickLabel : row.label);
   };
 
   /** Grouped identities retain one line; their existing badges open each seat's Selected card. */
@@ -401,15 +412,15 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   };
 
   /** The one player's line in its colony's head, in the Matches order; none hides it. */
-  const writePlayer = (team: (typeof teamNodes)[number], p: Player | null) => {
-    const key = p === null ? "" : JSON.stringify(p);
+  const writePlayer = (team: (typeof teamNodes)[number], p: Player | null, handle: string | null) => {
+    const key = p === null ? "" : JSON.stringify([p, handle]);
     if (key === team.playerKey) return;
     team.playerKey = key;
     setHidden(team.player, p === null);
     team.playerRd = p?.rd ?? "";
     if (tipFor === team.playerElo && !team.playerRd) hideTip();
     if (p === null) return;
-    setText(team.playerTitle, p.name);
+    team.playerTitle.replaceChildren(userName(doc, handle, p.name));
     team.playerTitle.title = p.name;
     setText(team.playerModel, p.model);
     team.playerModel.title = p.model;
@@ -430,19 +441,19 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   };
 
   /** Each colony's small agent rows under its own head, its member icons and any one player beside its name; one player or an empty colony shows no rows. */
-  const writeGroups = (groups: readonly Group[]) => {
+  const writeGroups = (groups: readonly Group[], board: Board | null) => {
     for (const colony of colonies) {
       const g = groups.find(group => group.colony === colony);
       const team = teamNodes[colony]!;
       const n = g?.rows.length ?? 0;
       writeMembers(team, g?.members ?? [], g?.player !== null && g?.player !== undefined);
-      writePlayer(team, g?.player ?? null);
+      writePlayer(team, g?.player ?? null, g?.player ? seatLink(board, g.members[0]?.index) : null);
       setHidden(team.rows, n === 0);
       if (!g) { team.rows.replaceChildren(); continue; }
       const items = g.rows.map(row => {
         let node = rowNodes.get(row.index);
         if (!node) { node = makeRow(row.index); rowNodes.set(row.index, node); }
-        writeRow(node, row);
+        writeRow(node, row, seatLink(board, row.index));
         return node.item;
       });
       if (items.length !== team.rows.childElementCount || items.some((item, i) => team.rows.children[i] !== item)) team.rows.replaceChildren(...items);
@@ -602,7 +613,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
 
   let cardKey = "";
   let historyKey = "";
-  const writeSelected = (sel: Selected) => {
+  const writeSelected = (sel: Selected, board: Board | null) => {
     place(sel);
     setHidden(card, sel.kind !== "agent");
     setHidden(antCard, sel.kind !== "ant");
@@ -613,12 +624,13 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       return;
     }
     if (sel.kind !== "agent") return;
-    const keyNow = [sel.key, sel.title, sel.model, sel.badges.join(" "), sel.asterisk, sel.sub, sel.order, sel.target, sel.lines.join("\n")].join("|");
+    const handle = seatLink(board, sel.index);
+    const keyNow = [sel.key, handle, sel.title, sel.model, sel.badges.join(" "), sel.asterisk, sel.sub, sel.order, sel.target, sel.lines.join("\n")].join("|");
     if (keyNow !== cardKey) {
       cardKey = keyNow;
       card.style.setProperty("--d1-side", COLONY_CSS[sel.colony]);
       setMarkup(cardBadge, sel.badge);
-      setText(cardName, sel.title);
+      cardName.replaceChildren(userName(doc, handle, sel.title));
       setText(cardModel, sel.model);
       setHidden(cardModel, sel.model === "");
       cardTags.replaceChildren(...sel.badges.map(text => h(doc, "span", "d1-tag", text)));
@@ -727,6 +739,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     result: resultModal.dialog,
     offer,
     update(view, connecting) {
+      if (eligible !== view.rosterHandles) { eligible = view.rosterHandles; lastSecond = -1; }
       const frame: Frame | null = view.frame;
       const b = frame?.board ?? null;
       writeNames(b?.setup ?? null);
@@ -754,7 +767,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       if (offer.getAttribute("href") !== href) offer.href = href;
       if (none) {
         if (rowNodes.size) rowNodes.clear();
-        writeGroups([]);
+        writeGroups([], null);
         lastSecond = -1; lastChat = null; lastCount = -1;
       } else {
         // Rows change at most once a playback second, or when the chat, the count, the choice or the result moves.
@@ -764,7 +777,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         if (second !== lastSecond || newest !== lastChat || b!.agents.length !== lastCount || selection !== lastSelection || b!.result !== lastResult) {
           lastSecond = second; lastChat = newest; lastCount = b!.agents.length; lastSelection = selection; lastResult = b!.result;
           // An asterisk's explanation goes with its asterisk (writeRow); a member's tip stays while its icon does.
-          writeGroups(roster(frame!).groups);
+          writeGroups(roster(frame!).groups, b);
           lastStory = -1;
         }
       }
@@ -786,7 +799,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       }
       const sel = selected(frame, view.selected, view.selectedAgent);
       if (sel.kind !== "agent" || sel.index !== targetFor) { if (targetFor >= 0) { targetFor = -1; light(-1); } }
-      writeSelected(sel);
+      writeSelected(sel, b);
       // A row chosen opens its card with the focus in it; a pick on the board leaves the focus where it is.
       const subject = sel.kind === "none" ? "" : sel.key;
       if (subject !== lastSubject) {
@@ -794,7 +807,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
         if (subject !== "" && focusCard) selectedEl.focus();
         focusCard = false;
       }
-      resultModal.update(frame, view.share ?? null);
+      resultModal.update(frame, view.share ?? null, eligible);
     },
     destroy() {
       for (const off of listeners.splice(0)) off();

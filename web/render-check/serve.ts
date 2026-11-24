@@ -30,7 +30,7 @@ export interface SnapshotIndex { recordedFrom: string; recordedAt: string; respo
  * readable text (replay-text.ts), packed into the bytes the site serves; sha256 is the digest those bytes must have,
  * checked when the fixtures are read.
  */
-export interface Fixture { label: string; status?: number; type?: string; body?: unknown; file?: string; files?: string[]; sha256?: string }
+export interface Fixture { label: string; pending?: boolean; status?: number; type?: string; body?: unknown; file?: string; files?: string[]; sha256?: string }
 /** A fixture as served: its files are read once and checked, and named by their full paths. */
 export interface LoadedFixture extends Fixture { bytes?: Buffer }
 export type LoadedFixtures = Record<string, LoadedFixture>;
@@ -118,6 +118,7 @@ export async function serveSite(context: BrowserContext, o: ServeOptions): Promi
     const fixture = o.fixtures[key];
     if (fixture) {
       served.fixturesUsed.add(fixture.label);
+      if (fixture.pending) return; // Deliberately unanswered until the loading-state render closes its context.
       const body = fixture.bytes ?? Buffer.from(JSON.stringify(fixture.body ?? null));
       return route.fulfill({ status: fixture.status ?? 200, contentType: fixture.type ?? "application/json", body });
     }

@@ -17,11 +17,13 @@ export function isLandingPage(url: URL): boolean {
  * On a local match's server (localMatch) the front page is that match's spectator view, not the landing. */
 export async function dispatchPage(url: URL, start: {
   leaderboard(): Promise<unknown>;
+  users(): Promise<unknown>;
   matches(): Promise<unknown>;
   landing(): Promise<unknown>;
   spectator(): Promise<unknown>;
 }, localMatch = false): Promise<void> {
   if (isLeaderboardPage(url)) { await start.leaderboard(); return; }
+  if (isPage(url, "users")) { await start.users(); return; }
   if (isMatchesPage(url)) { await start.matches(); return; }
   if (isLandingPage(url) && !localMatch) { await start.landing(); return; }
   await start.spectator();

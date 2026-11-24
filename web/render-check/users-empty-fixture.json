@@ -1,0 +1,10 @@
+{
+ "fixtures": {
+  "/matches/users": {
+   "label": "Users empty: invented directory fixture",
+   "body": {
+    "users": []
+   }
+  }
+ }
+}

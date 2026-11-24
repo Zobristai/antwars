@@ -224,7 +224,7 @@ const seatWho = (seat: Pick<Recording["seats"][number], "modelLabel" | "handle">
  * house model, whose model name leads), the model it reported (none for a builder that named none), then its level and
  * Fast badges (only with a model), by kind, so only the speed tier draws as Fast (matches.ts badgeGroup). The rating, the
  * seat count and the colony's result follow on the line (matches.ts). */
-export interface PlayerParts { readonly user: string | null; readonly model: string | null; readonly badges: BadgeKinds }
+export interface PlayerParts { readonly rosterUser?: string | null; readonly user: string | null; readonly model: string | null; readonly badges: BadgeKinds }
 
 /** "model unknown": a recorded seat with neither a model nor a handle. */
 export const MODEL_UNKNOWN = "model unknown";
@@ -253,8 +253,8 @@ export function colonySeats(seats: Recording["seats"], colonies = 2): readonly (
   const entries = (colony: number) => {
     const list = seats.filter(seat => seat.colony === colony).sort((a, b) => a.seat - b.seat)
       .map((seat): SeatEntry => {
-        const parts = recordedPlayer(seat);
-        return { who: JSON.stringify([seatWho(seat), parts.user, parts.model]), parts, rating: seat.startRating ?? null };
+        const parts = { ...recordedPlayer(seat), ...(seat.rosterUser ? { rosterUser: seat.rosterUser } : {}) };
+        return { who: JSON.stringify([seatWho(seat), parts.user, parts.model, parts.rosterUser]), parts, rating: seat.startRating ?? null };
       });
     return list.length ? list : null;
   };

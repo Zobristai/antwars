@@ -6,6 +6,10 @@ void dispatchPage(new URL(window.location.href), {
     const { mountLeaderboardPage } = await import("./page.ts");
     mountLeaderboardPage(document, window);
   },
+  users: async () => {
+    const { mountUsersPage } = await import("../users-page/page.ts");
+    mountUsersPage(document, window);
+  },
   matches: async () => {
     const { mountMatchesPage } = await import("../matches-page/page.ts");
     mountMatchesPage(document, window);

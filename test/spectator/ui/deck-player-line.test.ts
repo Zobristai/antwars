@@ -34,7 +34,7 @@ function mounted() {
   const economy = [port.doc.createElement("div"), port.doc.createElement("div")] as unknown as [HTMLElement, HTMLElement];
   const teams = mountTeams(port.doc, actions, { search: () => "", economy });
   for (const team of teams.teams) port.body.append(team as unknown as ElementPort);
-  const update = (frame: Frame) => teams.update({ frame, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView, false);
+  const update = (frame: Frame, rosterHandles: ReadonlyMap<string, string> | undefined = new Map([["kite", "kite"]])) => teams.update({ frame, rosterHandles, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView, false);
   const team = (colony: 0 | 1) => teams.teams[colony] as unknown as ElementPort;
   /** A part's visible words: hidden parts and screen-reader-only text left out. */
   const parts = (node: ElementPort): string => node.hidden ? "" : node.tag === "#text" ? node.textContent
@@ -48,12 +48,30 @@ const kite = { displayName: "kite", elo: 1540.4, rd: 87.2 };
 const house = { displayName: "antwars/gpt-6-luna", elo: 1979 };
 
 describe("a colony panel's player line", () => {
+  it("keeps unconfirmed public-looking names as plain text, then links only the confirmed seat", () => {
+    const m = mounted(), frame = frameOf([agent(0, {displayName: "sample-orbit"}, ""), agent(1, {displayName: "sample-ray"}, "")]);
+    m.update(frame, new Map());
+    expect(m.team(0).byClass("aw-user-link")).toHaveLength(0);
+    m.update(frame, new Map([["sample-ray", "sample-wing"]]));
+    expect(m.team(0).byClass("aw-user-link")).toHaveLength(0);
+    expect(m.team(1).byClass("aw-user-link").map(a => a.href)).toContain("/?page=users&user=sample-wing");
+  });
+
   it("reads name, model, level and Fast, then the cyan figure alone, in each agent row; no Rating word, no quiet level", () => {
     const m = mounted();
     m.update(frameOf([agent(0, house, "openai/gpt-6-luna"), agent(1, kite, "openai/gpt-6.1-terra", { thinkingLevel: "high", serviceTier: "fast" })]));
     const rows = [0, 1].map(colony => m.team(colony as 0 | 1).byClass("d1-who")[0]!);
     expect(rows.map(m.shown)).toEqual(["GPT-6 Luna max Fast 1979", "kite GPT-6.1 Terra high Fast 1540"]);
     expect(rows[1]!.children.filter(part => !part.hidden).map(part => part.className)).toEqual(["d1-title-box", "d1-model-box", "d1-tag d1-elo"]);
+    const builder = m.team(1).byClass("aw-user-link")[0]!;
+    expect(builder.href).toBe("/?page=users&user=kite");
+    const pick = m.team(1).byClass("d1-agent-pick")[0]!;
+    expect(pick.getAttribute("aria-label")).toMatch(/^Select agent.*Rating 1540.*badge/);
+    expect(pick.getAttribute("aria-label")).not.toContain("kite");
+    expect(rows[1]!.byClass("d1-title")[0]!.getAttribute("aria-hidden")).toBeNull();
+    expect(rows[0]!.byClass("d1-title")[0]!.getAttribute("aria-hidden")).toBe("true");
+    expect(pick.contains(builder)).toBe(false); pick.click(); expect(m.picked).toEqual([1]);
+    expect(m.team(0).byClass("aw-user-link").length).toBe(0);
     const all = m.team(0).textContent + m.team(1).textContent;
     expect(all).not.toContain("Rating");
     expect(all).not.toContain("(high)");
@@ -82,7 +100,7 @@ describe("a colony panel's player line", () => {
     let stopped = false;
     elo.fire("click", { stopPropagation: () => { stopped = true; } });
     expect([stopped, m.tip().hidden, m.picked]).toEqual([true, false, []]);
-    const row = m.team(1).byClass("d1-agent")[0]! as ElementPort & { matches(selector: string): boolean };
+    const row = m.team(1).byClass("d1-agent-pick")[0]! as ElementPort & { matches(selector: string): boolean };
     row.matches = selector => selector === ":focus-visible";
     row.fire("blur"); expect(m.tip().hidden).toBe(true);
     row.fire("focus");
@@ -102,6 +120,7 @@ describe("a colony panel's player line", () => {
     m.update(frameOf([...seats(0, "antwars/k3-1-pro-highspeed", { elo: 1662, rd: 60 }, "k"), ...seats(1, "kite", kite, "openai/gpt-6.1-terra", { thinkingLevel: "max" })]));
     const head = (colony: 0 | 1) => m.team(colony).byClass("d1-team-player")[0]!;
     expect([m.shown(head(0)), m.shown(head(1))]).toEqual(["K3.1 Pro Highspeed high 1662 ×4", "kite GPT-6.1 Terra max 1540 ×4"]);
+    expect(head(1).byClass("aw-user-link")[0]!.href).toBe("/?page=users&user=kite");
     expect(m.team(0).byClass("d1-agent")).toHaveLength(0);
     expect(m.team(0).byClass("d1-member")).toHaveLength(4);
     const elo = head(1).byClass("d1-elo")[0]!;

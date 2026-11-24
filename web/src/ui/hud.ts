@@ -803,7 +803,7 @@ export function mountHud(context: HudHost): Mounted<HudView> {
       return;
     }
     paintToast(frame, b);
-    resultModal.update(frame, view.share ?? null);
+    resultModal.update(frame, view.share ?? null, view.rosterHandles);
     paintCard(view, b);
     agentsPanel.update(frame, view.selected, view.selectedAgent);
   }

@@ -37,7 +37,7 @@ describe("a builder row's model on the Leaderboard", () => {
     // The model is its own regular-weight span inside the name, after the username, before the badges.
     const builder = shown.table!.querySelector("tbody")!.children[1]!.children[1]!;
     expect(builder.children.map(part => part.className)).toEqual(["", "d1p-tags"]);
-    expect(builder.children[0]!.children.filter(part => part.tag !== "#text").map(part => [part.className, part.textContent])).toEqual([["d1p-mname", "GPT-6.1 Terra"]]);
+    expect(builder.children[0]!.children.filter(part => part.tag !== "#text").map(part => [part.className, part.textContent])).toEqual([["aw-user-link", builder.children[0]!.children[0]!.textContent], ["d1p-mname", "GPT-6.1 Terra"]]);
   });
 
   it("leaves house rows, every column and head, the row order and the stacked layout as they were", () => {

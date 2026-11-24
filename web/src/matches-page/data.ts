@@ -49,6 +49,8 @@ const recordingRow = z.object({
     thinkingLevel: z.string().nullable().optional().transform(value => value ?? null),
     serviceTier: z.string().nullable().optional().transform(value => value ?? null),
     handle: z.string().nullable().optional().transform(value => value ?? null),
+    // An older server offers no proof: display the recorded name, but do not link it.
+    rosterUser: z.string().nullable().optional(),
     // The seat's rating as of the match's start, stored on records made from this build on; null on older records.
     startRating: shownRating })),
   status: z.enum(["complete", "partial", "unavailable"]), unavailable: z.array(z.string()),

@@ -33,6 +33,8 @@ export function storedRecording(packets: readonly Uint8Array[], id = "2026-10-21
 /** What a server holding exactly this one stored match answers for its history, record and recording; null otherwise. */
 export function storedHistory(path: string, stored: StoredRecording): { type: string; body: string | Uint8Array } | null {
   if (path === "/matches") return { type: "application/json", body: JSON.stringify({ matches: [{ id: stored.id }], nextPageToken: null }) };
+  // The generated recording has no verified account owners.
+  if (path === `/matches/users/links/replay/${stored.id}`) return { type: "application/json", body: JSON.stringify({ handles: [] }) };
   // Result ticks name the simulation step; the page plays to the completed tick after it.
   if (path === `/matches/${stored.id}`) return { type: "application/json", body: JSON.stringify({ format: "antwar.match", version: 1, id: stored.id, result: { tick: stored.lastTick - 1 } }) };
   if (path === `/replays/${stored.id}`) return { type: "application/octet-stream", body: stored.bytes };

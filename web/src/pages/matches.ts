@@ -20,6 +20,7 @@ import { NO_BADGES, badgeWords, benchmarkBadges, hasBadges, type BadgeKinds } fr
 import { listedNames, liveRow, recordedColonies, recordingRows, recordingType, utcStamp } from "../ui/format.ts";
 import { PAGE_WORDS, pill } from "../ui/pages.ts";
 import { h, heldSpaces, leastShown } from "../ui/dom.ts";
+import { userName } from "../ui/user-link.ts";
 import { watchCut } from "../ui/cut.ts";
 import type { Mounted } from "../ui/types.ts";
 import { mountFrame, rebuild, stateLine, stateList } from "./chrome.ts";
@@ -275,7 +276,7 @@ function rowParts(doc: Document) {
   const playerLine = ({ parts, seats, rating }: SeatGroup, colony: number, result: ColonyResult | null, key: string) => {
     const node = h(doc, "span", "d1p-model");
     const name = h(doc, "span", "d1p-name");
-    if (parts.user !== null) name.append(h(doc, "span", "d1p-user", parts.user));
+    if (parts.user !== null) name.append(userName(doc, parts.user, parts.user, "d1p-user"));
     if (parts.user !== null && parts.model !== null) name.append(" ");
     if (parts.model !== null) name.append(h(doc, "span", "d1p-mname", parts.model));
     name.title = [parts.user, parts.model].filter(word => word !== null).join(" ");
@@ -710,7 +711,9 @@ function held(doc: Document, cls: string, text: string): HTMLElement {
 function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key: string): HTMLElement {
   const line = h(doc, "span", "d1p-rec-player");
   const name = h(doc, "span", "d1p-rec-name");
-  if (parts.user !== null) name.append(held(doc, "d1p-user", parts.user));
+  if (parts.user !== null) {
+    const link = userName(doc, parts.rosterUser, parts.user, "d1p-user"); link.replaceChildren(...heldSpaces(doc, parts.user)); name.append(link);
+  }
   if (parts.model !== null) name.append(held(doc, "d1p-mname", parts.user !== null ? ` ${parts.model}` : parts.model));
   const words = [parts.user, parts.model].filter(word => word !== null).join(" ");
   name.title = parts.badges.retired ? `${words} (${C.retiredBadge})` : words;

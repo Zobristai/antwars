@@ -1,3 +1,4 @@
+import { joinReads } from "../store/join-reads.js";
 import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
 import type { TestRecordings } from "../replays/test-recordings.js";
 /// <reference types="node" />
@@ -195,6 +196,7 @@ export interface Ratings {
     readonly mode?: RankedMode; readonly scope?: LeaderboardScope; readonly limit?: number; readonly cursor?: string;
     /** Also serve each row's model (LeaderboardEntry.model): the web page's read only, never the agents' tool. */
     readonly model?: boolean;
+    readonly signal?: AbortSignal;
   }): Promise<LeaderboardOutcome>;
 }
 
@@ -648,16 +650,16 @@ export function createRatings(
    * A test match's recording (src/replays/test-recordings.ts) is absent too, so its form entry keeps its result and links
    * no recording; its rating and record are unchanged.
    */
-  async function storedFormFacts(matchIds: readonly string[], withTimes: boolean):
+  async function storedFormFacts(matchIds: readonly string[], withTimes: boolean, signal?: AbortSignal):
     Promise<{ readonly replayIds: ReadonlyMap<string, string>; readonly times: ReadonlyMap<string, number | null> }> {
     const unique = [...new Set(matchIds)];
     if (unique.length === 0) return { replayIds: new Map(), times: new Map() };
     const withLobbies = withTimes || publicVisibility !== undefined;
     const paths = unique.flatMap((id) => withLobbies ? [`watchMatches/${id}`, `lobbies/${id}`] : [`watchMatches/${id}`]);
     // A transaction with no writes is rolled back: this is one batched read.
-    const docs = await store.transaction(async (read) => ({ result: await read(paths), writes: [] }));
+    const docs = await store.transaction(async (read) => ({ result: await read(paths), writes: [] }), signal);
     const visible = publicVisibility &&
-      await publicVisibility.lobbiesVisibleEach(new Map(unique.map((id) => [id, docs.get(`lobbies/${id}`) ?? null])));
+      await publicVisibility.lobbiesVisibleEach(new Map(unique.map((id) => [id, docs.get(`lobbies/${id}`) ?? null])), signal);
     const replayIds = new Map<string, string>();
     const times = new Map<string, number | null>();
     for (const id of unique) {
@@ -669,7 +671,7 @@ export function createRatings(
         times.set(id, lobby ? matchTime(lobby) : null);
       }
     }
-    const tests = testRecordings && replayIds.size > 0 ? await testRecordings.marked([...replayIds.values()]) : undefined;
+    const tests = testRecordings && replayIds.size > 0 ? await testRecordings.marked([...replayIds.values()], signal) : undefined;
     for (const [id, replayId] of replayIds) if (tests?.has(replayId)) replayIds.delete(id);
     return { replayIds, times };
   }
@@ -730,10 +732,11 @@ export function createRatings(
       // Storage boundaries stay internal. A public continuation names only a returned public row.
       try {
         while (publicRows.length <= limit) {
-          const page = await store.query(collection, { orderBy, direction: "DESCENDING", limit: limit + 1, startAfter, readTime });
+          options.signal?.throwIfAborted();
+          const page = await store.query(collection, { orderBy, direction: "DESCENDING", limit: limit + 1, startAfter, readTime, signal: options.signal });
           readTime ??= page.readTime;
           // One read checks the whole page; rows are still taken in order and only up to the cut.
-          const visible = publicVisibility && await publicVisibility.identitiesVisibleEach(page.rows.map((row) => idOf(row.path)));
+          const visible = publicVisibility && await publicVisibility.identitiesVisibleEach(page.rows.map((row) => idOf(row.path)), options.signal);
           for (const row of page.rows) {
             if (!visible || visible.get(idOf(row.path))) publicRows.push(row);
             if (publicRows.length > limit) break;
@@ -754,10 +757,10 @@ export function createRatings(
       const records = new Map(visibleRows.map(({ path, fields }) => [path, storedRecord(idOf(path), fields)]));
       const indexMode = isIndexMode(mode);
       const { replayIds, times } = await storedFormFacts(
-        visibleRows.flatMap(row => records.get(row.path)?.form.map(({ matchId }) => matchId) ?? []), indexMode);
-      const entries = await Promise.all(visibleRows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
+        visibleRows.flatMap(row => records.get(row.path)?.form.map(({ matchId }) => matchId) ?? []), indexMode, options.signal);
+      const entries = await joinReads(visibleRows.map(async ({ path, fields }): Promise<LeaderboardEntry> => {
         const identityId = idOf(path);
-        const identity = await identities.findById(identityId);
+        const identity = await identities.findById(identityId, options.signal);
         const record = records.get(path) ?? null;
         const displayName = identity?.displayName ?? placeholder(identityId);
         const benchmark = fields[HOUSE_RATING] !== undefined;

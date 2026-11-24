@@ -770,6 +770,8 @@ export interface Row {
   /** "± RD" beside the rating, shown on hover, tap or focus; "" where the stream carries none. */
   readonly rd: string;
   readonly result: ColonyResult | null;
+  /** Selection action and seat details when the title is spoken by a separate name link. */
+  readonly linkedPickLabel: string;
   /** Everything the row shows, for assistive technology: its visible title first, its badge's shape word last. */
   readonly label: string;
 }
@@ -887,9 +889,11 @@ export function roster(frame: Frame): Roster {
       const rd = rdShown(a.identity);
       // The accessible name leads with the shown name in full, then its badges.
       const shown = named ? [named.name, ...badges].join(" ") : title ? [title, ...badges].join(" ") : handle;
-      const label = [shown, e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", colonyNamesOf(b.setup)[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
+      const details = [e.elo ? `Rating ${e.elo}${rd ? ` ${rd}` : ""}` : "", colonyNamesOf(b.setup)[colony], beside ? namedText(beside) : "", asterisk ? "self-reported" : "",
         result ?? "", e.name || e.model ? `badge ${handle}` : "", e.idle ? "idle" : ""].filter(Boolean).join(" · ");
-      return { index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
+      const label = [shown, details].filter(Boolean).join(" · ");
+      const linkedPickLabel = ["Select agent", ...badges, details].filter(Boolean).join(" · ");
+      return { linkedPickLabel, index: e.index, colony, shade: e.shade, badge: e.badge, title, model, modelBadges, asterisk, badges, elo: e.elo, rd, result, label };
     });
     groups.push({ colony, heading: `${colonyNamesOf(b.setup)[colony]} · ${members.length} ${members.length === 1 ? "agent" : "agents"}`, player, members: members.map(member), rows });
   }

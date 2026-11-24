@@ -89,7 +89,10 @@ describe("one Score Band for every match", () => {
         selected.fire("keydown", { key: "Escape", preventDefault() {} }); show(frame);
         expect(doc.activeElement).toBe(first);
       } else {
-        for (const row of host.byClass("d1-agent").filter(visible)) {
+        const picks = host.byClass("d1-agent-pick").filter(visible);
+        expect(picks).toHaveLength(8);
+        for (const row of picks) {
+          expect(row.tag).toBe("button");
           expect(row.getAttribute("aria-label")).toContain("player-");
           expect(row.getAttribute("aria-label")).toMatch(/ · idle$/);
         }
@@ -125,7 +128,7 @@ describe("one Score Band for every match", () => {
     it(`shows all eight distinct agents and their badges in ${board}`, () => {
       const { host, show } = mount(board); show(scoreFrame(2, 8));
       expect(host.byClass("d1-team").filter(visible)).toHaveLength(2);
-      const rows = host.byClass("d1-agent").filter(visible);
+      const rows = host.byClass("d1-agent-pick").filter(visible);
       expect(rows).toHaveLength(8);
       for (let i = 0; i < 8; i++) expect(rows.some(r => r.getAttribute("aria-label")?.includes(`player-${i}`))).toBe(true);
       expect(host.byClass("d1-member").filter(visible)).toHaveLength(8);
@@ -143,7 +146,10 @@ describe("one Score Band for every match", () => {
       const names = host.byClass("d1-title").filter(visible), models = host.byClass("d1-model").filter(visible);
       expect(names.some(n => n.textContent === name && n.title === name)).toBe(true);
       expect(models.some(n => n.textContent === model && n.title === model)).toBe(true);
-      if (seats === 8) expect(host.byClass("d1-agent").some(n => n.getAttribute("aria-label")?.includes(model))).toBe(true);
+      if (seats === 8) {
+        const pick = host.byClass("d1-agent-pick").find(n => n.getAttribute("aria-label")?.includes(name));
+        expect(pick?.getAttribute("aria-label")).toContain(model);
+      }
     }
   });
   it("retains full hover text when one player owns all four team seats", () => {
@@ -259,7 +265,7 @@ describe("one Score Band for every match", () => {
     // Tab order: Site pages sits directly before the page links, with Watch marked current.
     expect(top.children.indexOf(pages) + 1).toBe(top.children.indexOf(nav));
     expect(nav.children.map(link => [link.textContent, link.getAttribute("aria-current")])).toEqual([
-      ["Watch", "page"], ["Matches", null], ["Leaderboard", null],
+      ["Watch", "page"], ["Matches", null], ["Leaderboard", null], ["Users", null],
     ]);
     pages.click();
     expect(root.dataset.menu).toBe("open");

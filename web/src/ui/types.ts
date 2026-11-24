@@ -16,6 +16,8 @@ export interface HudView {
   /** Playback has run out of data while the match still runs (Playback.underrun), as the board reports it. */
   readonly stalled: boolean;
   /** The public link the result's Share on X names (source.ts watchUrl); absent or null for a private match, or until set. */
+  /** Exact historical seat handles confirmed by the directory for the displayed match. Missing means no links. */
+  readonly rosterHandles?: ReadonlyMap<string, string>;
   readonly share?: string | null;
 }
 

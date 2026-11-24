@@ -164,7 +164,7 @@ describe("render check rules", () => {
       const name = `<span class="${tile ? "aw-name" : "d1p-rec-name"} aw-cut" title="${title}" `
         + `style="display:block;width:100px;overflow:hidden;white-space:pre;text-overflow:ellipsis;${css}">`
         + `<b>Riverbank</b><span> Very Long<span class="aw-held" style="display:inline-block"> M</span>odel</span></span>`;
-      return tile ? `<a class="aw-tile" aria-label="${words} versus Bob"><span class="aw-player"><span class="aw-who">${name}</span></span></a>`
+      return tile ? `<div class="aw-tile"><a class="aw-tile-replay" href="?replay" aria-label="${words} versus Bob"></a><span class="aw-player"><span class="aw-who">${name}</span></span></div>`
         : `<span class="d1p-rec-player"><span class="d1p-rec-who">${name}</span></span>`;
     };
     it.each(["tile", "recording"])("allows the %s name to shorten only as designed", async kind => {
@@ -178,10 +178,21 @@ describe("render check rules", () => {
       expect(rules(await judged(run(tile, "", "Wrong name"), 390, 32))).toContain("clipped");
     });
 
+    it("requires each part of a shortened tile name on the control that speaks it", async () => {
+      const linked = run(true).replace("<b>Riverbank</b>", '<b><a href="?page=users">Riverbank</a></b>')
+        .replace(`aria-label="${words} versus Bob"`, 'aria-label="Colony 1 Very Long Model versus Bob"');
+      expect(rules(await judged(linked, 320, 32))).toEqual([]);
+      for (const wrong of [linked.replace("<b><a", '<b><a aria-label="Different"'),
+        linked.replace("<b><a", '<b aria-hidden="true"><a'), linked.replace("Colony 1 Very Long Model", "Colony 1"),
+        run(true).replace(`aria-label="${words} versus Bob"`, 'aria-label="Replay"')]) {
+        expect(rules(await judged(wrong, 320, 32))).toContain("clipped");
+      }
+    });
+
     it("does not count a name’s cut state or held spaces as extra tile parts", async () => {
       const cut = run(true);
-      const whole = '<a class="aw-tile" aria-label="Bob versus Alice"><span class="aw-player"><span class="aw-who">'
-        + '<span class="aw-name" title="Bob"><b>Bob</b></span></span></span></a>';
+      const whole = '<div class="aw-tile"><a class="aw-tile-replay" href="?replay" aria-label="Bob versus Alice"></a><span class="aw-player"><span class="aw-who">'
+        + '<span class="aw-name" title="Bob"><b>Bob</b></span></span></span></div>';
       const parts = async (extra: string) => (await judged(`<ol class="grid"><li class="tile">${cut}${extra}</li>`
         + `<li class="tile">${whole}</li></ol>`, 320, 32)).failures.filter(f => f.rule === "part-uneven").map(f => f.element);
       expect(await parts("")).toEqual([]);
@@ -428,7 +439,7 @@ describe("render check widths and doubled text", () => {
     } finally { await page.close(); }
   });
 
-  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (124 renders)", () => {
+  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (124 existing renders and 60 Users renders)", () => {
     expect([...WIDTHS]).toEqual([1280, 390, 320]);
     expect([...TEXT_SIZES]).toEqual([16, 32]);
     expect(viewport(320)).toEqual({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
@@ -436,15 +447,15 @@ describe("render check widths and doubled text", () => {
     expect(viewport(1280)).toEqual({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
     expect(viewport(1280, 2)).toEqual({ viewport: { width: 640, height: 400 }, deviceScaleFactor: 2 });
     expect(viewport(1280, 4)).toEqual({ viewport: { width: 320, height: 200 }, deviceScaleFactor: 4 });
-    let count = 0;
+    const counts = { existing: 0, users: 0 };
     for (const _typeface of TYPEFACES) {
       for (const width of WIDTHS) for (const textSize of TEXT_SIZES) for (const surface of SURFACES) {
         if (!(surface.widths ?? WIDTHS).includes(width)) continue;
         if (!(surface.textSizes ?? TEXT_SIZES).includes(textSize)) continue;
-        count++;
+        counts[surface.id.startsWith("users-") ? "users" : "existing"]++;
       }
     }
-    expect(count).toBe(124);
+    expect(counts).toEqual({ existing: 124, users: 60 });
   });
 
   it("renders phones at 2x device scale so subpixel glyph wrapping in Liberation Sans at 320 px doubled text is caught", async () => {

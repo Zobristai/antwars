@@ -111,7 +111,7 @@ describe("the hero, as designed", () => {
     expect(p.root.querySelector(".fg-quiet")!.href).toBe("/?page=leaderboard&mode=house-1v1&board=2d");
     const nav = p.root.querySelector("nav")!;
     expect(nav.querySelectorAll("a").map(a => [a.textContent, a.href])).toEqual([
-      ["Watch", "/?watch=1&board=2d"], ["Matches", "/?page=matches&board=2d"], ["Leaderboard", "/?page=leaderboard&board=2d"],
+      ["Watch", "/?watch=1&board=2d"], ["Matches", "/?page=matches&board=2d"], ["Leaderboard", "/?page=leaderboard&board=2d"], ["Users", "/?page=users&board=2d"],
     ]);
     // The front page is no tab of its own.
     expect(nav.querySelectorAll("a").some(a => a.hasAttribute("aria-current"))).toBe(false);
@@ -264,6 +264,19 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     expect(name.textContent).toBe(`${handle} ${model.slice("synthetic/".length)}`);
     expect(name.title).toBe(name.textContent);
     p.dispose();
+  });
+
+  it("links a newest recording's historical name to the verified current name only", async () => {
+    const row = saved(3);
+    row.seats[0] = { ...row.seats[0]!, handle: "sample-former", rosterUser: "sample-current" };
+    row.seats[1] = { ...row.seats[1]!, handle: "sample-unknown", rosterUser: null };
+    const p = landing({ matches: () => Response.json({ matches: [row], nextPageToken: null }) });
+    try {
+      await vi.waitFor(() => expect(p.rows("Recordings")).toHaveLength(1));
+      expect(p.rows("Recordings")[0]!.byClass("d1p-user").map(n => [n.textContent, n.tag, n.href || null]).sort()).toEqual([
+        ["sample-former", "a", "/?page=users&user=sample-current"], ["sample-unknown", "span", null],
+      ]);
+    } finally { p.dispose(); }
   });
 
   it("gives each recording one Replay text link, as the Matches page does", async () => {

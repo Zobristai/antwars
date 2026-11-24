@@ -66,3 +66,5 @@ Failures already on main are held: each entry holds one finding (one rule on one
 ## Options
 
 `--dist <dir>` the built site (default `web/dist`); `--out <dir>`; `--surface <id>` (repeatable); `--fixtures <file>` extra labelled fixtures (repeatable); `--held <file>`; `--record`; `--update-held`; `--label <text>` names the build in the report. The browser is `CHROME_BIN`.
+
+The Users surfaces load the actual standalone directory with invented names. `users-loaded` arrives via a name link with one row open; `users-not-listed` shows an absent name above the list. `users-empty`, `users-loading` and `users-failed` hold each listing state. Empty and failed labels shorten only when their full wording is wider than the space available in the current font. The Free-for-all HUD excerpt uses invented player names in place of the recorded identities.

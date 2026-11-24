@@ -1,0 +1,8 @@
+{
+ "fixtures": {
+  "/matches/users": {
+   "label": "Users failed: invented directory fixture",
+   "status": 503
+  }
+ }
+}

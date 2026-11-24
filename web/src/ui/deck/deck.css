@@ -1085,3 +1085,9 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-log.is-arrival > .d1-log-icon,
   .score-band .d1-log.is-arrival > .d1-tl-what { grid-row: 1; }
 }
+
+/* Independent sibling actions: the row selects the agent, the name opens Users. */
+.d1-agent { position: relative; isolation: isolate; }
+.d1-agent-pick { position: absolute; inset: 0; width: 100%; border: 0; border-radius: inherit; background: transparent; cursor: pointer; z-index: 1; }
+.d1-agent :is(.aw-user-link,.d1-ast-mark,.d1-elo[data-rd]) { position: relative; z-index: 2; }
+.d1-agent-pick:focus-visible { outline-offset: -2px; }

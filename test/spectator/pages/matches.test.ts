@@ -98,7 +98,7 @@ const cells = (row: ElementPort) => row.children.map(cell => {
 });
 /** A player line's parts in order, each by its role. */
 const lineParts = (line: ElementPort): (string | string[])[][] => line.children.flatMap(node => {
-  if ((node.classes().includes("d1p-name") || node.classes().includes("d1p-rec-name"))) return [["name", node.children.map(part => `${part.className ?? ""}:${part.textContent}`).filter(part => part !== ":" && part !== ": ")]];
+  if ((node.classes().includes("d1p-name") || node.classes().includes("d1p-rec-name"))) return [["name", node.children.map(part => `${part.classes().filter(c => c !== "aw-user-link").join(" ")}:${part.textContent}`).filter(part => part !== ":" && part !== ": ")]];
   // A Recordings player's badges line holds the same badges a table's player line does, in the same order.
   if (node.classes().includes("d1p-rec-badges")) return lineParts(node);
   // A Recordings name stands in its place on the line, which holds nothing else.
@@ -135,6 +135,14 @@ function show(view: Partial<MatchesView>) {
   const parts = (card: ElementPort) => ({ card, table: card.byClass("d1p-wide")[0]!, list: (card.byClass("d1p-rec-rows")[0] ?? card.byClass("d1p-narrow")[0])! });
   return { p, waiting: parts(waiting!), live: parts(liveCard!), recordings: parts(recordings!) };
 }
+
+it("keeps the recorded seat label but links only to a verified present username", () => {
+  const row = { ...recording, seats: [seat(0, 0, null, "sample-former", { rosterUser: "sample-present" }), seat(1, 1, null, "sample-released")] };
+  const card = show({ recordings: { status: "ready", rows: [row] } }).recordings.card;
+  expect(card.byClass("d1p-user").map(n => [n.textContent, n.tag, n.href || null]).sort()).toEqual([
+    ["sample-former", "a", "/?page=users&user=sample-present"], ["sample-released", "span", null],
+  ]);
+});
 
 describe("unassigned Free-for-all queue entries", () => {
   it("changes only the queued agent, preserving surrounding Waiting rows, Live now and Recordings across redraw", () => {
