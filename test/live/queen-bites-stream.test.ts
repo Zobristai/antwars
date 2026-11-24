@@ -4,8 +4,8 @@
 import { describe, expect, it } from "vitest";
 import { inflateRawSync } from "node:zlib";
 import {
-  KILLS_STREAM_VERSION, LIVE_OPT_INS, QUEEN_BITES_STREAM_VERSION, decodeMessage, encodeMessage, encodePublicMessage,
-  withoutKillTotals, withoutQueenBites, type StreamEvent, type StreamMessage,
+  FLYER_STREAM_VERSION, KILLS_STREAM_VERSION, LIVE_OPT_INS, QUEEN_BITES_STREAM_VERSION, decodeMessage, encodeMessage, encodePublicMessage,
+  QUEEN_KILLS_STREAM_VERSION, withoutKillTotals, withoutQueenBites, withoutQueenKills, type StreamEvent, type StreamMessage,
 } from "../../src/live/format.ts";
 import { decodeMessage as oldDecode } from "./fixtures/pre-queen-bites-format.ts";
 import { LiveHub } from "../../src/live/hub.ts";
@@ -45,7 +45,8 @@ function opening(recorder: SpectatorRecorder): StreamMessage {
 describe("queen bites on the wire", () => {
   const state = createMatch(404, fourColony);
   const recorder = new SpectatorRecorder(state);
-  const first = opening(recorder);
+  // Queen kills are later content (queen-kills-stream.test.ts covers both together): taken out, as in a version-32 stream.
+  const first = withoutQueenKills(opening(recorder));
   const ants = first.ants;
   const bites: Bites = { kind: "queenBites", colony: 3, queenId: 2, biters: [ants.id[0]!, ants.id[3]!, ants.id[40]!], targetId: ants.id[7]! };
 
@@ -117,7 +118,7 @@ describe("queen bites in the spectator model", () => {
     out = step(state, []);
     model.apply(recorder.record(out));
     expect(model.message().events).toEqual([]);
-    expect(encodeMessage(model.message())[2]).toBeLessThan(QUEEN_BITES_STREAM_VERSION);
+    expect(encodeMessage(withoutQueenKills(model.message()))[2]).toBeLessThan(QUEEN_BITES_STREAM_VERSION);
   });
 });
 
@@ -125,18 +126,26 @@ const lobbyId = "00000000-0000-4000-8000-000000000001";
 const path = `/watch/live/${lobbyId}`;
 const data = (response: ServedResponse) => response.writes.filter(w => w.text.startsWith("data: "));
 const bytes = (text: string) => inflateRawSync(Buffer.from(text.slice(6).trim(), "base64"));
-const formOf = (query: string) => ({ kills: query.includes("kills=1"), queenBites: query.includes("queenBites=1") });
-const inForm = (m: StreamMessage, form: { kills: boolean; queenBites: boolean }) => {
-  const withKills = form.kills ? m : withoutKillTotals(m);
-  return form.queenBites ? withKills : withoutQueenBites(withKills);
+interface Form { kills: boolean; queenKills: boolean; queenBites: boolean }
+const formOf = (query: string): Form => {
+  const params = new URLSearchParams(query), on = (name: string) => params.get(name) === "1";
+  return { kills: on("kills"), queenKills: on("queenKills"), queenBites: on("queenBites") };
 };
+const inForm = (m: StreamMessage, form: Form) => {
+  const withKills = form.kills ? m : withoutKillTotals(m);
+  const withQueenKills = form.queenKills ? withKills : withoutQueenKills(withKills);
+  return form.queenBites ? withQueenKills : withoutQueenBites(withQueenKills);
+};
+/** The newest version a page built with exactly these opt-ins reads. */
+const newestRead = (form: Form) => form.queenKills ? QUEEN_KILLS_STREAM_VERSION : form.queenBites ? QUEEN_BITES_STREAM_VERSION : form.kills ? KILLS_STREAM_VERSION : FLYER_STREAM_VERSION;
 
-it("sends queen bites to a live page that opted in, and every other page the form it reads, at one release clock", async () => {
+it("sends queen bites and queen kills each only to a live page that opted into them, in a version it reads, at one release clock", async () => {
   const clock = new ManualClock();
   const hub = new LiveHub({ clock });
   const server = new RecordedServer(hub, clock);
   const clients: SseClient[] = [];
-  const queries = ["", "?queenBites=1", "?kills=1", "?kills=1&queenBites=1"];
+  const queries = ["", "?kills=1", "?queenKills=1", "?queenBites=1", "?kills=1&queenKills=1", "?kills=1&queenBites=1",
+    "?queenKills=1&queenBites=1", "?kills=1&queenKills=1&queenBites=1"];
   try {
     await server.listen();
     let state = createMatch(404, { ...fourColony, matchTicks: 4 });
@@ -146,6 +155,8 @@ it("sends queen bites to a live page that opted in, and every other page the for
     for (let tick = 1; tick <= 4; tick++) {
       clock.advance(100);
       state.colonies[0]!.kills = tick;
+      // Queen kills change on a bitten tick (2) and on a tick with no bites (3).
+      if (tick === 2 || tick === 3) state.colonies[1]!.queenKills = tick - 1;
       const out = step(state, []);
       if (tick <= 2) named.push(labelBites(out));
       hub.pushTick(1, out); state = out.state;
@@ -153,18 +164,16 @@ it("sends queen bites to a live page that opted in, and every other page the for
     clock.advance(RATED_DELAY_SECONDS * 1000 + 1000);
     const streams = server.responses.slice(0, queries.length).map((response, i) => {
       const form = formOf(queries[i]!);
-      return data(response).map(w => (form.kills || form.queenBites ? decodeMessage : oldDecode)(bytes(w.text)) as StreamMessage);
+      return data(response).map(w => (form.queenKills || form.queenBites ? decodeMessage : oldDecode)(bytes(w.text)) as StreamMessage);
     });
-    const current = streams[3]!;
+    const current = streams.at(-1)!;
     expect(current.flatMap(m => m.events.filter(e => e.kind === "queenBites"))).toEqual(named);
+    expect(current.flatMap(m => m.events.filter(e => e.kind === "queenKills").map(e => [m.tick, e.totals]))).toEqual([[2, [0, 1, 0, 0]], [3, [0, 2, 0, 0]]]);
+    expect(current.some(m => m.events.some(e => e.kind === "queenKills") && m.events.some(e => e.kind === "queenBites"))).toBe(true);
     for (const [i, query] of queries.entries()) {
       expect(streams[i]).toEqual(current.map(m => inForm(m, formOf(query))));
-      expect(data(server.responses[i]!).map(w => w.t)).toEqual(data(server.responses[3]!).map(w => w.t));
-    }
-    // A page without the opt-in never receives a version-32 message.
-    for (const query of ["", "?kills=1"]) {
-      const i = queries.indexOf(query);
-      expect(data(server.responses[i]!).every(w => bytes(w.text)[2]! < QUEEN_BITES_STREAM_VERSION)).toBe(true);
+      expect(data(server.responses[i]!).map(w => w.t)).toEqual(data(server.responses[queries.length - 1]!).map(w => w.t));
+      expect(Math.max(...data(server.responses[i]!).map(w => bytes(w.text)[2]!)), query).toBeLessThanOrEqual(newestRead(formOf(query)));
     }
   } finally {
     clients.forEach(c => c.close()); hub.close(); await server.close();
@@ -189,11 +198,15 @@ it("restates the bites under way in the full message a joiner receives, in its f
     }
     // Release to the last tick, then join: the board's full message is at that tick, the bites it ended on under way.
     clock.advance(RATED_DELAY_SECONDS * 1000 + 10_000);
-    for (const query of ["?kills=1&queenBites=1", "?kills=1"]) clients.push(await SseClient.connect(server.url(path + query)));
-    const [modern, legacy] = server.responses.map(r => decodeMessage(bytes(data(r)[0]!.text)));
+    for (const query of ["?kills=1&queenKills=1&queenBites=1", "?kills=1&queenBites=1", "?kills=1&queenKills=1", "?kills=1"]) clients.push(await SseClient.connect(server.url(path + query)));
+    const [modern, bitesOnly, queenKillsOnly, legacy] = server.responses.map(r => decodeMessage(bytes(data(r)[0]!.text)));
     expect(modern!.tick).toBe(4);
     expect(modern!.events).toEqual([bites]);
-    expect(legacy).toEqual(withoutQueenBites(modern!));
+    expect(modern!.full!.queenKills).toEqual([0, 0, 0, 0]);
+    expect(bitesOnly).toEqual(withoutQueenKills(modern!));
+    expect(queenKillsOnly).toEqual(withoutQueenBites(modern!));
+    expect(legacy).toEqual(withoutQueenBites(withoutQueenKills(modern!)));
+    expect(server.responses.map(r => bytes(data(r)[0]!.text)[2])).toEqual([QUEEN_KILLS_STREAM_VERSION, QUEEN_BITES_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, KILLS_STREAM_VERSION]);
   } finally {
     clients.forEach(c => c.close()); hub.close(); await server.close();
   }

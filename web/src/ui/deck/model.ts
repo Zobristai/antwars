@@ -264,6 +264,20 @@ export function colonyRows(frame: Frame | null): ColonyRows | null {
   return { rows, noneHeld: share === null };
 }
 
+// ---------------------------------------------------------------- queen kills
+
+/** Said where a recording carries no queen kills. */
+export const QUEEN_KILLS_UNRECORDED = "Queen kills not recorded";
+
+/**
+ * Each colony's queen kills as recorded, zero included; null for every colony where the recording does not carry
+ * them. Never derived from queens lost: an older recording's count stays unknown.
+ */
+export function queenKills(frame: Frame | null): readonly (string | null)[] {
+  const totals = frame?.board?.queenKills;
+  return coloniesOf(frame).map(c => totals?.[c] === undefined ? null : fmt(totals[c]));
+}
+
 // ---------------------------------------------------------------- win conditions: queens and a territory hold
 
 export interface Lamp {

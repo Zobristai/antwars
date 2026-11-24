@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  COUNT_MARK_STREAM_VERSION, GRID_SCALE_STREAM_VERSION, LINE_MARK_STREAM_VERSION, STREAM_COUNT_VERBS, decodeMessage, encodeMessage,
+  COUNT_MARK_STREAM_VERSION, GRID_SCALE_STREAM_VERSION, LINE_MARK_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, STREAM_COUNT_VERBS, decodeMessage, encodeMessage,
   Reader, Writer, type StreamMark, type StreamMessage,
 } from "../../src/live/format.ts";
 import { SpectatorRecorder, SpectatorState } from "../../src/live/model.ts";
@@ -193,7 +193,8 @@ it.each(["any", "worker", "soldier"] as const)("round-trips %s caste in full/del
     { mapId: "rocks", mapName: "Rocks", water: [], rocks: [] }]) {
     message.full!.setup.terrain = terrain;
     const bytes = encodeMessage(message);
-    expect(bytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
+    // A public match's opening carries its queen kills, zero included, so it is written at the queen-kills version.
+    expect(bytes[2]).toBe(QUEEN_KILLS_STREAM_VERSION);
     expect(roundTrip(message).full!.marks).toEqual([word, mark]);
     expect(roundTrip(message).full!.setup.terrain).toEqual(terrain);
     const decoded = roundTrip(message);
