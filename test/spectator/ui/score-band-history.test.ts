@@ -450,7 +450,7 @@ describe("Score Band side-by-side History ledger", () => {
     const scroller = port.doc.createElement("div") as unknown as ElementPort & { scrollTop: number };
     scroller.scrollTop = 0;
     const actions = { hover() {}, trails() {}, tilt() {}, focusMark() {}, select() {}, selectAgent() {}, openSheet() {}, pointOrder() {} } as unknown as HudActions;
-    const economy = [0, 1].map(() => port.doc.createElement("div")) as unknown as HTMLElement[];
+    const economy = [0, 1, 2, 3].map(() => port.doc.createElement("div")) as unknown as HTMLElement[];
     const teams = mountTeams(port.doc, actions, { search: () => "", economy, narrowScroller: scroller as unknown as HTMLElement });
     for (const t of teams.teams) scroller.append(t as unknown as ElementPort);
     port.body.append(scroller, teams.historyStrip as unknown as ElementPort);
@@ -481,6 +481,14 @@ describe("Score Band side-by-side History ledger", () => {
     const show = (f: Frame) => teams.update({ frame: f, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView, false);
 
     show(makeFrame(2));
+    const buttonLabels = () => teams.teams.map(team => (team as unknown as ElementPort).byClass("sb-history")[0]!.getAttribute("aria-label"));
+    expect(buttonLabels()).toEqual(["Very Large Colony history", "Lake Hodges Colony history", "Colony 3 history", "Colony 4 history"]);
+    const drawn = makeFrame(2);
+    drawn.board!.setup = { ...drawn.board!.setup, colonyNames: COLONIES.map(c => c.name) };
+    show(drawn);
+    expect(buttonLabels()).toEqual(COLONIES.map(c => `${c.name} history`));
+    show(makeFrame(2));
+    expect(buttonLabels().slice(2)).toEqual(["Colony 3 history", "Colony 4 history"]);
     const team0 = teams.teams[0] as unknown as ElementPort;
     const btn0 = team0.byClass("sb-history")[0]!;
     expect(btn0.html).toContain("<svg");

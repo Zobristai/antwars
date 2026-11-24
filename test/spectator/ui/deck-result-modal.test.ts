@@ -70,7 +70,14 @@ describe("the match result as a modal over the screen", () => {
     const dialog = modal.dialog as unknown as ElementPort;
     modal.update(frame, null);
     expect(dialog.byClass("aw-user-link")).toHaveLength(0);
+    const player = () => dialog.byClass("d1-rating-name")[0]!;
+    expect(player().title).toBe("sample-orbit");
+    expect(player().getAttribute("role")).toBe("group");
+    expect(player().getAttribute("aria-label")).toBe("sample-orbit");
     modal.update(frame, null, new Map([["sample-orbit", "sample-orbit"]]));
+    expect(player().title).toBe("sample-orbit");
+    expect(player().getAttribute("aria-label")).toBe("sample-orbit");
+    expect(player().getAttribute("role")).toBeNull();
     expect(dialog.byClass("aw-user-link").map(a => a.href)).toEqual(["/?page=users&user=sample-orbit"]);
     modal.update(frame, null, new Map());
     expect(dialog.byClass("aw-user-link")).toHaveLength(0);

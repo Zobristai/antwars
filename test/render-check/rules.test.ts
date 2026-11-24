@@ -70,6 +70,24 @@ describe("render check rules", () => {
     } finally { await page.close(); }
   });
 
+  it("allows only a fully named standings name to shorten, never its badge or a cut by the surrounding row", async () => {
+    const row = (label: string, badge = "", width = 100) => `<div class="d1-result-dialog"><div style="width:${width}px;overflow:hidden"><div class="rd-player" style="display:flex;width:100px"><span class="d1-rating-name" role="group" title="Sample player name" aria-label="${label}" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Sample player name</span>${badge}</div></div></div>`;
+    expect(rules(await judged(row("Sample player name")))).not.toContain("clipped");
+    expect(rules(await judged(row("Short")))).toContain("clipped");
+    expect(rules(await judged(row("Sample player name", "", 60)))).toContain("clipped");
+    expect(rules(await judged(row("Sample player name", '<b style="overflow:hidden;width:20px">FAST</b>')))).toContain("clipped");
+  });
+
+  it("does not treat standings as tiles, but still catches a cut through a badge border after its text", async () => {
+    const row = (badge: string) => `<li style="border-top:1px solid"><span class="rd-player" style="display:flex">Sample${badge}</span></li>`;
+    const list = (width: number) => `<div class="d1-result-dialog"><section class="rd-standings"><ul class="d1-ratings" style="display:grid;list-style:none;margin:0;padding:0;width:${width}px;overflow:hidden">`
+      + row('<b class="d1-tag" style="flex:none;border:1px solid;padding-right:12px">FAST</b>') + row("") + '</ul></section></div>';
+    expect((await judged(list(140))).failures).toEqual([]);
+    const failures = (await judged(list(101))).failures;
+    expect(failures).toContainEqual(expect.objectContaining({ rule: "clipped", element: expect.stringContaining("b.d1-tag"), text: "FAST" }));
+    expect(failures.some(f => f.rule === "part-uneven")).toBe(false);
+  });
+
   it("fails a card's state line that wraps: it is a paragraph, but a one-line item", async () => {
     // As web/src/pages/chrome.ts stateLine builds it: a glyph, then the words, in a p with role status.
     const state = (width: number, words: string) => `<div style="width:${width}px"><p class="d1p-state" role="status" style="display:flex;gap:8px;min-width:0">`
@@ -453,7 +471,7 @@ describe("render check widths and doubled text", () => {
     } finally { await page.close(); }
   });
 
-  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (124 existing renders and 60 Users renders)", () => {
+  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (136 standard/zoom renders and 60 Users renders)", () => {
     expect([...WIDTHS]).toEqual([1280, 390, 320]);
     expect([...TEXT_SIZES]).toEqual([16, 32]);
     expect(viewport(320)).toEqual({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
@@ -469,7 +487,7 @@ describe("render check widths and doubled text", () => {
         counts[surface.id.startsWith("users-") ? "users" : "existing"]++;
       }
     }
-    expect(counts).toEqual({ existing: 124, users: 60 });
+    expect(counts).toEqual({ existing: 136, users: 60 });
   });
 
   it("renders phones at 2x device scale so subpixel glyph wrapping in Liberation Sans at 320 px doubled text is caught", async () => {

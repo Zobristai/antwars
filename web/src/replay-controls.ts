@@ -283,9 +283,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     // The glyph fills 12 of its 16-unit box; the thumb covers a mark (or a group's count) its own half width overlaps.
     const glyphReach = THUMB_INSET + px("--aw-mark-size", 16) * 0.375;
     layer.style.left = `${seek.offsetLeft}px`;
-    layer.style.top = `${seek.offsetTop}px`;
     layer.style.width = `${width}px`;
-    layer.style.height = `${seek.offsetHeight}px`;
     // The marks being replaced say nothing as they go: losing focus by removal is not a person moving it.
     for (const item of items) item.button.onfocus = item.button.onblur = null;
     layer.replaceChildren();
@@ -337,9 +335,23 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     });
     el.append(layer, chip, list);
     // Read the laid-out badges together, after insertion: their em size and digit count both affect the reach.
-    for (const item of items) if (item.events.length > 1) {
-      item.reach = THUMB_INSET + (item.button.children[0] as HTMLElement).offsetWidth / 2;
+    const counts = items.filter(item => item.events.length > 1).map(item => {
+      const badge = item.button.children[0] as HTMLElement;
+      return { item, half: badge.offsetWidth / 2, height: badge.offsetHeight };
+    });
+    // Keep the painted pill (including its 2px outline and 2px offset) in the masked layer.
+    // Only its visual centre moves: list entries still seek to the recorded event times.
+    const ring = 4;
+    let height = seek.offsetHeight;
+    for (const { item, half, height: badgeHeight } of counts) {
+      const inset = Math.min(half + ring, width / 2);
+      item.x = Math.max(inset, Math.min(width - inset, item.x));
+      item.button.style.left = `${item.x}px`;
+      item.reach = THUMB_INSET + half;
+      height = Math.max(height, badgeHeight + 2 * ring);
     }
+    layer.style.top = `${seek.offsetTop + (seek.offsetHeight - height) / 2}px`;
+    layer.style.height = `${height}px`;
     const same = (a: readonly ReplayEvent[], b: readonly ReplayEvent[]) => a.length === b.length && a.every((e, i) => e === b[i]);
     if (focused) {
       relaying = true;

@@ -9,7 +9,7 @@ npm run render-check                     # writes out/render-check/report.md, re
 
 ## What it renders
 
-Each surface at **1280 px** (desktop, 1× device scale), **390 px** (phone, 2× device scale) and **320 px** (phone, 2× device scale), at **default (16 px)** and **doubled (32 px browser default)** text size, in **Roboto** and in **Liberation Sans**, except the two browser-zoom surfaces, rendered in a 1280 px window at default text only: 124 renders.
+Each surface at **1280 px** (desktop, 1× device scale), **390 px** (phone, 2× device scale) and **320 px** (phone, 2× device scale), at **default (16 px)** and **doubled (32 px browser default)** text size, in **Roboto** and in **Liberation Sans**, except the two browser-zoom surfaces, rendered in a 1280 px window at default text only: 196 renders.
 
 | Surface | Page |
 |---|---|
@@ -23,6 +23,7 @@ Each surface at **1280 px** (desktop, 1× device scale), **390 px** (phone, 2× 
 | leaderboard | `/?page=leaderboard` |
 | rules | `/rules`, with the default public match rules before a map is drawn; every section title, including Autonomous ants, Flyers and Battle balance, must be visible on the enhanced page |
 | replay-free-for-all | `/?replay=<id>&capture=1` of a public Free-for-all recording: the four-colony match HUD over the 3D board |
+| replay-result | a sample rated finish derived from the grouped-seat excerpt: the open result dialog with a long house-model name, whole badges and signed rating changes. The dialog is the judged surface; the page behind it is inert. |
 | replay-grouped-seats | `/?replay=<id>&capture=1` of a public 2v2 recording in which one player holds both seats of each colony: the Score Band shows each colony's grouped seat badges in its head, one of them joined out of seat order |
 
 On Watch and the replays the client's animation clock (`performance.now`, which `web/src/clock.ts` reads) is the check's: it stands still except when the check steps it. Where the page shows a board, the check plays its recording to 10 s in 100 ms steps, lets what that frame loads finish (the HUD's icons, the board's shaders) and draws it again, so the HUD shows one fixed moment while it is judged and its renders are saved, and the 3D board never measures itself too slow in CI's software renderer and reloads as 2D. The replays also load with `capture=1`, as `web/capture/` does, so their board draws only when stepped. A replay must reach a ready, playing HUD: a board that fails to load or is not ready within 30 s, a recording that errors or is still at its first tick after 10 s, or no match HUD on screen makes its render invalid, naming the page, width and typeface; Watch loads as a visitor sees it, because there `capture=1` also changes what the page shows with no live match.

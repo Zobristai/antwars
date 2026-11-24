@@ -29,6 +29,9 @@
   margin: 0; padding: 0; border: 0; background: none; color: var(--aw-ink); font: inherit; cursor: pointer;
   pointer-events: auto; transform: translate(-50%, -50%); -webkit-tap-highlight-color: transparent;
 }
+/* A count can be wider than the hit box at enlarged text. Centre it on the mark,
+   not in a min-content grid track that spills out on just one side. */
+.aw-mark.group { grid-template-columns: minmax(0, 1fr); }
 .aw-mark-glyph { display: block; width: var(--aw-mark-size); height: var(--aw-mark-size); overflow: visible; fill: currentColor; stroke: #121719; stroke-width: 1.6; stroke-linejoin: round; }
 .aw-mark-glyph * { vector-effect: non-scaling-stroke; }
 /* A colony's colour: its name's (--aw-k0 to --aw-k3, colony-palette.ts), else for colonies 0 and 1 the rated names'
