@@ -102,8 +102,7 @@ it("agrees with the entire visible Matches list, including ownership, markers, l
   now += 60_000;
   docs.set(`replayOwnership/${team.id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([excluded]) });
   const listing = async () => (await (await fetch(url + "/matches/users")).json()).users;
-  expect(await listing()).toEqual(users); // The old snapshot during refresh.
-  await expect.poll(listing).toContainEqual(expect.objectContaining({ username: "fern", matches: 2, wins: 0 }));
+  expect(await listing()).toContainEqual(expect.objectContaining({ username: "fern", matches: 2, wins: 0 }));
 });
 
 it("coalesces concurrent scans and fails both callers without returning partial rows on deadline", async () => {
@@ -155,6 +154,62 @@ it("serves GET and HEAD during one blocked refresh, then publishes the new snaps
     expect(head.status).toBe(200); expect(await head.text()).toBe(""); expect(builds).toBe(2);
   } finally { resume.resolve(); }
   await expect.poll(read).toEqual([]); expect(builds).toBe(2);
+});
+
+it("rechecks even older contributors on every expiry read while the storage refresh is blocked", async () => {
+  const { store, docs } = memoryWatchStore(), owner = randomUUID(), hidden = randomUUID(), lobbyId = randomUUID();
+  const rows = Array.from({ length: 8 }, (_, i) => match(i, ["sample-fern", "sample-river"]));
+  const owners = (index: number, id: string) => docs.set(`replayOwnership/${rows[index]!.id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([id]) });
+  rows.forEach((_, i) => owners(i, owner));
+  const policy = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [hidden]);
+  let builds = 0, now = 0;
+  const resume = Promise.withResolvers<void>();
+  const url = await listen(sourceWith(async function* () { if (++builds > 1) await resume.promise; yield rows; }), undefined, {
+    usersNow: () => now, publicVisibility: policy, testRecordings: createTestRecordings(store),
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } },
+  });
+  const first = async () => (await (await fetch(url + "/matches/users")).json()).users[0];
+  const before = await first(); expect(before.matches).toBe(8);
+  expect(before.recent.map((r: {id: string}) => r.id)).not.toContain(rows[0]!.id);
+  now += 60_000;
+  try {
+    expect(await first()).toEqual(before);
+    docs.set(`testRecordings/${rows[0]!.id}`, { version: "1" }); // write from another process
+    expect((await first()).matches).toBe(7);
+    owners(1, hidden); expect((await first()).matches).toBe(6);
+    owners(7, hidden); const updated = await first(); expect(updated.matches).toBe(5);
+    expect(updated.recent.map((r: {id: string}) => r.id)).not.toContain(rows[7]!.id);
+    expect(builds).toBe(2);
+  } finally { resume.resolve(); }
+});
+
+it("waits for a cold result if the expired listing cannot be checked", async () => {
+  let now = 0, failCheck = false, builds = 0;
+  const entered = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const url = await listen(sourceWith(async function* () {
+    if (++builds === 1) yield [oneMatch()];
+    else { entered.resolve(); await resume.promise; yield []; }
+  }), undefined, { usersNow: () => now, testRecordings: { async mark() {}, async marked() {
+    if (failCheck) throw new Error("marker read unavailable");
+    return new Set();
+  } }, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
+  const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  expect(await read()).toHaveLength(2); now += 60_000; failCheck = true;
+  let returned = false;
+  const next = read().then(rows => { returned = true; return rows; });
+  try { await entered.promise; await nextTurn(); expect(returned).toBe(false); }
+  finally { resume.resolve(); }
+  expect(await next).toEqual([]);
+});
+
+it("invalidates a warm listing immediately when this process marks a recording", async () => {
+  const { store } = memoryWatchStore(), markers = createTestRecordings(store), row = oneMatch();
+  const url = await listen(sourceWith(async function* () { yield [row]; }), undefined, {
+    testRecordings: markers, usersNow: () => 0,
+    ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } },
+  });
+  const read = async () => (await (await fetch(url + "/matches/users")).json()).users;
+  expect(await read()).toHaveLength(2); await markers.mark(row.id); expect(await read()).toEqual([]);
 });
 
 it("drops stale success after a refresh failure and retries only after the backoff", async () => {

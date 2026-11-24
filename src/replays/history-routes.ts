@@ -1,6 +1,8 @@
 import { agreedHandles, attributeRoster, type CurrentRosterSeats } from "./roster-ownership.js";
 import { isValidId } from "../rating/ratings.js";
 import { joinReads } from "../store/join-reads.js";
+import { snapshotContributions, usersRevision } from "./users-snapshot.js";
+import { neverJoined } from "./listed-colonies.js";
 import { publicUsers } from "./public-users.js";
 import type { Ratings } from "../rating/ratings.js";
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
@@ -15,7 +17,7 @@ import { logUnlistedHouse } from "../rating/unlistedHouse.js";
 import type { MatchOutcome } from "../lobby/lobbies.js";
 import type { QueueMode } from "../lobby/queue.js";
 import { harnessPhaseAt, type HarnessPhase } from "../rating/harnessPhase.js";
-import { lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
+import { isHouseHandle, lobbyMatchType, recordedMatchType, type RecordingMatchType } from "./recorded-match-type.js";
 import { CORRECTED_REPLAY_IDS } from "./correctedRecordings.js";
 import type { TestRecordings } from "./test-recordings.js";
 import { sharedRead, shippedTopMatchList } from "./top-matches.js";
@@ -348,7 +350,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   options: HistoryRouteOptions = {}): MountHandler {
   const recordIdleMs = options.recordIdleMs ?? RECORD_IDLE_MS;
   // A whole-history build uses a fresh projection per page; it never populates the route's long-lived row caches.
-  function projection(policy: PublicVisibility | undefined, buildSignal?: AbortSignal) {
+  function projection(policy: PublicVisibility | undefined, buildSignal?: AbortSignal, originals?: WeakMap<TypedHistorySummary, TypedHistorySummary>) {
     const cached = lobbies === undefined ? undefined : cachedLobbyLookup(buildSignal ? id => lobbies(id, buildSignal) : lobbies, { unsettledMs: options.unsettledLobbyMs });
     const handles = cached === undefined ? undefined : lobbySeatHandles(cached);
     const types = recordingMatchTypes(cached, undefined, buildSignal);
@@ -369,9 +371,11 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         if (rows.length && buildSignal) throw new Error("Roster ownership unavailable");
         return { ...filled, matches: rows };
       }
-      return { ...filled, matches: await attributeRoster(rows, cached, options.currentRosterSeats, signal, buildSignal ? "directory" : "archive") };
+      const attributed = await attributeRoster(rows, cached, options.currentRosterSeats, signal, buildSignal ? "directory" : "archive");
+      if (originals) attributed.forEach((row, i) => originals.set(row, rows[i]!));
+      return { ...filled, matches: attributed };
     }
-    async function visibleRows<T extends HistorySummary>(rows: T[], signal: AbortSignal) {
+    async function visibleRows<T extends { id: string }>(rows: T[], signal: AbortSignal) {
       signal.throwIfAborted();
       if (buildSignal && policy?.replaysVisibleEach) {
         const ids = await policy.replaysVisibleEach(rows.map(row => row.id), buildSignal);
@@ -389,15 +393,20 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const listPage = (token: string | undefined, signal: AbortSignal) =>
     publicHistoryPage(source, token, signal, options.publicVisibility, continuations, raw => serveVisible(raw, signal));
 
-  async function* userBatches(signal: AbortSignal, policy: PublicVisibility | undefined) {
+  async function* userBatches(signal: AbortSignal, policy: PublicVisibility | undefined, facts: ReturnType<typeof snapshotContributions>) {
     if (!source.scan) throw new Error("History scan unavailable");
     const stop = new AbortController(), reading = AbortSignal.any([signal, stop.signal]);
     const iterator = source.scan(reading)[Symbol.asyncIterator]();
     // Two pages at most, including the next body read. Its owner checks can start as soon as the
     // bodies arrive while the current page finishes checking claims. Yield in discovery order.
     const pages: Promise<TypedHistorySummary[]>[] = [];
+    const originals = new WeakMap<TypedHistorySummary, TypedHistorySummary>();
+    function remember(rows: TypedHistorySummary[]) {
+      for (const row of rows) if (!neverJoined(row) && row.seats.some(s => s.handle && !isHouseHandle(s.handle.toLowerCase()))) facts.add(originals.get(row)!);
+      return rows;
+    }
     async function project(matches: HistorySummary[]) {
-      const page = projection(policy, reading);
+      const page = projection(policy, reading, originals);
       const visible = await page.visibleRows(matches, reading);
       const rows: TypedHistorySummary[] = [];
       // A wider storage read must not fan out an entire window of individual lobby lookups.
@@ -416,36 +425,54 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         const work = project(structuredClone(batch.value));
         pages.push(work);
         void work.catch(error => stop.abort(error)); // cancel the sibling; both are drained below
-        if (pages.length === 2) yield await pages.shift()!;
+        if (pages.length === 2) yield remember(await pages.shift()!);
       }
-      if (pages.length) yield await pages.shift()!;
+      if (pages.length) yield remember(await pages.shift()!);
     } finally {
       stop.abort();
       await Promise.allSettled(pages);
       await iterator.return?.();
     }
   }
-  const policyNow = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));
+  const configuredPolicy = options.usersPolicy ?? (() => ({ digest: "static", visibility: options.publicVisibility }));
+  const policyNow = () => { const policy = configuredPolicy(); return { ...policy, digest: `${usersRevision()}:${policy.digest}` }; };
   const usersDeadline = options.usersDeadlineMs ?? 120_000, usersNow = options.usersNow ?? Date.now;
-  let snapshot: { body?: Buffer; expires: number; digest: string } | undefined;
+  type Snapshot = { body?: Buffer; expires: number; digest: string; facts?: ReturnType<typeof snapshotContributions>; checking?: Promise<Buffer> };
+  let snapshot: Snapshot | undefined;
   type Flight = { reply: Promise<Buffer>; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
   const readerLeft = new Error("Users reader disconnected");
   let flight: Flight | undefined;
   function begin(policy: ReturnType<typeof policyNow>): Flight {
     const stop = new AbortController(), signal = AbortSignal.any([stop.signal, AbortSignal.timeout(usersDeadline)]);
     const started = usersNow();
-    const work = publicUsers(userBatches(signal, policy.visibility), options.ratings, signal).then(rows => {
+    const facts = snapshotContributions();
+    const work = publicUsers(userBatches(signal, policy.visibility, facts), options.ratings, signal).then(rows => {
       signal.throwIfAborted();
       const body = Buffer.from(JSON.stringify({ users: rows }));
       const published = usersNow();
       if (published - started >= usersDeadline || policy.digest !== policyNow().digest) throw new Error("Listing expired");
-      snapshot = { body, digest: policy.digest, expires: published + 60_000 };
+      snapshot = { body, facts, digest: policy.digest, expires: published + 60_000 };
       return body;
     }).catch(error => {
       if (signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
       throw error;
     }).finally(() => { flight = undefined; });
     return { reply: work, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
+  }
+  // Re-tally only contributions from this snapshot, with today's claims, visibility and test
+  // markers. No recording bodies, and no lifetime extension. Share only a still-running check.
+  function checked(prior: Snapshot, policy: ReturnType<typeof policyNow>) {
+    return prior.checking ??= (async () => {
+      const signal = AbortSignal.timeout(usersDeadline);
+      const rows = prior.facts!.rows()!;
+      const [visible, marked] = await joinReads([projection(policy.visibility, signal).visibleRows(rows, signal),
+        options.testRecordings?.marked(rows.map(row => row.id), signal, true)]);
+      const allowed = visible.filter(row => !marked?.has(row.id));
+      if (allowed.length && !options.currentRosterSeats) throw new Error("Roster ownership unavailable");
+      const matches = allowed.length ? await attributeRoster(allowed, lobbies, options.currentRosterSeats!, signal, "directory") : [];
+      const users = await publicUsers((async function* () { yield matches; })(), options.ratings, signal);
+      return Buffer.from(JSON.stringify({ users }));
+    })().finally(() => { prior.checking = undefined; });
   }
   async function users(signal: AbortSignal): Promise<Buffer> {
     for (;;) {
@@ -456,10 +483,16 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         if (snapshot.body) return snapshot.body;
         throw new Error("Users listing temporarily unavailable");
       }
+      if (snapshot?.facts?.available && !flight?.signal.aborted) {
+        const prior = snapshot;
+        let body: Buffer | undefined;
+        try { body = await untilAborted(checked(prior, policy), signal); }
+        catch { signal.throwIfAborted(); } // A failed check waits for the full build; never serve unchecked bytes.
+        if (policy.digest !== policyNow().digest || snapshot !== prior) continue;
+        if (body) { flight ??= begin(policy); return body; }
+        snapshot = undefined;
+      }
       const build = flight ??= begin(policy);
-      // A refresh belongs to the snapshot, not to the reader that triggered it. Stale readers
-      // neither occupy cold-reader slots nor cancel the refresh when their responses close.
-      if (snapshot?.body && build.digest === policy.digest && !build.signal.aborted) return snapshot.body;
       if (++build.admissions > 128) throw new Error("Listing busy");
       if (build.digest !== policy.digest) {
         build.stop.abort();
@@ -535,7 +568,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (hud) {
         const [, kind, key] = hud;
         if (!(kind === "replay" ? isReplayId(key!) : isValidId(key))) { res.writeHead(404).end(); return; }
-        const signal = abort.signal, policy = policyNow();
+        const signal = abort.signal, policy = configuredPolicy();
         let handles: [string, string][] = [];
         const visible = !policy.visibility || (kind === "replay" ? await policy.visibility.replayVisible(key!, signal) : await policy.visibility.lobbyVisible(key!));
         if (visible && options.currentRosterSeats) {
@@ -547,7 +580,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
             handles = [...agreedHandles(seats, current)].flatMap(([label, handle]) => handle ? [[label, handle]] : []);
           }
         }
-        if (policy.digest !== policyNow().digest) throw new Error("Roster policy changed");
+        if (policy.digest !== configuredPolicy().digest) throw new Error("Roster policy changed");
         const body = Buffer.from(JSON.stringify({ handles }));
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
         res.end(req.method === "HEAD" ? undefined : body);

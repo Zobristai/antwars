@@ -1,3 +1,4 @@
+import { invalidateUsers } from "../replays/users-snapshot.js";
 import type { Fields, Store, Write } from "../store/firestore.js";
 import type { RankedMode } from "../rating/ratings.js";
 import type { CatalogMatch } from "./match-catalog.js";
@@ -222,7 +223,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
   return {
     async recordOwners(lobbyId, replayId) {
       if (!ID.test(lobbyId) || !isReplayId(replayId)) throw new Error("Invalid recording ownership");
-      await store.transaction(async read => {
+      const changed = await store.transaction(async read => {
         const key = ownershipPath(replayId);
         const docs = await read([lobby(lobbyId), key]);
         const held = docs.get(lobby(lobbyId));
@@ -247,8 +248,9 @@ export function createWatchRegistry(store: Store): WatchRegistry {
         if (before && (before.version !== fields.version || before.lobbyId !== lobbyId || before.ownerIds !== fields.ownerIds)) {
           throw new Error("Recording ownership changed");
         }
-        return { result: undefined, writes: before ? [] : [{ op: "create" as const, path: key, fields }] };
+        return { result: !before, writes: before ? [] : [{ op: "create" as const, path: key, fields }] };
       });
+      if (changed) invalidateUsers();
     },
     async register(match) { await put(match, false); },
     resumed: match => put(match, true),

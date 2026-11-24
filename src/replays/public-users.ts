@@ -4,6 +4,8 @@ import { neverJoined, recordedColonies } from "./listed-colonies.js";
 import { isHouseHandle } from "./recorded-match-type.js";
 import type { Ratings } from "../rating/ratings.js";
 
+export type UserMatch = Pick<TypedHistorySummary, "id" | "startedAt" | "status" | "winner" | "reason" | "decidedBy" | "matchType" | "colonyNames" | "seats">;
+
 interface Recent {
   id: string; startedAt: string; colonies: number; matchType: TypedHistorySummary["matchType"];
   agents: string[]; opponents: { handle: string | null; modelLabel: string | null; thinkingLevel: string | null; serviceTier: string | null }[];
@@ -15,7 +17,7 @@ interface User {
 }
 
 /** The scanner yields unique public recordings. Retain only displayed users, their distinct handles and model labels. */
-export async function publicUsers(batches: AsyncIterable<readonly TypedHistorySummary[]>, ratings: Pick<Ratings, "leaderboard"> | undefined, signal: AbortSignal) {
+export async function publicUsers(batches: AsyncIterable<readonly UserMatch[]>, ratings: Pick<Ratings, "leaderboard"> | undefined, signal: AbortSignal) {
   const users = new Map<string, User>();
   for await (const batch of batches) for (const match of batch) {
     signal.throwIfAborted();
@@ -52,7 +54,7 @@ export async function publicUsers(batches: AsyncIterable<readonly TypedHistorySu
   });
 }
 
-function tally(users: Map<string, User>, match: TypedHistorySummary) {
+function tally(users: Map<string, User>, match: UserMatch) {
   const played = new Set<string>();
   const colonies = new Map<User, Set<number>>();
   for (const { handle, colony, modelLabel } of match.seats) {

@@ -27,6 +27,7 @@ it("builds the five-match listing with bounded reads, including cold and expired
   docs.set(`identities/${child}`, { kind: "handle", displayName: `${amber}/leaf`, ownerId: owner });
   const legacy = new Set(ids.filter((_, i) => i % 10 === 0));
   for (const id of ids) if (!legacy.has(id)) docs.set(`replayOwnership/${id}`, { version: "1", lobbyId, ownerIds: JSON.stringify([owner, opponent]) });
+  docs.set(`replayOwnership/${ids[2]}`, { version: "1", lobbyId, ownerIds: JSON.stringify([excluded]) });
   docs.set(`testRecordings/${ids[0]}`, { version: "1" });
   let bodyReads = 0, active = 0, peak = 0, dbReads = 0;
   const latency = async () => { ++dbReads; await sleep(25); };
@@ -67,7 +68,9 @@ it("builds the five-match listing with bounded reads, including cold and expired
     for (const build of ["cold", "hit", "expired"]) {
       if (build === "expired") {
         now += 60_001;
+        // One old contributor is now hidden. A newly visible row only appears after the full scan.
         docs.set(`testRecordings/${ids[1]}`, { version: "1" });
+        docs.set(`replayOwnership/${ids[2]}`, { version: "1", lobbyId, ownerIds: JSON.stringify([owner, opponent]) });
       }
       bodyReads = dbReads = peak = lobbyPeak = 0;
       const start = performance.now();
@@ -75,7 +78,7 @@ it("builds the five-match listing with bounded reads, including cold and expired
       console.info(`Synthetic Users ${build} response: ${Math.round(performance.now() - start)} ms`);
       for (const rows of visitors) {
         expect(rows).toHaveLength(2);
-        expect(rows[0].matches).toBe(511);
+        expect(rows[0].matches).toBe(build === "expired" ? 509 : 510);
         expect(rows[0].recent.map((r: { id: string }) => r.id)).toEqual(ids.slice(-5).reverse());
       }
       if (build === "expired") {

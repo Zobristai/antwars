@@ -1,3 +1,4 @@
+import { invalidateUsers } from "./users-snapshot.js";
 import { readMany, type Store } from "../store/firestore.js";
 import { isReplayId } from "./access.js";
 
@@ -48,10 +49,11 @@ export function createTestRecordings(store: Store, options: { readonly unmarkedM
     },
     async mark(replayId) {
       if (!isReplayId(replayId)) throw new Error("Invalid test recording id");
-      await store.transaction(async read => {
+      const changed = await store.transaction(async read => {
         const before = (await read([testRecordingPath(replayId)])).get(testRecordingPath(replayId));
-        return { result: undefined, writes: before ? [] : [{ op: "create" as const, path: testRecordingPath(replayId), fields: { version: "1" } }] };
+        return { result: !before, writes: before ? [] : [{ op: "create" as const, path: testRecordingPath(replayId), fields: { version: "1" } }] };
       });
+      if (changed) invalidateUsers();
       cache.set(replayId, true);
     },
   };
