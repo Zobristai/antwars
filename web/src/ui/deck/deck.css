@@ -199,6 +199,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .d1-team-head > .d1-team-player { flex: 1 1 0; }
 .d1-team-player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .d1-team-player > :not(.d1-team-player-name) { flex: none; }
+.d1-player-rating { display: contents; }
 .d1-seats { font-weight: 400; color: var(--aw-ink-3); }
 /* The economy: a cell per measure, its label over its figure. */
 .d1-econ { flex: none; display: grid; grid-template-columns: repeat(5, minmax(max-content, 1fr)); column-gap: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--d1-hair); }
@@ -772,7 +773,8 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .score-band :is(.d1-title-box, .d1-model-box) { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 100%; align-items: baseline; gap: 4px; }
 .score-band :is(.d1-title, .d1-model) { min-width: 0; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .score-band .d1-model, .score-band .d1-title { font-size: var(--aw-text-meta); }
-.score-band .d1-sel-title > .d1-model { flex: none; max-width: none; overflow: visible; text-overflow: clip; white-space: nowrap; }
+.score-band .d1-sel-title > .d1-model { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: normal; }
+.d1-sel-title .d1-model-word { white-space: nowrap; }
 .score-band .d1-econ, .score-band .d1-econ.has-flyers { display: contents; }
 .score-band .d1-cell { grid-row: 1; display: flex; align-items: center; min-width: 0; }
 .score-band .d1-cell > .d1-ml { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -1116,6 +1118,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 @media (min-width: 320px) and (max-width: 19.99em) {
   .score-band .d1-econ > .d1-cell, .score-band .d1-econ.has-flyers > .d1-cell { grid-column: span 6; grid-row: auto; }
   .score-band .d1-econ > .sb-queens, .score-band .d1-econ.has-flyers > .sb-queens { grid-column: 1 / -1; order: 1; }
+  .score-band .d1-player-rating { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
   .score-band .sb-sticky-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
   .score-band .sb-sticky-bar > .d1-team-head { display: contents; }
   .score-band .sb-sticky-bar .d1-name { display: block; flex: 1 0 100% !important; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

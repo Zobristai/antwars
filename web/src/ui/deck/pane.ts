@@ -149,6 +149,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     const name = h(doc, "h2", `d1-name c${colony}`, colonyName(colony));
     name.id = `d1-team-${colony}`;
     name.title = colonyName(colony);
+    name.setAttribute("aria-label", name.title);
     section.setAttribute("aria-labelledby", name.id);
     // One icon per member, then the one player's name, which gives way before its Elo, always shown in full.
     const members = h(doc, "span", "d1-team-members"), player = h(doc, "span", "d1-team-player");
@@ -158,7 +159,9 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     playerName.append(playerTitle, " ", playerModel);
     const playerTags = h(doc, "span", "d1-tags"), playerElo = h(doc, "span", "d1-tag d1-elo");
     const playerSeats = h(doc, "span", "d1-seats"), playerResult = h(doc, "span", `d1-tag d1-outcome c${colony}`);
-    player.append(playerName, playerTags, playerElo, playerSeats, playerResult);
+    const rating = h(doc, "span", "d1-player-rating");
+    rating.append(playerElo, playerSeats);
+    player.append(playerName, playerTags, rating, playerResult);
     // Hidden until a colony has one player holding several seats (writePlayer).
     setHidden(player, true);
     head.append(name, members, player);
@@ -663,7 +666,11 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       setMarkup(cardBadge, sel.badge);
       cardName.replaceChildren(userName(doc, handle, sel.title));
       cardName.title = sel.title;
-      setText(cardModel, sel.model);
+      // Browser wrap opportunities belong between model words, not inside an identifier (hyphens included).
+      cardModel.replaceChildren(...sel.model.split(/(\s+)/).filter(Boolean).map(s => /\S/.test(s) ? h(doc, "span", "d1-model-word", s) : s));
+      cardModel.title = sel.model;
+      setAttr(cardModel, "role", "group");
+      setAttr(cardModel, "aria-label", sel.model || null);
       setHidden(cardModel, sel.model === "");
       cardTags.replaceChildren(...sel.badges.map(text => h(doc, "span", "d1-tag", text)));
       setHidden(cardTags, sel.badges.length === 0);
@@ -729,9 +736,10 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   let arrived: Arrival | null = null;
   let lastSeed: readonly HistoryRow[] = [];
   /** The colony names the headings show: the match's own, else the rated names; written again only when they change. */
-  let shownNames = colonies.map(c => colonyName(c)).join("\n");
+  let shownNames = "";
   const writeNames = (setup: Board["setup"] | null) => {
-    const names = colonies.map(c => colonyName(c, setup)).join("\n");
+    // The same names in a drawn match have source notes; rated names do not.
+    const names = setup?.colonyNames?.join("\n") ?? "";
     if (names === shownNames) return;
     shownNames = names;
     for (const colony of colonies) {
@@ -739,6 +747,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
       node.name.textContent = named;
       node.colName.textContent = named;
       node.name.title = note ? `${named} · ${note}` : named;
+      node.name.setAttribute("aria-label", node.name.title);
       node.rows.setAttribute("aria-label", `${named} agents`);
       node.line.setAttribute("aria-label", `${named} ${D1_COPY.history.toLowerCase()}`);
       node.historyButton.setAttribute("aria-label", `${named} history`);

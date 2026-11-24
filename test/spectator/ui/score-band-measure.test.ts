@@ -10,6 +10,12 @@ import { mountDeck } from "../../../web/src/ui/deck/deck.ts";
 import { dom, type ElementPort } from "../pages/dom.ts";
 import { markup } from "./port-markup.ts";
 import { roster } from "../../../web/src/ui/deck/model.ts";
+import { readFixtures } from "../../../web/render-check/serve.ts";
+import { FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY } from "../../../web/render-check/check.ts";
+import { decodeMessage } from "../../../src/live/format.ts";
+import { unpackMessages } from "../../../src/live/snapshot.ts";
+import { mountTeams } from "../../../web/src/ui/deck/pane.ts";
+import type { HudActions } from "../../../web/src/ui/types.ts";
 import { scoreFrame } from "./score-band-frame.ts";
 
 describe("scrolling HUD fit evidence", () => {
@@ -278,7 +284,69 @@ describe("scrolling HUD fit evidence", () => {
       expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
     } finally { await browser.close(); }
   });
-  it("fits the picked ant and every grouped seek mark at enlarged phone widths", async () => {
+  it("keeps each identity unit in the two recorded phone replays whole, even on two rows", async () => {
+    const fixtures = await readFixtures(["web/render-check/fixtures.json"]);
+    const css = ["design-system/tokens.css", "ui/deck/deck.css"].map(path => readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");
+    for (const id of [FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY]) {
+      // Use the committed replay identities; mounting the pane exercises the real public name links, badges and grouping.
+      const bytes = fixtures[`/replays/${id}`]?.bytes;
+      if (!bytes) throw Error(`Missing replay excerpt: ${id}`);
+      const full = decodeMessage(unpackMessages(bytes)[0]!).full!;
+      const frame = scoreFrame(full.setup.queens.length); frame.board!.agents = full.agents; frame.board!.setup = full.setup;
+      const port = dom();
+      const teams = mountTeams(port.doc, {} as HudActions, { search: () => "", economy: full.setup.queens.map(() => port.doc.createElement("div")) });
+      teams.setWide(false);
+      const rosterHandles = new Map(full.agents.map(a => [a.identity!.displayName, a.identity!.displayName]));
+      teams.update({ frame, rosterHandles, selected: null, selectedAgent: -1, connection: "live", board: "3d", mode: null, stalled: false }, false);
+      const html = teams.teams.map(team => markup(team as unknown as ElementPort)).join("");
+      for (const font of ["Roboto", "Liberation Sans"] as const) {
+        const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+        try {
+          const page = await browser.newPage({ deviceScaleFactor: 2 });
+          for (const width of [320, 390]) for (const size of [16, 32] as const) {
+            await page.setViewportSize({ width, height: 844 }); await applyTextSize(page, size);
+            await page.setContent(`<style>body{margin:0}:root{--aw-sans:sans-serif}${css}</style><main class="d1 d1-hud score-band"><div class="d1-below"><div class="d1-deck"><div class="sb-deck-table">${html}</div></div></div></main>`);
+            await page.evaluate(() => document.fonts.ready);
+            const rows = await page.locator(".d1-who:visible,.d1-team-player:visible").evaluateAll(nodes => nodes.map(row => {
+              const groups = row.matches(".d1-who") ? [".d1-title-box", ".d1-model-box"] : [".d1-team-player-name,.d1-tags", ".d1-elo,.d1-seats"];
+              const box = row.getBoundingClientRect();
+              const units = groups.map(selector => {
+                const rects: DOMRect[] = []; let cut = false;
+                for (const part of row.querySelectorAll(selector)) {
+                  const walker = document.createTreeWalker(part, NodeFilter.SHOW_TEXT);
+                  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+                    if (!n.textContent?.trim() || !n.parentElement!.checkVisibility()) continue;
+                    const range = new Range(); range.selectNodeContents(n);
+                    const leaf = n.parentElement!.getBoundingClientRect();
+                    for (const r of range.getClientRects()) {
+                      rects.push(r);
+                      if (r.left < Math.max(0, box.left, leaf.left) - 1 || r.right > Math.min(innerWidth, box.right, leaf.right) + 1) cut = true;
+                    }
+                  }
+                }
+                return { present: !!rects.length, whole: Math.max(...rects.map(r => r.top)) < Math.min(...rects.map(r => r.bottom)), cut,
+                  top: Math.min(...rects.map(r => r.top)), bottom: Math.max(...rects.map(r => r.bottom)),
+                  left: Math.min(...rects.map(r => r.left)), right: Math.max(...rects.map(r => r.right)) };
+              });
+              return { text: (row as HTMLElement).innerText.replace(/\s+/g, " "), width: Math.round(box.width), units };
+            }));
+            const label = `${id} at ${width}px, ${size}px text, ${font}`;
+            expect(rows, label).toHaveLength(id === FREE_FOR_ALL_REPLAY ? 4 : 2);
+            for (const row of rows) {
+              expect(row.width, label).toBe(width - 16);
+              for (const unit of row.units) expect(unit, `${label}: ${row.text}`).toMatchObject({ present: true, whole: true, cut: false });
+              const [a, b] = row.units as [typeof row.units[number], typeof row.units[number]];
+              const stacked = b.top >= a.bottom - 1;
+              expect(stacked || b.left >= a.right - 1, label).toBe(true);
+              const needsTwo = size === 32 && (id === FREE_FOR_ALL_REPLAY || row.text.includes("Muse") && (width === 320 || font === "Liberation Sans"));
+              expect(stacked, `${label}: ${row.text}`).toBe(needsTwo);
+            }
+          }
+        } finally { await browser.close(); }
+      }
+    }
+  }, 60_000);
+  it("fits selected titles and single and grouped seek marks at enlarged phone widths", async () => {
     const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
     server.middlewares.use((req, res, next) => {
       if (req.url !== "/hud-fit") return next();
@@ -302,13 +370,18 @@ describe("scrolling HUD fit evidence", () => {
             import { mountReplayControls } from '/web/src/replay-controls.ts';
             const teams = mountTeams(document, {}, {search: () => '', economy: [0,1].map(() => document.createElement('div'))});
             document.querySelector('.d1-deck').append(...teams.teams); teams.setWide(false);
-            teams.update({frame: scoreFrame(2), connection: 'live', selected: {antId: 123456, agent: -1, colony: 0}, selectedAgent: -1, board:'3d', mode:null}, false);
+            const frame = scoreFrame(2);
+            window.selectModel = label => {frame.board.agents[0].modelLabel = label; teams.update({frame, connection:"live", selected:null, selectedAgent:0, board:"3d", mode:null}, false);};
+            teams.update({frame, connection: 'live', selected: {antId: 123456, agent: -1, colony: 0}, selectedAgent: -1, board:'3d', mode:null}, false);
             const marks = [0,1,1].map(colony => ({kind:'nest', ms:12000, tick:120, colony}));
-            const controls = mountReplayControls(document, {duration:30000, rate:1, error:null, position:0, events:marks});
-            document.querySelector('#rail').append(controls.el); document.querySelector('.aw-mark.group').click();
+            marks.push({kind:"nest",ms:1200000,tick:12000,colony:1});
+            const controls = mountReplayControls(document, {duration:1220000, rate:1, error:null, position:0, events:marks, seek(){}}, ["Very Large Colony","Lake Skinner Colony"]);
+            document.querySelector('#rail').append(controls.el);
+            // The live HUD updates after mount. Its first layout without a connected seek bar has zero travel.
+            requestAnimationFrame(() => requestAnimationFrame(() => { controls.update(); document.querySelector('.aw-mark.group').click(); }));
           ` });
           const title = page.locator(".d1-sel-ant .d1-sel-title");
-          await title.waitFor();
+          await page.locator(".aw-mark-list:visible").waitFor();
           for (const width of [320, 390, 393, 412, 430, 559, 560, 639]) {
             await page.setViewportSize({ width, height: 844 });
             // The mounted card refits after layout delivers its size observer.
@@ -335,6 +408,48 @@ describe("scrolling HUD fit evidence", () => {
                 [...range.getClientRects()].every(r => r.right <= box.right + 0.5 && r.left >= box.left - 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5);
             }));
             expect(fits, `${width}px ${font}: mark words and time inside their own row`).toBe(true);
+          }
+          for (const width of [320, 390]) {
+            await page.setViewportSize({ width, height: 844 });
+            const group = page.locator(".aw-mark.group");
+            if (await group.getAttribute("aria-expanded") !== "true") await group.evaluate(el => (el as HTMLElement).click());
+            const single = page.locator("button.aw-mark.nest");
+            for (const show of [() => page.locator(".aw-mark-list:visible .aw-mark-row").last().evaluate(el => (el as HTMLElement).click()), () => single.focus(), () => single.evaluate(el => (el as HTMLElement).click())]) {
+              await show();
+              const chip = page.locator(".aw-mark-label:visible");
+              const bounds = await chip.evaluate(el => {
+                const row = el.getBoundingClientRect(), rail = el.parentElement!.getBoundingClientRect();
+                const words = document.createTreeWalker(el.querySelector(".aw-mark-words")!, NodeFilter.SHOW_TEXT);
+                const bad: string[] = [];
+                for (let n = words.nextNode(); n; n = words.nextNode()) for (const match of n.textContent!.matchAll(/[^\s]+/g)) {
+                  const r = new Range(); r.setStart(n, match.index); r.setEnd(n, match.index + match[0].length);
+                  const b = r.getBoundingClientRect();
+                  if (r.getClientRects().length !== 1 || b.left < row.left - .5 || b.right > row.right + .5 || b.top < row.top - .5 || b.bottom > row.bottom + .5) bad.push(match[0]);
+                }
+                return { bad, time: el.querySelector("b")!.textContent, fits: row.left >= Math.max(0, rail.left) - .5 && row.right <= Math.min(innerWidth, rail.right) + .5 };
+              });
+              expect(bounds).toMatchObject({ bad: [], fits: true });
+              expect(["0:12", "20:00"]).toContain(bounds.time);
+            }
+            for (const size of [16, 32] as const) {
+              await applyTextSize(page, size);
+              for (const model of ["Alpha", "Alpha Echo Delta Alpha Echo Delta Alpha Echo Delta Alpha Echo", "W".repeat(64)]) {
+                await page.evaluate(label => (window as unknown as { selectModel(label: string): void }).selectModel(label), model);
+                const label = page.getByRole("group", { name: model, exact: true });
+                expect(await label.getAttribute("title")).toBe(model);
+                const fit = await label.evaluate(el => {
+                  const box = el.getBoundingClientRect(), card = el.closest(".d1-sel")!.getBoundingClientRect();
+                  const words = [...el.querySelectorAll(".d1-model-word")].map(w => { const r = new Range(); r.selectNodeContents(w); return [...r.getClientRects()]; });
+                  return { size: getComputedStyle(el).fontSize, fits: box.left >= card.left - .5 && box.right <= Math.min(innerWidth, card.right) + .5,
+                    // A designed ellipsis can yield multiple range fragments at the same baseline.
+                    whole: words.every(rs => new Set(rs.map(r => r.top)).size === 1), lines: new Set(words.flat().map(r => r.top)).size,
+                    clipped: el.scrollWidth > el.clientWidth + 1, overflow: getComputedStyle(el).textOverflow };
+                });
+                expect(fit, `${width}px ${size} ${font}: ${model}`).toMatchObject({ size: `${13 * size / 16}px`, fits: true, whole: true, clipped: model.startsWith("W") });
+                if (model.includes(" ")) expect(fit.lines).toBeGreaterThan(1);
+                if (model.startsWith("W")) expect(fit.overflow).toBe("ellipsis");
+              }
+            }
           }
         } finally { await browser.close(); }
       }

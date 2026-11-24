@@ -158,6 +158,20 @@ describe("render check rules", () => {
     expect(rules(fits)).toEqual([]);
   });
 
+  it("allows only the full-row pinned colony heading's accessible end ellipsis on enlarged phones", async () => {
+    const label = "A long drawn colony name · Source note";
+    const html = `<div class="score-band"><section class="d1-team"><div class="sb-sticky-bar" style="width:180px"><header class="d1-team-head">`
+      + `<h2 class="d1-name" title="${label}" aria-label="${label}" style="display:block;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">A long drawn colony name</h2>`
+      + "</header></div></section></div>";
+    expect(rules(await judged(html, 320, 32))).not.toContain("clipped");
+    for (const broken of [html.replace("text-overflow:ellipsis", "text-overflow:clip"), html.replace(`aria-label="${label}"`, 'aria-label="A long drawn colony name"'),
+      html.replace("margin:0", "margin:0;width:80px"), html.replace("margin:0", "margin:0;height:7px"), html.replace("sb-sticky-bar", "unrelated")]) {
+      expect(rules(await judged(broken, 320, 32))).toContain("clipped");
+    }
+    expect(rules(await judged(html, 320, 16))).toContain("clipped");
+    expect(rules(await judged(html, 640, 32))).toContain("clipped");
+  });
+
   describe("designed player name ellipses", () => {
     const words = "Riverbank Very Long Model";
     const run = (tile: boolean, css = "", title = words) => {

@@ -273,6 +273,22 @@ export function judgePage(limits: typeof RULE_LIMITS): PageJudgement {
     }
   }
 
+  // On a phone at enlarged text the pinned colony name has the whole first row. Only
+  // its trailing ellipsis is intentional; ancestor, vertical and viewport cuts still count.
+  if (rootPx > 16 && matchMedia("(min-width: 320px) and (max-width: 19.99em)").matches) {
+    for (const run of document.querySelectorAll<HTMLElement>(".score-band .d1-team > .sb-sticky-bar > .d1-team-head > h2.d1-name")) {
+      const cs = style(run), words = run.textContent?.trim();
+      const bar = run.parentElement!.parentElement!;
+      const notePrefix = `${words} · `;
+      if (!words || run.children.length || !(run.title === words || (run.title.startsWith(notePrefix) && run.title.slice(notePrefix.length).trim()))
+        || run.getAttribute("aria-label") !== run.title || run.hasAttribute("aria-labelledby") || run.closest('[aria-hidden="true"], [inert]')
+        || cs.display !== "block" || cs.whiteSpace !== "nowrap" || cs.textOverflow !== "ellipsis" || cs.overflowX !== "hidden") continue;
+      const barWidth = bar.clientWidth - parseFloat(style(bar).paddingLeft) - parseFloat(style(bar).paddingRight);
+      const content = run.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      if (run.offsetWidth >= barWidth - 0.5 && content >= 1.5 * parseFloat(cs.fontSize)) designedEnds.add(run);
+    }
+  }
+
   // Text cut by an overflow box (its own or an ancestor's), an ellipsis, or the viewport.
   interface Edges { left: number; top: number; right: number; bottom: number }
   /**

@@ -315,6 +315,7 @@ describe("in a browser, a four-colony match's colony names", () => {
         expect(await names.count()).toBe(4);
         for (let c = 0; c < 4; c++) {
           const name = names.nth(c);
+          expect(await page.getByRole("heading", { level: 2, name: `${NAMES[c]} · ${colonyNameNote(NAMES[c]!)}`, exact: true }).count()).toBe(1);
           await name.scrollIntoViewIfNeeded();
           const box = (await name.boundingBox())!;
           await page.mouse.move(box.x + Math.min(6, box.width / 2), box.y + box.height / 2);
