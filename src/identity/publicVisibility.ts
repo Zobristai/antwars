@@ -29,7 +29,7 @@ export function usersOwnerPolicy(read: () => readonly string[], store?: Store, r
 
 /** The hide list applies to every public view of a match, without changing play or ratings. */
 export interface PublicVisibility {
-  replaysVisibleEach?(ids: readonly string[], signal: AbortSignal): Promise<ReadonlySet<string>>;
+  replaysVisibleEach?(ids: readonly string[], signal: AbortSignal, lobbyLimit?: number): Promise<ReadonlySet<string>>;
   identitiesVisible(ids: readonly string[]): Promise<boolean>;
   lobbyVisible(id: string): Promise<boolean>;
   replayVisible(id: string, signal?: AbortSignal): Promise<boolean>;
@@ -105,7 +105,7 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
       const visible = await groupsVisible(ids.map(id => seatIds(lobbies.get(id)!)), signal);
       return new Map(ids.map((id, index) => [id, visible[index]!]));
     }),
-    async replaysVisibleEach(ids, signal) {
+    async replaysVisibleEach(ids, signal, lobbyLimit = 20) {
       try {
         const ownership = await readMany(store, ids.map(ownershipPath), signal);
         const visible = new Set<string>(), legacy: string[] = [];
@@ -114,7 +114,7 @@ export function createPublicVisibility(store: Store, registry: Pick<WatchRegistr
           if (!owners) legacy.push(id);
           else if (owners.every(owner => !excluded.has(owner))) visible.add(id);
         }
-        const links = await boundedReads(legacy, 20, async id => ({ id, lobby: await registry.replayLobby(id, signal) }), signal);
+        const links = await boundedReads(legacy, Math.min(20, lobbyLimit), async id => ({ id, lobby: await registry.replayLobby(id, signal) }), signal);
         const linked = links.flatMap(({ id, lobby }) => lobby.state === "found" ? [{ id, path: `lobbies/${lobby.lobbyId}` }] : []);
         const lobbies = await readMany(store, linked.map(link => link.path), signal);
         const groups = linked.flatMap(({ id, path }) => {

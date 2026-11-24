@@ -137,7 +137,7 @@ it("shares one completed listing across GET and HEAD until its one-minute expiry
   expect((await read(0)).status).toBe(200); expect(scan).toHaveBeenCalledTimes(2);
 });
 
-it("shares each admitted expiry check, lets late visitors recheck after cooldown, and limits the whole refresh", async () => {
+it("shares each admitted expiry check, lets late visitors recheck after cooldown, and releases finished and disconnected admissions", async () => {
   let now = 0, builds = 0, checks = 0;
   const checking = Promise.withResolvers<void>(), checked = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
   const scan = async function* () { if (++builds === 1) yield [oneMatch()]; else { await resume.promise; yield []; } };
@@ -148,14 +148,17 @@ it("shares each admitted expiry check, lets late visitors recheck after cooldown
     } }, ratings: { async leaderboard() { return { ok: true, value: { entries: [] } }; } } });
   expect(await visitor(handler).done).toBe(200); now += 60_000;
   const first = visitor(handler); await checking.promise;
-  const others = [visitor(handler), visitor(handler, "HEAD"), visitor(handler)];
+  const others = Array.from({ length: 127 }, () => visitor(handler, "HEAD"));
   try {
-    checked.resolve(); expect(await Promise.all([first, ...others].map(v => v.done))).toEqual([200, 200, 200, 200]);
+    expect(await visitor(handler).done).toBe(503); // 128 unfinished responses.
+    const departed = others.pop()!; departed.leave(); await departed.done;
+    others.push(visitor(handler));
+    checked.resolve(); expect(await Promise.all([first, ...others].map(v => v.done))).toEqual(Array(128).fill(200));
     // All late visitors arrive after the first check has settled. They share a new check
     // after the cooldown and receive its answer while the full scan remains blocked.
     const start = performance.now();
-    const late = Array.from({ length: 124 }, () => visitor(handler).done);
-    expect(await visitor(handler).done).toBe(503); expect(checks).toBe(1);
+    const late = [visitor(handler).done, visitor(handler).done]; // 129th completed request doesn't wait for a new build.
+    expect(checks).toBe(1);
     expect(new Set(await Promise.all(late))).toEqual(new Set([200]));
     expect(performance.now() - start).toBeGreaterThanOrEqual(950);
     expect(builds).toBe(2); expect(checks).toBe(2);
@@ -190,6 +193,23 @@ it("checks old contributors on expiry and does not republish rows hidden on anot
   expect(await first()).toEqual(updated); expect(builds).toBe(2);
 });
 
+it("expires a remote write missed during verification 60 seconds from the check's first read", async () => {
+  const row = oneMatch(), { store, docs } = memoryWatchStore();
+  let now = 0, scans = 0;
+  const url = await listen(sourceWith(async function* () {
+    ++scans; yield [row];
+    if (scans === 1) now = 15_000; // Storage scan started at zero; final verification starts later.
+  }), undefined, { usersNow: () => now, testRecordings: createTestRecordings(store), ratings: { async leaderboard() {
+    // This independent write doesn't touch the local revision. The final marker read already finished.
+    docs.set(`testRecordings/${row.id}`, { version: "1" }); now = 45_000;
+    return { ok: true, value: { entries: [] } };
+  } } });
+  const read = async () => { const r = await fetch(url + "/matches/users"); expect(r.status).toBe(200); return (await r.json()).users; };
+  expect(await read()).toHaveLength(2);
+  now = 74_999; expect(await read()).toHaveLength(2); expect(scans).toBe(1);
+  now = 75_000; expect(await read()).toEqual([]); // Neither 60 s from build start nor 60 s from publication.
+});
+
 it("does not publish a listing when its final visibility check fails", async () => {
   let now = 0, reads = 0;
   const url = await listen(sourceWith(async function* () { yield [oneMatch()]; }), undefined, {
@@ -202,6 +222,32 @@ it("does not publish a listing when its final visibility check fails", async () 
   const failed = await read(); expect(failed.status).toBe(503); expect(await failed.json()).not.toHaveProperty("users");
   expect((await read()).status).toBe(503); expect(reads).toBe(2);
   now += 10_000; const retry = await read(); expect(retry.status).toBe(200); expect((await retry.json()).users).toHaveLength(2);
+});
+
+it("joins all four final verification batches after one fails and never publishes a partial listing", async () => {
+  const rows = Array.from({ length: 501 }, (_, i) => match(i, ["fern", "river"]));
+  const allStarted = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  let started = 0, finished = 0;
+  const url = await listen(sourceWith(async function* () { yield rows; }), undefined, {
+    testRecordings: { async mark() {}, async marked(ids) {
+      if (ids.length === 100) { // Scan reads at most 20; final verification checks 100 at a time.
+        const first = ++started === 1;
+        if (started === 4) allStarted.resolve();
+        try {
+          await allStarted.promise;
+          if (first) throw new Error("marker read failed");
+          await resume.promise;
+        } finally { ++finished; }
+      }
+      return new Set();
+    } },
+  });
+  let returned = false;
+  const read = fetch(url + "/matches/users").then(r => { returned = true; return r; });
+  try { await allStarted.promise; await nextTurn(); expect(returned).toBe(false); expect(finished).toBe(1); }
+  finally { resume.resolve(); }
+  const r = await read; expect(r.status).toBe(503); expect(await r.json()).not.toHaveProperty("users");
+  expect(started).toBe(4); expect(finished).toBe(4);
 });
 
 it("waits for a cold result if the expired listing cannot be checked", async () => {
@@ -354,7 +400,12 @@ it("verifies all 6,000 records before publication but does not retain oversized 
   const scan = async function* () {
     if (++builds > 1) { await resume.promise; yield []; return; }
     for (let i = 0; i < 300; i++) {
-      for (let j = 0; j < page.length; j++) Object.assign(page[j]!, match(i * 20 + j, ["fern", "river"], { winner: i % 2 }));
+      for (let j = 0; j < page.length; j++) {
+        const row = match(i * 20 + j, ["fern", "river"], { winner: i % 2 });
+        // With the narrower tally encoding, include real display fields so this fixture still crosses 2 MiB.
+        for (const seat of row.seats) seat.modelLabel = "Example model used for a historical match";
+        Object.assign(page[j]!, row);
+      }
       yield page;
     }
     for (const row of page) row.seats = [];
@@ -372,6 +423,25 @@ it("verifies all 6,000 records before publication but does not retain oversized 
   try { await vi.waitFor(() => expect(builds).toBe(2)); expect(checked).toBe(12_000); } finally { resume.resolve(); }
   expect(await expired).toEqual([]);
   expect(warn.mock.calls).toEqual([["Users listing exceeds the contribution limit; expiry will wait for a full build"]]);
+});
+
+it("warns once and fails the build without publishing a partial listing at the 32 MiB limit", async () => {
+  // Wide tally inputs reach the byte cap without creating a very large store fixture.
+  const label = "M".repeat(16 * 1024), ratings = { leaderboard: vi.fn() };
+  let scanned = 0;
+  const url = await listen(sourceWith(async function* () {
+    for (let i = 0; i < 3000; i += 20) {
+      const rows = Array.from({ length: 20 }, (_, j) => match(i + j, ["fern", "river"]));
+      for (const row of rows) row.seats[0]!.modelLabel = label;
+      scanned += rows.length; yield rows;
+    }
+  }), undefined, { ratings, usersNow: () => 0 });
+  using warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const read = () => fetch(url + "/matches/users");
+  const result = await read(); expect(result.status).toBe(503); expect(await result.json()).not.toHaveProperty("users");
+  const stoppedAt = scanned; expect(stoppedAt).toBeLessThan(3000);
+  expect((await read()).status).toBe(503); expect(scanned).toBe(stoppedAt); expect(ratings.leaderboard).not.toHaveBeenCalled();
+  expect(warn.mock.calls.filter(([message]) => message === "Users listing exceeds the 32 MiB build limit")).toHaveLength(1);
 });
 
 it("invalidates a warm response when the configured owner set changes", async () => {
@@ -447,7 +517,8 @@ it.each(["upstream failure", "deadline"])("retries after 10 seconds and logs a d
 function visitor(handler: ReturnType<typeof historyRoutes>, method = "GET") {
   const req = new IncomingMessage(new Socket()); req.url = "/matches/users"; req.method = method;
   const res = new ServerResponse(req);
-  return { done: Promise.resolve(handler(req, res, undefined as never)).then(() => res.statusCode),
+  // There is no connected socket to flush this synthetic response and signal finish for us.
+  return { done: Promise.resolve(handler(req, res, undefined as never)).then(() => { if (res.writableEnded) res.emit("finish"); return res.statusCode; }),
     leave() { res.destroy(); res.emit("close"); } };
 }
 

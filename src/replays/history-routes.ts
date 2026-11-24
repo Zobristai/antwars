@@ -3,7 +3,7 @@ import { isValidId } from "../rating/ratings.js";
 import { joinReads } from "../store/join-reads.js";
 import { needsUsersCheck, snapshotContributions, usersRevision } from "./users-snapshot.js";
 import { neverJoined } from "./listed-colonies.js";
-import { publicUsers } from "./public-users.js";
+import { publicUsers, type UserMatch } from "./public-users.js";
 import type { Ratings } from "../rating/ratings.js";
 import { publiclyVisible, type PublicVisibility } from "../identity/publicVisibility.js";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -376,10 +376,10 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       if (originals) attributed.forEach((row, i) => originals.set(row, rows[i]!));
       return { ...filled, matches: attributed };
     }
-    async function visibleRows<T extends { id: string }>(rows: T[], signal: AbortSignal) {
+    async function visibleRows<T extends { id: string }>(rows: T[], signal: AbortSignal, lobbyLimit = 20) {
       signal.throwIfAborted();
       if (buildSignal && policy?.replaysVisibleEach) {
-        const ids = await policy.replaysVisibleEach(rows.map(row => row.id), buildSignal);
+        const ids = await policy.replaysVisibleEach(rows.map(row => row.id), buildSignal, lobbyLimit);
         return rows.filter(row => ids.has(row.id));
       }
       return policy ? publiclyVisible(rows, row => policy.replayVisible(row.id, buildSignal), signal) : rows;
@@ -438,32 +438,47 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   const usersDeadline = options.usersDeadlineMs ?? 120_000, usersNow = options.usersNow ?? Date.now;
   type Facts = ReturnType<typeof snapshotContributions>;
   type Policy = ReturnType<typeof policyNow>;
-  type Answer = { body: Buffer; revision: number };
+  type Answer = { body: Buffer; revision: number; expires: number };
   type Snapshot = { answer?: Answer; expires: number; digest: string; facts?: Facts };
   let snapshot: Snapshot | undefined;
-  type Flight = { answer(): Promise<Buffer>; background: boolean; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; admissions: number; waiters: number };
+  type Flight = { answer(): Promise<Buffer>; background: boolean; settled: Promise<void>; stop: AbortController; signal: AbortSignal; digest: string; waiters: number };
   const readerLeft = new Error("Users reader disconnected");
   const invalidated = new Error("Users listing invalidated");
-  let flight: Flight | undefined;
+  let flight: Flight | undefined, admissions = 0;
 
   // Use the same fresh database reads for both an expired answer and publication. An ownership
   // write or hide on another instance doesn't advance our process-local revision.
-  async function checked(facts: Facts, policy: Policy, signal: AbortSignal) {
-    const revision = usersRevision();
+  async function checked(facts: Facts, policy: Policy, signal: AbortSignal, width: 1 | 4) {
+    // A remote change cannot advance our revision. Bound the oldest database read, not the publication time.
+    const expires = usersNow() + 60_000, revision = usersRevision();
     const page = projection(policy.visibility, signal);
+    async function verify(rows: UserMatch[], lobbyLimit: number) {
+      const [visible, marked] = await joinReads([page.visibleRows(rows, signal, lobbyLimit),
+        options.testRecordings?.marked(rows.map(row => row.id), signal, true)]);
+      const allowed = visible.filter(row => !marked?.has(row.id));
+      if (!allowed.length) return [];
+      if (!options.currentRosterSeats) throw new Error("Roster ownership unavailable");
+      return attributeRoster(allowed, lobbies, options.currentRosterSeats, signal, "directory", lobbyLimit);
+    }
     async function* batches() {
-      for (const rows of facts.batches()) {
+      const iterator = facts.batches();
+      for (;;) {
         signal.throwIfAborted();
-        const [visible, marked] = await joinReads([page.visibleRows(rows, signal),
-          options.testRecordings?.marked(rows.map(row => row.id), signal, true)]);
-        const allowed = visible.filter(row => !marked?.has(row.id));
-        if (!allowed.length) continue;
-        if (!options.currentRosterSeats) throw new Error("Roster ownership unavailable");
-        yield await attributeRoster(allowed, lobbies, options.currentRosterSeats, signal, "directory");
+        const group: UserMatch[][] = [];
+        while (group.length < width) {
+          const batch = iterator.next();
+          if (batch.done) break;
+          group.push(batch.value);
+        }
+        if (!group.length) return;
+        // Verification phases run in order inside a batch. Share the lobby budget across
+        // both legacy visibility and attribution; drain the whole group before reading more.
+        const limit = Math.min(20, Math.floor(40 / group.length));
+        yield* await joinReads(group.map(rows => verify(rows, limit)));
       }
     }
     const users = await publicUsers(batches(), options.ratings, signal);
-    return { body: Buffer.from(JSON.stringify({ users })), revision };
+    return { body: Buffer.from(JSON.stringify({ users })), revision, expires };
   }
 
   function begin(policy: Policy, prior?: Facts): Flight {
@@ -478,7 +493,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       return early ??= (async () => {
         const delay = nextCheck - performance.now();
         if (delay > 0) await sleep(delay, undefined, { signal: earlySignal });
-        return checked(prior, policy, earlySignal);
+        return checked(prior, policy, earlySignal, 1);
       })().catch(() => { closing = true; return undefined; }).finally(() => {
         nextCheck = performance.now() + 1000; early = undefined;
       });
@@ -494,14 +509,14 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       let answer: Answer;
       do {
         signal.throwIfAborted();
-        answer = await checked(facts, policy, signal);
+        answer = await checked(facts, policy, signal, 4);
       } while (needsUsersCheck(answer.revision, facts)); // retry the database check, never the storage scan
       signal.throwIfAborted();
       const published = usersNow();
       if (policy.digest !== policyNow().digest) throw invalidated;
-      if (published - started >= usersDeadline) throw new Error("Listing expired");
+      if (published >= answer.expires || published - started >= usersDeadline) throw new Error("Listing expired");
       if (!facts.retainable) console.warn("Users listing exceeds the contribution limit; expiry will wait for a full build");
-      snapshot = { answer, facts: facts.retainable ? facts : undefined, digest: policy.digest, expires: published + 60_000 };
+      snapshot = { answer, facts: facts.retainable ? facts : undefined, digest: policy.digest, expires: answer.expires };
       return answer;
     })().catch(error => {
       if (error !== invalidated && signal.reason !== invalidated && signal.reason !== readerLeft) snapshot = { digest: policy.digest, expires: usersNow() + 10_000 };
@@ -511,16 +526,16 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       const pending = checkPrior();
       if (pending) {
         const first = await Promise.race([pending, work]);
-        if (first && !needsUsersCheck(first.revision, prior)) return first.body;
+        if (first && usersNow() < first.expires && !needsUsersCheck(first.revision, prior)) return first.body;
       }
       const final = await work;
-      if (needsUsersCheck(final.revision, snapshot?.facts)) throw invalidated;
+      if (usersNow() >= final.expires || needsUsersCheck(final.revision, snapshot?.facts)) throw invalidated;
       return final.body;
     }
-    const build: Flight = { answer, background: !!prior, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0, admissions: 0 };
+    const build: Flight = { answer: sharedRead(answer), background: !!prior, settled: work.then(() => {}, () => {}), signal, stop, digest: policy.digest, waiters: 0 };
     return build;
   }
-  async function users(signal: AbortSignal): Promise<Buffer> {
+  async function users(signal: AbortSignal, admit: () => void): Promise<Buffer> {
     for (;;) {
       signal.throwIfAborted();
       const policy = policyNow();
@@ -529,8 +544,8 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         if (!snapshot.answer) throw new Error("Users listing temporarily unavailable");
         if (!needsUsersCheck(snapshot.answer.revision, snapshot.facts)) return snapshot.answer.body;
       }
+      admit();
       const build = flight ??= begin(policy, snapshot?.facts);
-      if (++build.admissions > 128) throw new Error("Listing busy");
       if (build.digest !== policy.digest) {
         build.stop.abort(invalidated);
         await untilAborted(build.settled, signal);
@@ -629,7 +644,16 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
         res.end(req.method === "HEAD" ? undefined : body);
       } else if (usersList) {
-        const body = await users(abort.signal);
+        // One slot per unfinished response, across retries. Finishing or disconnecting
+        // releases it even if other requests still need the background refresh.
+        let admitted = false;
+        const release = () => { --admissions; res.off("finish", release); res.off("close", release); };
+        const body = await users(abort.signal, () => {
+          if (admitted) return;
+          if (admissions >= 128) throw new Error("Listing busy");
+          admitted = true; ++admissions;
+          res.once("finish", release); res.once("close", release);
+        });
         if (res.destroyed) return;
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", "content-length": body.length });
         res.end(req.method === "HEAD" ? undefined : body);

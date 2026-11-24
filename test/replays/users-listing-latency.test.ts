@@ -32,7 +32,12 @@ it("builds the five-match listing with bounded reads, including cold and expired
   let bodyReads = 0, active = 0, peak = 0, dbReads = 0;
   const latency = async () => { ++dbReads; await sleep(25); };
   store.getMany = async paths => { await latency(); return new Map(paths.map(key => [key, docs.get(key) ?? null])); };
-  const visibility = createPublicVisibility(store, { async replayLobby() { await latency(); return { state: "found", lobbyId }; } }, [excluded]);
+  let lobbies = 0, lobbyPeak = 0;
+  async function lookupLatency() {
+    lobbyPeak = Math.max(lobbyPeak, ++lobbies);
+    try { await latency(); } finally { --lobbies; }
+  }
+  const visibility = createPublicVisibility(store, { async replayLobby() { await lookupLatency(); return { state: "found", lobbyId }; } }, [excluded]);
   // Serve only prebuilt fixture bodies; no part of the request is copied into the response.
   const bodies = new Map(ids.map(id => [`/storage/v1/b/fixture/o/${id}.json`, JSON.stringify({
     format: "antwar.match", version: 1, id, startedAt: "2026-11-01T00:00:00.000Z", endedAt: null,
@@ -52,8 +57,7 @@ it("builds the five-match listing with bounded reads, including cold and expired
     ? Response.json({ access_token: "sample" }) : Response.json({ items: ids.map(id => ({ name: `${id}.json`, generation: "1" })) }),
     (url, options, cb) => get(local + url.pathname + url.search, options, cb));
   let now = 0;
-  let lobbies = 0, lobbyPeak = 0;
-  const handler = historyRoutes(source, async () => { lobbyPeak = Math.max(lobbyPeak, ++lobbies); await latency(); --lobbies; return { kind: "public", mode: null, size: 1, colonies: seats.map(s => [s]) }; }, { publicVisibility: visibility,
+  const handler = historyRoutes(source, async () => { await lookupLatency(); return { kind: "public", mode: null, size: 1, colonies: seats.map(s => [s]) }; }, { publicVisibility: visibility,
     currentRosterSeats: currentRosterSeats(store, () => 1),
     testRecordings: createTestRecordings(store), usersNow: () => now, ratings: { async leaderboard() { await latency(); return { ok: true, value: { entries: [] } }; } } });
   const site = createServer((req, res) => { void handler(req, res, undefined as never); });
@@ -91,7 +95,7 @@ it("builds the five-match listing with bounded reads, including cold and expired
       }
       console.info(`Synthetic Users ${build} work: ${bodyReads} bodies, ${dbReads} database calls, peak ${peak} bodies / ${lobbyPeak} lobby lookups`);
       expect(bodyReads).toBe(build === "hit" ? 0 : ids.length);
-      expect(lobbyPeak).toBeLessThanOrEqual(40); // At most two projection pages of 20.
+      expect(lobbyPeak).toBeLessThanOrEqual(40); // Includes both legacy visibility and roster attribution.
       if (build !== "hit") { expect(peak).toBeGreaterThan(20); expect(peak).toBeLessThanOrEqual(48); }
     }
   } finally {
