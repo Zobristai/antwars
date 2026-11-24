@@ -77,7 +77,7 @@ interface RowNode {
 }
 
 export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks): Teams {
-  let eligible: ReadonlySet<string> | undefined;
+  let eligible: ReadonlyMap<string, string> | undefined;
   const colonies = hooks.economy.map((_, c) => c);
   const win = doc.defaultView!;
   const listeners: (() => void)[] = [];

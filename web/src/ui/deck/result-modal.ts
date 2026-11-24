@@ -20,7 +20,7 @@ export interface ResultModal {
   /** The dialog, for the page to place at its root. */
   readonly dialog: HTMLDialogElement;
   /** Show the frame's result, or none; null closes it. share is the public link to what plays (source.ts watchUrl), null for none. */
-  update(frame: Frame | null, share?: string | null, eligible?: ReadonlySet<string>): void;
+  update(frame: Frame | null, share?: string | null, eligible?: ReadonlyMap<string, string>): void;
   destroy(): void;
 }
 
@@ -93,7 +93,7 @@ export function mountResultModal(doc: Document): ResultModal {
    * drawn: the match's drawn colony names (unrated), else undefined. A drawn name is shown in its colony's colour with
    * its one-line source as its tooltip wherever the result names it; the rated names are shown as they always were.
    */
-  const writeBody = (r: ResultView | null, frame: Frame | null, eligible?: ReadonlySet<string>) => {
+  const writeBody = (r: ResultView | null, frame: Frame | null, eligible?: ReadonlyMap<string, string>) => {
     const drawn = frame?.board?.setup.colonyNames;
     const board = frame?.board;
     const keyNow = r ? JSON.stringify([r, drawn ?? null, board?.setup.queens.length, board?.agents.map(agent => [agent.colony, agent.identity?.displayName, rosterHandle(eligible, agent.identity?.displayName)])]) : "";

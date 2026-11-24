@@ -21,6 +21,7 @@
         "thinkingLevel": null,
         "serviceTier": null,
         "handle": "sample-player",
+        "rosterUser": "sample-wren",
         "startRating": null
        },
        {
@@ -397,6 +398,7 @@
         "thinkingLevel": null,
         "serviceTier": null,
         "handle": "sample-player",
+        "rosterUser": "sample-wren",
         "startRating": null
        },
        {
@@ -415,6 +417,7 @@
         "thinkingLevel": null,
         "serviceTier": null,
         "handle": "sample-player",
+        "rosterUser": "sample-wren",
         "startRating": null
        },
        {
@@ -433,6 +436,7 @@
         "thinkingLevel": null,
         "serviceTier": null,
         "handle": "sample-player",
+        "rosterUser": "sample-wren",
         "startRating": null
        },
        {

@@ -136,6 +136,14 @@ function show(view: Partial<MatchesView>) {
   return { p, waiting: parts(waiting!), live: parts(liveCard!), recordings: parts(recordings!) };
 }
 
+it("keeps the recorded seat label but links only to a verified present username", () => {
+  const row = { ...recording, seats: [seat(0, 0, null, "sample-former", { rosterUser: "sample-present" }), seat(1, 1, null, "sample-released")] };
+  const card = show({ recordings: { status: "ready", rows: [row] } }).recordings.card;
+  expect(card.byClass("d1p-user").map(n => [n.textContent, n.tag, n.href || null]).sort()).toEqual([
+    ["sample-former", "a", "/?page=users&user=sample-present"], ["sample-released", "span", null],
+  ]);
+});
+
 describe("unassigned Free-for-all queue entries", () => {
   it("changes only the queued agent, preserving surrounding Waiting rows, Live now and Recordings across redraw", () => {
     const since = Date.parse("2026-11-11T05:01:00Z");

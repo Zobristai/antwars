@@ -73,13 +73,14 @@ describe("a top-match tile", () => {
 
   it("names a builder without a model on the tile and in the link label, with either result setting", () => {
     const { doc } = dom();
-    const r = recording({ seats: [seat(0, 0, "wren"), seat(1, 1, "antwars/gpt-6-1-terra-max-fast")] });
+    const r = recording({ seats: [{ ...seat(0, 0, "wren"), rosterUser: "sample-arc" }, seat(1, 1, "sample-plain")] });
     for (const results of ["hidden", "shown"] as const) {
       const tile = topMatchTile(doc, r, "", results) as unknown as ElementPort;
       const player = tagged(tile.byClass("aw-name").find(n => text(n) === "wren")!, "a")[0]!;
-      expect(player.href).toBe("/?page=users&user=wren");
+      expect(player.href).toBe("/?page=users&user=sample-arc");
+      expect(tagged(tile.byClass("aw-name").find(n => text(n) === "sample-plain")!, "a")).toHaveLength(0);
       expect(link(tile).querySelectorAll("a")).toHaveLength(0);
-      expect(tagged(tile, "b").map(text)).toEqual(["wren"]);
+      expect(tagged(tile, "b").map(text).sort()).toEqual(["sample-plain", "wren"]);
       expect(link(tile).getAttribute("aria-label")).toContain("wren");
     }
   });

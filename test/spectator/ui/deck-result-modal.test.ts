@@ -68,9 +68,9 @@ describe("the match result as a modal over the screen", () => {
     const dialog = modal.dialog as unknown as ElementPort;
     modal.update(frame, null);
     expect(dialog.byClass("aw-user-link")).toHaveLength(0);
-    modal.update(frame, null, new Set(["sample-orbit"]));
+    modal.update(frame, null, new Map([["sample-orbit", "sample-orbit"]]));
     expect(dialog.byClass("aw-user-link").map(a => a.href)).toEqual(["/?page=users&user=sample-orbit"]);
-    modal.update(frame, null, new Set());
+    modal.update(frame, null, new Map());
     expect(dialog.byClass("aw-user-link")).toHaveLength(0);
   });
 

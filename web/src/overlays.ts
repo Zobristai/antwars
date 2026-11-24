@@ -389,7 +389,7 @@ export class Overlays {
   private readonly hudBoard: HudView["board"];
   private hudMode: ModeCopy | null = null;
   private hudStalled = false;
-  private rosterHandles?: ReadonlySet<string>;
+  private rosterHandles?: ReadonlyMap<string, string>;
   private rosterRead?: AbortController;
   private hudShare: string | null = null;
   /** The scene option `overlays`: whether the HUD shows. */

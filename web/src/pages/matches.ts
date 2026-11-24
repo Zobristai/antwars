@@ -712,7 +712,7 @@ function recordingPlayer(doc: Document, { parts, seats, rating }: SeatGroup, key
   const line = h(doc, "span", "d1p-rec-player");
   const name = h(doc, "span", "d1p-rec-name");
   if (parts.user !== null) {
-    const link = userName(doc, parts.user, parts.user, "d1p-user"); link.replaceChildren(...heldSpaces(doc, parts.user)); name.append(link);
+    const link = userName(doc, parts.rosterUser, parts.user, "d1p-user"); link.replaceChildren(...heldSpaces(doc, parts.user)); name.append(link);
   }
   if (parts.model !== null) name.append(held(doc, "d1p-mname", parts.user !== null ? ` ${parts.model}` : parts.model));
   const words = [parts.user, parts.model].filter(word => word !== null).join(" ");

@@ -1,4 +1,4 @@
-import { attributeRoster, type CurrentRosterSeats } from "./roster-ownership.js";
+import { agreedHandles, attributeRoster, type CurrentRosterSeats } from "./roster-ownership.js";
 import { isValidId } from "../rating/ratings.js";
 import { joinReads } from "../store/join-reads.js";
 import { publicUsers } from "./public-users.js";
@@ -364,7 +364,12 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
       signal.throwIfAborted();
       const filled = handles === undefined ? typed : await handles(typed);
       // Last, so a source's correction (correctedRecordings.ts) sees the handles the lobby filled in.
-      return source.listed === undefined ? filled : { ...filled, matches: await source.listed(filled.matches, buildSignal) };
+      const rows = source.listed === undefined ? filled.matches : await source.listed(filled.matches, buildSignal);
+      if (!rows.length || !options.currentRosterSeats) {
+        if (rows.length && buildSignal) throw new Error("Roster ownership unavailable");
+        return { ...filled, matches: rows };
+      }
+      return { ...filled, matches: await attributeRoster(rows, cached, options.currentRosterSeats, signal, buildSignal ? "directory" : "archive") };
     }
     async function visibleRows<T extends HistorySummary>(rows: T[], signal: AbortSignal) {
       signal.throwIfAborted();
@@ -377,7 +382,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     async function serveVisible(raw: HistoryPage, signal: AbortSignal) {
       return serve({ ...raw, matches: await visibleRows(raw.matches, signal) }, signal);
     }
-    return { serve, serveVisible, cached };
+    return { serve, serveVisible };
   }
   const { serve, serveVisible } = projection(options.publicVisibility);
   const continuations = listingContinuations();
@@ -394,9 +399,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
     async function project(matches: HistorySummary[]) {
       const page = projection(policy, reading);
       const served = await page.serveVisible({ matches, nextPageToken: null }, reading);
-      if (!served.matches.length) return [];
-      if (!options.currentRosterSeats) throw new Error("Roster ownership unavailable");
-      return attributeRoster(options.currentRosterSeats)(served.matches, page.cached, reading);
+      return served.matches;
     }
     try {
       for (;;) {
@@ -497,7 +500,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
   }
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    // The HUD needs only currently listed usernames for its own confirmed seats, not the whole directory.
+    // The HUD needs only current usernames for its own confirmed seats, not the whole directory.
     const hud = /^\/matches\/users\/links\/(replay|lobby)\/([^/]+)$/.exec(url.pathname);
     const list = url.pathname === "/matches";
     const usersList = url.pathname === "/matches/users";
@@ -523,7 +526,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
         const [, kind, key] = hud;
         if (!(kind === "replay" ? isReplayId(key!) : isValidId(key))) { res.writeHead(404).end(); return; }
         const signal = abort.signal, policy = policyNow();
-        let handles: string[] = [];
+        let handles: [string, string][] = [];
         const visible = !policy.visibility || (kind === "replay" ? await policy.visibility.replayVisible(key!, signal) : await policy.visibility.lobbyVisible(key!));
         if (visible && options.currentRosterSeats) {
           const marked = kind === "replay" && (await options.testRecordings?.marked([key!], signal, true))?.has(key!);
@@ -531,11 +534,7 @@ export function historyRoutes(source: HistorySource, lobbies?: RecordingLobbyLoo
           if (lobby && lobby !== "pending" && !lobby.test && lobby.kind === "public") {
             const seats = lobby.colonies.flat();
             const current = await options.currentRosterSeats(seats, signal);
-            if (current.size) {
-              const roster: { users: {username: string}[] } = JSON.parse((await users(signal)).toString());
-              const listed = new Set(roster.users.map(user => user.username));
-              handles = [...new Set(seats.filter(s => current.get(s.id) === s.displayName && listed.has(s.displayName.split("/", 1)[0]!)).map(s => s.displayName))];
-            }
+            handles = [...agreedHandles(seats, current)].flatMap(([label, handle]) => handle ? [[label, handle]] : []);
           }
         }
         if (policy.digest !== policyNow().digest) throw new Error("Roster policy changed");

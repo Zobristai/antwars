@@ -266,6 +266,19 @@ describe("the Leaderboard's and the Matches page's own cards", () => {
     p.dispose();
   });
 
+  it("links a newest recording's historical name to the verified current name only", async () => {
+    const row = saved(3);
+    row.seats[0] = { ...row.seats[0]!, handle: "sample-former", rosterUser: "sample-current" };
+    row.seats[1] = { ...row.seats[1]!, handle: "sample-unknown", rosterUser: null };
+    const p = landing({ matches: () => Response.json({ matches: [row], nextPageToken: null }) });
+    try {
+      await vi.waitFor(() => expect(p.rows("Recordings")).toHaveLength(1));
+      expect(p.rows("Recordings")[0]!.byClass("d1p-user").map(n => [n.textContent, n.tag, n.href || null]).sort()).toEqual([
+        ["sample-former", "a", "/?page=users&user=sample-current"], ["sample-unknown", "span", null],
+      ]);
+    } finally { p.dispose(); }
+  });
+
   it("gives each recording one Replay text link, as the Matches page does", async () => {
     const p = landing({ matches: () => new Response(JSON.stringify({ matches: [saved(3), saved(2)], nextPageToken: null })) });
     await vi.waitFor(() => expect(p.state("Recordings")).not.toContain("Loading"));

@@ -3,7 +3,7 @@
  "fixtures": {
   "/matches/users/links/replay/2026-11-17T08-55-08-583Z-151632020035470": {
    "label": "Confirmed roster seats in the sample replay",
-   "body": { "handles": ["SampleIris", "SampleMoth", "SampleReed"] }
+   "body": { "handles": [["SampleIris", "SampleIris"], ["SampleMoth", "SampleMoth"], ["SampleReed", "SampleReed"]] }
   },
   "/matches/users/links/replay/2026-11-16T09-21-43-735Z-11240848029112": {
    "label": "Confirmed roster seats in the sample replay",

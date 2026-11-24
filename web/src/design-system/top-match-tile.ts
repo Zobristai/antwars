@@ -94,7 +94,7 @@ function player(doc: Document, parts: PlayerParts): HTMLElement[] {
   const name = h(doc, "span", "aw-name");
   if (parts.user !== null) {
     const builder = h(doc, "b");
-    const href = userHref(parts.user);
+    const href = userHref(parts.rosterUser);
     if (href) {
       const link = held(doc, h(doc, "a"), parts.user);
       link.href = href; link.title = parts.user; builder.append(link);

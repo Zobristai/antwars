@@ -407,7 +407,9 @@ it("joins recordings to the original seat identity, never to a later claimant wi
   const lobby = (id: string): RecordingLobby => ({ kind: "public", mode: null, size: 1, ...(test ? {test: true} : {}),
     colonies: [[{id, displayName: name}], [{id: peer, displayName: other}]] });
   const markers = createTestRecordings(store);
-  const url = await listen(sourceWith(async function* () { yield rows; }), async key => lobby(key === past.id ? old : later), {
+  const url = await listen({ ...sourceWith(async function* () { yield rows; }),
+    async list() { return { matches: rows, nextPageToken: null }; }, async summary(id) { return rows.find(r => r.id === id) ?? null; },
+  }, async key => lobby(key === past.id ? old : later), { topMatches: { ids: [past.id, fresh.id], leftOff: [] },
     usersNow: () => now, lobbyById: async () => { const live = lobby(later); return { ...live, colonies: [...live.colonies, [{id: newcomer, displayName: "sample-rush"}]] }; },
     testRecordings: markers, currentRosterSeats: currentRosterSeats(store, () => now),
     ratings: { async leaderboard() { return { ok: true, value: {entries: []} }; } },
@@ -418,12 +420,28 @@ it("joins recordings to the original seat identity, never to a later claimant wi
   expect(await listed()).toContainEqual(expect.objectContaining({ username: name, matches: 1 }));
   docs.set(`identities/${old}`, { ...docs.get(`identities/${old}`), nameState: "released" }); now += 60_001;
   expect((await listed()).map((u: {username: string}) => u.username)).toEqual([other]);
-  expect(await links("replay", past.id)).toEqual({ handles: [other] });
+  expect(await links("replay", past.id)).toEqual({ handles: [[other, other]] });
   claim(later, name); rows.push(fresh); now += 60_001;
   expect((await listed()).find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
-  expect(await links("replay", past.id)).toEqual({ handles: [other] });
-  expect(await links("replay", fresh.id)).toEqual({ handles: [name, other] });
-  expect(await links("lobby", lobbyId)).toEqual({ handles: [name, other] });
+  expect(await links("replay", past.id)).toEqual({ handles: [[other, other]] });
+  expect(await links("replay", fresh.id)).toEqual({ handles: [[name, name], [other, other]] });
+  // A current first-time public player links even before their first recording is complete.
+  expect(await links("lobby", lobbyId)).toEqual({ handles: [[name, name], [other, other], ["sample-rush", "sample-rush"]] });
+  for (const route of ["/matches", "/matches/top"]) {
+    const archive = (await get(route)).matches;
+    expect(archive.find((r: {id: string}) => r.id === past.id).seats[0]).toMatchObject({ handle: name, rosterUser: null });
+    expect(archive.find((r: {id: string}) => r.id === fresh.id).seats[0]).toMatchObject({ handle: name, rosterUser: name });
+  }
+  const renamed = "sample-arc";
+  claim(old, renamed); now += 60_001;
+  const byOwner = await listed();
+  expect(byOwner.find((u: {username: string}) => u.username === renamed)).toMatchObject({ matches: 1, agents: [renamed], recent: [{id: past.id}] });
+  expect(byOwner.find((u: {username: string}) => u.username === name)).toMatchObject({ matches: 1, recent: [{id: fresh.id}] });
+  for (const route of ["/matches", "/matches/top"]) {
+    const archive = (await get(route)).matches;
+    expect(archive.find((r: {id: string}) => r.id === past.id).seats[0]).toMatchObject({ handle: name, rosterUser: renamed });
+  }
+  expect(await links("replay", past.id)).toEqual({ handles: [[name, renamed], [other, other]] });
   test = true; expect(await links("lobby", lobbyId)).toEqual({ handles: [] });
   test = false; await markers.mark(fresh.id); expect(await links("replay", fresh.id)).toEqual({ handles: [] });
 });

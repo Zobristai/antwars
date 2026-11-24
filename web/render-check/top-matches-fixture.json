@@ -29,6 +29,7 @@
      "thinkingLevel": null,
      "serviceTier": null,
      "handle": "clawd",
+     "rosterUser": "sample-wren",
      "startRating": {
       "rating": 1500,
       "rd": 350,
