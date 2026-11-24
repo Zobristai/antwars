@@ -258,7 +258,7 @@ describe("scrolling HUD fit evidence", () => {
       expect(selected.button).toBe("rgba(0, 0, 0, 0)"); expect(selected.badge).toBe("solid"); expect(selected.idle).toBe("none");
     } finally { await browser.close(); }
   });
-  it("moves only the waiting message when the enlarged combined connection status no longer fits", async () => {
+  it("moves only the waiting message when the legend cannot fit, at default or enlarged text", async () => {
     const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
     server.middlewares.use((req, res, next) => {
       if (req.url !== "/legend-test") return next();
@@ -286,23 +286,30 @@ describe("scrolling HUD fit evidence", () => {
         ` });
         const rest = page.locator(".d1-legend-rest"), moved = page.locator(".sb-meta-item:visible").filter({ hasText: "Waiting for new data" });
         await rest.waitFor();
-        if (size === 32) {
-          await moved.waitFor();
-          expect(await rest.textContent()).not.toContain("Waiting for new data");
-          expect(await rest.textContent()).toContain("Reconnecting");
-          expect(await rest.evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
-          await page.setViewportSize({ width: 1280, height: 800 });
-          await moved.waitFor({ state: "hidden" });
-          expect(await rest.textContent()).toContain("Waiting for new data");
-          await page.setViewportSize({ width: 320, height: 844 });
-          await moved.waitFor();
-        } else {
-          await page.waitForFunction(() => document.querySelector(".d1-legend-rest")?.textContent?.includes("Reconnecting"));
-          expect(await moved.count()).toBe(0);
-          expect(await rest.textContent()).toContain("Waiting for new data");
-        }
+        // In the wider font even the default-size combined legend overflows at 320px.
+        await moved.waitFor();
+        expect(await rest.textContent()).not.toContain("Waiting for new data");
+        expect(await rest.textContent()).toContain("Reconnecting");
+        expect(await rest.evaluate(e => e.scrollWidth <= e.clientWidth)).toBe(true);
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await moved.waitFor({ state: "hidden" });
+        expect(await rest.textContent()).toContain("Waiting for new data");
+        await page.setViewportSize({ width: 320, height: 844 });
+        await moved.waitFor();
+        // Waiting alone still fits at default size; when enlarged it belongs in metadata,
+        // without leaving a separator behind. Wider screens restore it to the legend.
         await page.evaluate(() => dispatchEvent(new Event("online")));
-        expect(await moved.count()).toBe(0);
+        await moved.waitFor({ state: size === 32 ? "visible" : "hidden" });
+        if (size === 32) expect(await rest.textContent()).toBe("");
+        else expect(await rest.textContent()).toContain("Waiting for new data");
+        const waiting = size === 32 ? moved : rest;
+        expect(await waiting.evaluate(e => {
+          const range = new Range(); range.selectNodeContents(e);
+          const rects = [...range.getClientRects()];
+          return { size: getComputedStyle(e).fontSize, lines: rects.length, inside: rects.every(r => r.left >= 0 && r.right <= innerWidth) };
+        })).toEqual({ size: `${12 * size / 16}px`, lines: 1, inside: true });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await moved.waitFor({ state: "hidden" });
         expect(await rest.textContent()).toContain("Waiting for new data");
         expect(await rest.textContent()).not.toContain("Reconnecting");
         // The same match with no agents offers a replay. Its full name remains available

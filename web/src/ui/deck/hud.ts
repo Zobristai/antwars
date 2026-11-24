@@ -334,7 +334,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // ---------------------------------------------------------------- painting
   let legendKey = "";
-  let fitConnection: (() => void) | undefined;
+  let fitWaiting: (() => void) | undefined;
   /** Keep connection state intact; other mode facts retain individual, unbroken metadata cells. */
   const paintLegend = (l: Legend, four: boolean) => {
     const keyNow = `${four}|${l.dot}|${l.rule}|${l.words.join("|")}|${l.back?.text ?? ""}|${l.back ? keep(l.back.href, search()) : ""}`;
@@ -353,21 +353,21 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     const noFacts = !facts.length && !l.back;
     metadata.replaceChildren(...facts.map(word => h(doc, "span", "sb-meta-item", word)), back);
     setHidden(metadata, noFacts);
-    fitConnection = undefined;
-    if (state.includes(D1_COPY.waiting) && state.some(word => /connect/i.test(word))) {
+    fitWaiting = undefined;
+    if (state.includes(D1_COPY.waiting)) {
       const wait = h(doc, "span", "sb-meta-item", D1_COPY.waiting);
       metadata.insertBefore(wait, back);
-      const connectionOnly = `\u00a0· ${state.filter(word => word !== D1_COPY.waiting).join(" · ")}`;
-      // Keep the more immediate connection message on the frame. Move the buffer status only
-      // when the actual combined line, in the reader's enlarged type, overflows its flex item.
-      fitConnection = () => {
+      const other = state.filter(word => word !== D1_COPY.waiting);
+      const withoutWaiting = other.length ? `\u00a0· ${other.join(" · ")}` : "";
+      // Move only the waiting message, and only if the full legend overflows at its actual size.
+      fitWaiting = () => {
         setText(rest, full);
-        const move = rest.scrollWidth > rest.clientWidth && parseFloat(win.getComputedStyle(doc.documentElement).fontSize) > 16;
-        if (move) setText(rest, connectionOnly);
+        const move = rest.scrollWidth > rest.clientWidth;
+        if (move) setText(rest, withoutWaiting);
         setHidden(wait, !move);
         setHidden(metadata, noFacts && !move);
       };
-      fitConnection();
+      fitWaiting();
     }
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
@@ -435,7 +435,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let footerH = -1;
   let laneH = -1;
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(entries => {
-    if (entries.some(e => e.target === frameEl || e.target === mode)) fitConnection?.();
+    if (entries.some(e => e.target === frameEl || e.target === mode)) fitWaiting?.();
     const next = legendEl.offsetHeight;
     const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight, nextLane = lane.offsetHeight;
     if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH || nextLane !== laneH)) scheduleRefit();
