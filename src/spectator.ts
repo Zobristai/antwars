@@ -160,6 +160,7 @@ export async function startSpectatedServer(options: SpectatedServerOptions, live
       return lobbyById(found.lobbyId, signal);
     } : undefined;
     server.mount("/matches", historyRoutes(options.historySource, lookup, { lobbyById, currentRosterSeats: options.currentRosterSeats,
+      warmUsersOnStart: entryPoint && !!options.historySource.scan && !!lookup && !!options.currentRosterSeats,
       usersPolicy: options.usersPolicy, ratings: options.accounts?.ratings, publicVisibility: options.publicVisibility, testRecordings: options.testRecordings }));
   }
   server.mount("/rules", (req, res, game) => {
