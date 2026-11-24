@@ -1,5 +1,7 @@
 // Summary parser worker for the saved-match history list (src/replays/history-source.ts).
-// Its only runtime dependency is worker_threads. Each message is a separate record.
+// It starts once per record read, so it imports nothing at runtime beyond worker_threads:
+// loading zod and the history-source module graph made each start several times slower
+// than the parse itself. The checks below are the public summary boundary.
 import { parentPort, workerData } from "node:worker_threads";
 import type { HistorySummary } from "./history-source.ts";
 
@@ -66,9 +68,6 @@ export function parseSummary(id: string, bytes: Uint8Array): HistorySummary {
 }
 
 if (parentPort !== null && workerData?.kind === "match-summary") {
-  const port = parentPort;
-  port.on("message", ({ id, bytes }: { id: string; bytes: Uint8Array }) => {
-    try { port.postMessage({ summary: parseSummary(id, bytes) }); }
-    catch { port.postMessage({ error: "Invalid match record." }); }
-  });
+  try { parentPort.postMessage({ summary: parseSummary(workerData.id, workerData.bytes) }); }
+  catch { parentPort.postMessage({ error: "Invalid match record." }); }
 }
