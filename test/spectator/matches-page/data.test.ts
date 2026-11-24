@@ -547,3 +547,16 @@ describe("matches page data: when each wait began", () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+it("fetches Users once per refresh on Matches, not while paging Recordings; retries a failed listing", async () => {
+  let userReads = 0;
+  const request = async (input: RequestInfo | URL) => {
+    if (input === "/matches/users") return ++userReads === 1 ? new Response(null, { status: 503 }) : Response.json({ users: [] });
+    return Response.json(input === "/watch/catalog" ? { matches: [] } : { matches: fullPage, nextPageToken: input === "/matches" ? "more" : null });
+  };
+  const data = createMatchesData(request, () => {}, { users: true }); data.refresh();
+  await vi.waitFor(() => { expect(data.view.users?.status).toBe("error"); expect(data.view.next).toBe("more"); });
+  data.more(); await vi.waitFor(() => expect(data.view.next).toBeNull()); expect(userReads).toBe(1);
+  data.refresh(); await vi.waitFor(() => expect(data.view.users).toEqual({ status: "ready", rows: [] })); expect(userReads).toBe(2);
+  data.destroy();
+});

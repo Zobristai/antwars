@@ -70,7 +70,7 @@ export interface WatchRegistry {
    * findByReplay with the miss classified: "pending" when a match registered in the recording's start millisecond has
    * no replay id yet (its replaySaved has not published), "none" when no registered match there can be its lobby.
    */
-  replayLobby(replayId: string): Promise<ReplayLobby>;
+  replayLobby(replayId: string, signal?: AbortSignal): Promise<ReplayLobby>;
 }
 export type ReplayLobby = { readonly state: "found"; readonly lobbyId: string } | { readonly state: "pending" } | { readonly state: "none" };
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -129,9 +129,9 @@ function isStale(match: WatchMatch, listed: Fields | null | undefined, held: Fie
 const ownershipPath = (id: string) => `replayOwnership/${id}`;
 
 /** Private immutable ownership only; never included in a public match or recording. */
-export async function readReplayOwners(store: Pick<Store, "get">, replayId: string): Promise<readonly string[] | null> {
+export async function readReplayOwners(store: Pick<Store, "get">, replayId: string, signal?: AbortSignal): Promise<readonly string[] | null> {
   if (!isReplayId(replayId)) return null;
-  const row = await store.get(ownershipPath(replayId));
+  const row = await store.get(ownershipPath(replayId), signal);
   if (row === null) return null;
   let owners: unknown;
   try { owners = JSON.parse(row.ownerIds ?? "null"); } catch { throw new Error("Invalid recording ownership"); }
@@ -166,7 +166,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
       return { result: true, writes };
     });
   }
-  async function replayLobby(replayId: string): Promise<ReplayLobby> {
+  async function replayLobby(replayId: string, signal?: AbortSignal): Promise<ReplayLobby> {
     if (!isReplayId(replayId)) return { state: "none" };
     // A lobby recording's id is "<its stream's startedAt>-<n>" (hub.ts MatchStream), and register
     // stores that same startedAt: read only the matches that began in that millisecond.
@@ -176,7 +176,7 @@ export function createWatchRegistry(store: Store): WatchRegistry {
     // Just after every match that began in an earlier millisecond: "~" orders after every lobby id.
     const startAfter = startedAt > 0 ? { value: String(startedAt - 1).padStart(16, "0"), path: path("~") } : undefined;
     // Distinct lobbies starting in one millisecond are few; a page this size covers them.
-    const { rows } = await store.query("watchMatches", { orderBy: "startedAt", direction: "ASCENDING", limit: 25, startAfter });
+    const { rows } = await store.query("watchMatches", { orderBy: "startedAt", direction: "ASCENDING", limit: 25, startAfter, signal });
     const sameStart = rows.filter(row => row.fields.startedAt === value);
     const row = sameStart.find(row => row.fields.replayId === replayId);
     if (row) return { state: "found", lobbyId: row.path.slice("watchMatches/".length) };

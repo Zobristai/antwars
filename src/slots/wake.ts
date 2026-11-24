@@ -31,9 +31,9 @@ export function noteSlotTaken(read: TransactionRead, slot: string): void {
 export function wakingStore(store: Store, wake: (slot: string) => void): Store {
   return {
     namespace: store.namespace,
-    get: (path) => store.get(path),
+    get: (path, signal) => store.get(path, signal),
     query: (collectionId, options) => store.query(collectionId, options),
-    async transaction(step) {
+    async transaction(step, signal) {
       // Attempts run one after another; the last to run is the one whose writes committed.
       let last: { readonly noted: Set<string>; committing: boolean } | undefined;
       const result = await store.transaction(async (read) => {
@@ -44,7 +44,7 @@ export function wakingStore(store: Store, wake: (slot: string) => void): Store {
         const outcome = await step(attemptRead);
         attempt.committing = outcome.writes.length > 0;
         return outcome;
-      });
+      }, signal);
       if (last?.committing) {
         for (const slot of last.noted) {
           try {
