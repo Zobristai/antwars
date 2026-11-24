@@ -194,6 +194,8 @@ export interface RecorderResume {
   readonly ants: StreamAnts;
   /** Last recorded kill totals, including held records; absent for an older stream with no baseline. */
   readonly kills?: readonly number[];
+  /** Last recorded queen kills, including held records; absent for an older stream with no baseline. */
+  readonly queenKills?: readonly number[];
 }
 
 /** Explicit projection: an adapter returning extra account/key fields cannot disclose them. */
@@ -207,6 +209,11 @@ function playerIdentity(value: StreamIdentity | undefined): { identity?: StreamI
   return { identity: Object.freeze(rd === undefined ? { displayName, elo: value.elo } : { displayName, elo: value.elo, rd }) };
 }
 
+/** The simulation's credited queen kills, the figure match ranking reads (sim/elimination.ts, sim/territory.ts). */
+function queenKillsOf(s: SimState): number[] {
+  return s.colonies.map(c => c.queenKills ?? 0);
+}
+
 /** Records one match: call initial() once, then record() with each step's output in order. */
 export class SpectatorRecorder {
   readonly setup: StreamSetup;
@@ -215,6 +222,8 @@ export class SpectatorRecorder {
   private food: number[];
   private stores: StreamStore[];
   private kills: number[] | undefined;
+  /** Recorded only where the rules credit queen kills; undefined otherwise or before an older stream's first tick here. */
+  private queenKills: number[] | undefined;
   /** Four-colony matches: the colonies already sent as eliminated (or eliminated before a resume). */
   private readonly eliminated: Set<number>;
   private marks: Map<number, StreamMark>;
@@ -238,6 +247,9 @@ export class SpectatorRecorder {
     // Current streams retain their recorded baseline; only older streams need one on the next tick.
     this.kills = initial.colonies.length === 4
       ? resume === undefined ? initial.colonies.map(c => c.kills ?? 0) : resume.kills?.slice()
+      : undefined;
+    this.queenKills = initial.config.queenKillsFirst === true
+      ? resume === undefined ? queenKillsOf(initial) : resume.queenKills?.slice()
       : undefined;
     this.eliminated = new Set(initial.colonies.flatMap((c) => (c.eliminated === undefined ? [] : [c.id])));
     if (resume !== undefined) {
@@ -308,6 +320,7 @@ export class SpectatorRecorder {
       overrunRequired: s.config.overrunTicks,
       deaths: s.colonies.map((_, i) => s.stats.deaths[i]!),
       ...(s.colonies.length === 4 ? { kills: s.colonies.map(c => c.kills ?? 0) } : {}),
+      ...(s.config.queenKillsFirst === true ? { queenKills: queenKillsOf(s) } : {}),
       ...(s.colonies.length > 2 ? { eliminations: eliminationsOf(s) } : {}),
       result: null,
       food: Uint32Array.from(s.food),
@@ -328,6 +341,11 @@ export class SpectatorRecorder {
       const totals = state.colonies.map(c => c.kills ?? 0);
       if (!this.kills || totals.some((n, c) => n !== this.kills![c])) events.push({ kind: "kills", totals });
       this.kills = totals;
+    }
+    if (state.config.queenKillsFirst === true) {
+      const totals = queenKillsOf(state);
+      if (!this.queenKills || totals.some((n, c) => n !== this.queenKills![c])) events.push({ kind: "queenKills", totals });
+      this.queenKills = totals;
     }
     const marks = this.marksOf(state);
     // A four-colony elimination has no sim event: it is read from the state and sent before the step's end.
@@ -596,6 +614,10 @@ export class SpectatorState {
         case "kills":
           if (f.setup.queens.length !== 4) throw new Error("kill totals need four colonies");
           f.kills = [...e.totals];
+          break;
+        case "queenKills":
+          if (e.totals.length !== f.setup.queens.length) throw new Error("queen kills need one total per colony");
+          f.queenKills = [...e.totals];
           break;
         case "territoryWin":
           if (e.progress === null) delete f.territoryWin;

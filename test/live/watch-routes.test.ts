@@ -105,13 +105,15 @@ function request(origin: string, path: string, invite?: string) {
 describe("shared spectator HTTP routes", () => {
   it.each(["public", "private"] as const)("forwards only the wire-format opt-ins through a %s relay", async kind => {
     const f = await fixture(kind), invite = kind === "private" ? "current" : undefined;
-    for (const query of ["?kills=1&unrelated=value", "?kills=0", "", "?queenBites=1&kills=1&unrelated=value", "?kills=1&queenBites=0"]) {
+    for (const query of ["?kills=1&unrelated=value", "?kills=0", "", "?queenKills=1&kills=1&unrelated=value", "?kills=1&queenKills=0",
+      "?queenBites=1&kills=1&unrelated=value", "?kills=1&queenBites=0", "?queenBites=1&queenKills=1&kills=1"]) {
       const response = await request(f.gatewayOrigin, `/watch/live/${id}${query}`, invite);
       held.push(response);
       expect(response.status).toBe(200);
     }
     expect(f.ownerPaths).toEqual([`/watch/live/${id}?kills=1`, `/watch/live/${id}`, `/watch/live/${id}`,
-      `/watch/live/${id}?kills=1&queenBites=1`, `/watch/live/${id}?kills=1`]);
+      `/watch/live/${id}?kills=1&queenKills=1`, `/watch/live/${id}?kills=1`,
+      `/watch/live/${id}?kills=1&queenBites=1`, `/watch/live/${id}?kills=1`, `/watch/live/${id}?kills=1&queenKills=1&queenBites=1`]);
   });
 
   it.each([

@@ -84,8 +84,10 @@ describe("SSE arrival evidence", () => {
     const recorder = new SpectatorRecorder(createMatch(42, playable(marked)));
     const first = { ...recorder.initial(), full: recorder.initialFull() };
     const bytes = streamFormat.encodePublicMessage(first);
-    expect(bytes[2]).toBe(streamFormat.RULES28_STREAM_VERSION);
-    expect(SPECTATOR_STREAM_VERSIONS.max).toBeGreaterThanOrEqual(streamFormat.RULES28_STREAM_VERSION);
+    // Rules 28 credit queen kills, so its first frame also carries them at the newer queen-kill version.
+    expect(bytes[2]).toBe(streamFormat.QUEEN_KILLS_STREAM_VERSION);
+    expect(streamFormat.decodeMessage(bytes).full!.setup.rules28).toBe(true);
+    expect(SPECTATOR_STREAM_VERSIONS.max).toBeGreaterThanOrEqual(streamFormat.QUEEN_KILLS_STREAM_VERSION);
     expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
   });
   it("reads the tick of a first frame carrying a flyer while accepting newer versions", () => {
@@ -98,13 +100,22 @@ describe("SSE arrival evidence", () => {
     expect(SPECTATOR_STREAM_VERSIONS.max).toBeGreaterThanOrEqual(streamFormat.KILLS_STREAM_VERSION);
     expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
   });
-  it("reads the tick of a full frame restating a queen's bites, at the queen-bite version, the latest it accepts", () => {
+  it("reads the tick of a first frame carrying queen kills, at the queen-kill version, the latest it accepts", () => {
+    const state = createMatch(42, playable({ ...DEFAULT_CONFIG, queenKillsFirst: true }));
+    const recorder = new SpectatorRecorder(state);
+    const first = { ...recorder.initial(), full: recorder.initialFull() };
+    const bytes = streamFormat.encodePublicMessage(first);
+    expect(bytes[2]).toBe(streamFormat.QUEEN_KILLS_STREAM_VERSION);
+    expect(SPECTATOR_STREAM_VERSIONS.max).toBe(streamFormat.QUEEN_KILLS_STREAM_VERSION);
+    expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
+  });
+  it("reads the tick of a full frame restating a queen's bites, at the queen-bite version", () => {
     const recorder = new SpectatorRecorder(createMatch(42, playable(DEFAULT_CONFIG)));
     const first = { ...recorder.initial(), full: recorder.initialFull() };
     const bytes = streamFormat.encodePublicMessage({ ...first,
       events: [{ kind: "queenBites", colony: 1, queenId: 0, biters: [first.ants.id[0]!], targetId: null }] });
     expect(bytes[2]).toBe(streamFormat.QUEEN_BITES_STREAM_VERSION);
-    expect(SPECTATOR_STREAM_VERSIONS.max).toBe(streamFormat.QUEEN_BITES_STREAM_VERSION);
+    expect(SPECTATOR_STREAM_VERSIONS.max).toBeGreaterThanOrEqual(streamFormat.QUEEN_BITES_STREAM_VERSION);
     expect(spectatorTick(deflateRawSync(bytes).toString("base64"))).toBe(first.tick);
   });
   it("holds the original connection to its deadline, timestamps every frame and closes the socket", async () => {

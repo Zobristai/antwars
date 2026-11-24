@@ -427,19 +427,18 @@ describe("Live now rows", () => {
     p.mounted.destroy();
   });
 
-  it("shows a seat seen joining with no model as Scripted bot with no badges or rating, and a seat not yet seen joining as before", () => {
+  it("shows a joined user with no model by username and rating, without model badges", () => {
     const seen: LiveMatch = { ...live("lobby-x"), colonies: [
       [{ displayName: "antwars/gemini-4-hydrogen-low", modelLabel: "antigravity/gemini-4-hydrogen", thinkingLevel: "low", joined: true, rating: 1167, rd: 60, ratedMatches: 40 }],
-      [{ displayName: "test-account", modelLabel: null, thinkingLevel: "low", joined: true, rating: 1500, rd: 350, ratedMatches: 0 }]] };
+      [{ displayName: "wren", modelLabel: null, thinkingLevel: "low", joined: true, rating: 1500, rd: 350, ratedMatches: 0 }]] };
     const unseen: LiveMatch = { ...live("lobby-y"), colonies: [[{ displayName: "kain", rating: 1612, rd: 80, ratedMatches: 12 }], []] };
     const { p, live: liveList } = show({ live: { status: "ready", rows: [seen, unseen] } });
     for (const layout of [liveList.table, liveList.list]) {
-      const [house, scripted, waiting] = layout.byClass("d1p-model");
+      const [house, user, waiting] = layout.byClass("d1p-model");
       expect(lineParts(house!).map(part => part[0])).toEqual(["name", "badges", "rating"]);
-      expect(lineParts(scripted!)).toEqual([["name", ["d1p-mname:Scripted bot"]]]);
+      expect(lineParts(user!)).toEqual([["name", ["d1p-user:wren"]], ["rating", "1500 ± 350"]]);
       expect(lineParts(waiting!).filter(part => part[0] !== "rating")).toEqual([["name", ["d1p-user:kain"]]]);
     }
-    expect(liveList.card.textContent).not.toMatch(/test-account/);
     p.mounted.destroy();
   });
 });
@@ -467,14 +466,14 @@ describe("Recordings rows", () => {
     p.mounted.destroy();
   });
 
-  it("shows a seat that recorded no model as Scripted bot with no badges or rating, and a model seat as before", () => {
-    const scripted = at("rec-scripted", { seats: [seat(0, 0, "antigravity/gemini-4-hydrogen", "antwars/gemini-4-hydrogen-low", { thinkingLevel: "low" }),
-      seat(1, 1, null, "test-account", { startRating: { rating: 1500, rd: 350, ratedMatches: 0 } })] });
-    const { p, recordings } = show({ recordings: { status: "ready", rows: [scripted] } });
+  it("shows a recorded user with no model by username and start rating, and a model seat as before", () => {
+    const match = at("rec-user", { seats: [seat(0, 0, "antigravity/gemini-4-hydrogen", "antwars/gemini-4-hydrogen-low", { thinkingLevel: "low" }),
+      seat(1, 1, null, "wren", { startRating: { rating: 1500, rd: 350, ratedMatches: 0 } })] });
+    const { p, recordings } = show({ recordings: { status: "ready", rows: [match] } });
     const lines = recordings.list.byClass("d1p-rec-player");
-    expect(lines.map(line => line.children[0]!.textContent)).toEqual(["Gemini 4 Hydrogen", "Scripted bot"]);
+    expect(lines.map(line => line.children[0]!.textContent)).toEqual(["Gemini 4 Hydrogen", "wren"]);
     expect(lines[1]!.byClass("d1p-tags")).toEqual([]);
-    expect(recordings.card.textContent).not.toMatch(/test-account|1500/);
+    expect(lines[1]!.byClass("d1p-elo-badge").map(b => b.textContent)).toEqual(["1500 ± 350"]);
     p.mounted.destroy();
   });
 
@@ -737,13 +736,13 @@ describe("a model label with nothing after its provider prefix", () => {
 
   it("lists a team with unlike seats one complete line per seat group, in first-seat order, inside the colony's one band", () => {
     const team: Recording = { ...recording, matchType: { kind: "ranked", size: 2 }, seats: [
-      seat(0, 0, "openai/gpt-6.1-terra", "kain", { thinkingLevel: "high", serviceTier: "fast" }), seat(1, 1, "coffee-ant/local", "coffee-ant"),
-      seat(2, 0, null, "kain"), seat(3, 1, "coffee-ant/local", "coffee-ant")] };
+      seat(0, 0, "openai/gpt-6.1-terra", "wren", { thinkingLevel: "high", serviceTier: "fast" }), seat(1, 1, "coffee-ant/local", "coffee-ant"),
+      seat(2, 0, null, "wren"), seat(3, 1, "coffee-ant/local", "coffee-ant")] };
     const { p, recordings } = show({ recordings: { status: "ready", rows: [team] } });
     const [winner, other] = recordings.list.children[0]!.byClass("d1p-rec-slot");
     expect(winner!.classes()).toContain("is-won");
     expect(winner!.children.filter(node => node.classes().includes("d1p-rec-player")).map(line => line.textContent))
-      .toEqual(["kain GPT-6.1 Terrahigh Fast", "Scripted bot"]);
+      .toEqual(["wren GPT-6.1 Terrahigh Fast", "wren"]);
     // Alike seats stay one line with their count; the username is drawn as every username is.
     const [alike] = other!.byClass("d1p-rec-player");
     expect(alike!.byClass("d1p-user").map(node => node.textContent)).toEqual(["coffee-ant"]);

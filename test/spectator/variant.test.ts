@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DECIDED_BY, decodeMessage, encodeMessage, encodePublicMessage, GRID_SCALE_STREAM_VERSION, streamQueens, WIN_REASONS, type StreamQueen } from "../../src/live/format.ts";
+import { DECIDED_BY, decodeMessage, encodeMessage, encodePublicMessage, GRID_SCALE_STREAM_VERSION, QUEEN_KILLS_STREAM_VERSION, streamQueens, WIN_REASONS, type StreamQueen } from "../../src/live/format.ts";
 import { SpectatorRecorder } from "../../src/live/model.ts";
 import { MAPS, PUBLIC_CONFIG, QUEEN_HP_RULES, TERRAIN_RULES, rulesConfig } from "../../src/sim/config.ts";
 import { createMatch } from "../../src/sim/map.ts";
@@ -27,10 +27,11 @@ it("keeps every existing win-reason and decided-by index, appending queens kille
 });
 
 // Every stream setup carries grid scale 2, so a snapshot encodes at the grid-scale stream version or later;
+// a public match's opening also carries its queen kills, zero included, so it encodes at the queen-kills version;
 // the redaction of comparison setup is what these keep.
 it("a public full snapshot without terrain carries no rules, seed, players or HP", () => {
   const bytes = encodeMessage(opening(new SpectatorRecorder(createMatch(6006, playable({ ...PUBLIC_CONFIG, terrain: undefined })))));
-  expect(bytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
+  expect(bytes[2]).toBe(QUEEN_KILLS_STREAM_VERSION);
   const decoded = decodeMessage(bytes).full!;
   expect(decoded.setup).not.toHaveProperty("rules");
   expect(decoded.setup).not.toHaveProperty("seed");
@@ -42,7 +43,7 @@ it.each(MAPS)("$name public terrain snapshots retain map metadata without compar
   const config = { ...PUBLIC_CONFIG, terrain: { ...TERRAIN_RULES, mapId: map.id }, players: 4 as const };
   const message = opening(new SpectatorRecorder(createMatch(6006, playable(config))));
   const bytes = encodeMessage(message), decoded = decodeMessage(bytes).full!;
-  expect(bytes[2]).toBe(GRID_SCALE_STREAM_VERSION);
+  expect(bytes[2]).toBe(QUEEN_KILLS_STREAM_VERSION);
   expect(decoded.setup.terrain).toEqual(message.full.setup.terrain);
   for (const full of [message.full, decoded]) {
     expect(full.setup).not.toHaveProperty("rules");
