@@ -13,7 +13,7 @@ import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { ruleSections } from "../../web/rules.ts";
 import { RESULTS_KEY } from "../../web/src/pages/top-matches.ts";
-import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, captureClipState, createGate, hudOnScreen, playRecording, rulesSectionsProblem, saveInvalidEvidence, scrollHome, viewport, watchReadiness, type BoardReadiness, type Playback, type RenderEvidence } from "../../web/render-check/check.ts";
+import { SURFACES, TEXT_SIZES, WIDTHS, boardProblem, boardReadiness, captureClipState, createGate, hudOnScreen, playRecording, rulesSectionsProblem, saveInvalidEvidence, scrollHome, shoot, viewport, watchReadiness, type BoardReadiness, type Playback, type RenderEvidence } from "../../web/render-check/check.ts";
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", headless: true, args: ["--no-sandbox"] }); });
@@ -51,6 +51,54 @@ describe("render check rules", () => {
       const failures = (await check()).failures;
       expect(failures.some(f => f.rule === "sideways" && f.element.endsWith("div.d1-below"))).toBe(true);
       expect(failures.some(f => f.rule === "offscreen" && f.element.endsWith("input"))).toBe(true);
+    } finally { await page.close(); }
+  });
+
+  it("saves a focused mark list at the panel offset that was judged and still detects a cut introduced while saving", async () => {
+    const page = await browser.newPage({ ...viewport(320) });
+    try {
+      await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}.d1-below{overflow:auto;height:160px}.aw-mark-row{display:block;height:70px}</style>'
+        + '<div class="d1-below"><div class="aw-replay-controls"><output class="aw-replay-time">10:01 / 10:01</output><input type="range">'
+        + '<div class="aw-mark-list">' + '<button class="aw-mark-row"><span class="aw-mark-kind">Fight · </span><b>10:00</b></button>'.repeat(3) + '</div></div></div>');
+      const panel = page.locator(".d1-below"), rows = page.locator(".aw-mark-row");
+      await rows.first().focus();
+      await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
+      const offset = await panel.evaluate(el => el.scrollTop);
+      const check = () => page.evaluate(judgePage, { ...RULE_LIMITS, markList: true });
+      expect(offset).toBeGreaterThan(0);
+      expect((await check()).failures).toEqual([]);
+      // Exercise the save path without writing images. No animation or replay is running on this page.
+      const save = vi.spyOn(page, "screenshot").mockResolvedValue(Buffer.alloc(0));
+      await shoot(page, [], "focus", "");
+      const after = { offset: await panel.evaluate(el => el.scrollTop), failures: (await check()).failures.map(f => f.measure) };
+      expect(after).toEqual({ offset, failures: [] });
+      save.mockImplementationOnce(async () => {
+        await panel.evaluate(el => { el.scrollTop = 0; });
+        return Buffer.alloc(0);
+      });
+      await shoot(page, [], "cut", "");
+      expect((await check()).failures.some(f => f.rule === "cut" && f.measure.includes("focused row"))).toBe(true);
+    } finally { await page.close(); }
+  });
+
+  it("returns to the reader's original panel offset after scrolling to a finding", async () => {
+    const page = await browser.newPage({ ...viewport(320) });
+    try {
+      await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}section{overflow:auto;height:150px}label{display:block;width:50px}</style>'
+        + '<section><label>Long label here</label><div style="height:450px"></div><button>Last row</button></section>');
+      const panel = page.locator("section");
+      await page.locator("button").focus();
+      const offset = () => panel.evaluate(el => el.scrollTop);
+      const initial = await offset();
+      expect(initial).toBeGreaterThan(0);
+      const { failures } = await page.evaluate(judgePage, RULE_LIMITS);
+      const mark = failures.find(f => f.rule === "wrap" && f.text === "Long label here")!;
+      const positions: number[] = [];
+      vi.spyOn(page, "screenshot").mockImplementation(async () => { positions.push(await offset()); return Buffer.alloc(0); });
+      const shot = await shoot(page, [{ box: mark.box!, anchor: mark.anchor!, label: mark.rule, held: false }], "wrapped", "");
+      expect(shot.inView).toEqual([true]);
+      expect(positions).toEqual([initial, 0]);
+      expect(await offset()).toBe(initial);
     } finally { await page.close(); }
   });
 

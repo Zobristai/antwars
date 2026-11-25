@@ -501,6 +501,8 @@ export async function shoot(page: Page, marks: Mark[], base: string, out: string
   let marksMoved: string | null = null;
   let clipScrolled: string | null = null;
   const judgedClips = await clipOffsets(page);
+  // Keyboard focus may already have scrolled the panel. Undo only our own navigation to findings.
+  const origins = await page.evaluateHandle(() => new Map<Element, { x?: number; y?: number }>());
   const shownIn: string[] = Array.from({ length: marks.length }, () => "");
   const seenInView: boolean[] = marks.map(() => false);
   // Each pass after the first renders the first finding not yet shown, so this ends after at most one pass per finding.
@@ -508,16 +510,25 @@ export async function shoot(page: Page, marks: Mark[], base: string, out: string
     if (target >= 0) {
       // Bring the finding into view the way a reader can: by scrolling the boxes that scroll (and the page), never a box
       // that clips (overflow hidden or clip), whose cut is the finding. scrollIntoView would scroll those too.
-      await page.evaluate(m => {
+      await page.evaluate(({ m, origins }) => {
         const el = (window as unknown as { __renderCheckAnchors: Element[] }).__renderCheckAnchors[m.anchor.index]!;
+        const move = (node: Element, axis: "x" | "y", delta: number) => {
+          const prop = axis === "x" ? "scrollLeft" : "scrollTop";
+          const start = node[prop];
+          node[prop] += delta;
+          if (node[prop] === start) return;
+          const origin = origins.get(node) ?? {};
+          origin[axis] ??= start;
+          origins.set(node, origin);
+        };
         const centre = () => { const r = el.getBoundingClientRect(); return { x: r.left + m.anchor.dx + m.box.w / 2, y: r.top + m.anchor.dy + m.box.h / 2 }; };
         for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
           const cs = getComputedStyle(a), b = a.getBoundingClientRect();
-          if (/auto|scroll/.test(cs.overflowY) && a.scrollHeight > a.clientHeight) a.scrollTop += centre().y - (b.top + a.clientHeight / 2);
-          if (/auto|scroll/.test(cs.overflowX) && a.scrollWidth > a.clientWidth) a.scrollLeft += centre().x - (b.left + a.clientWidth / 2);
+          if (/auto|scroll/.test(cs.overflowY) && a.scrollHeight > a.clientHeight) move(a, "y", centre().y - (b.top + a.clientHeight / 2));
+          if (/auto|scroll/.test(cs.overflowX) && a.scrollWidth > a.clientWidth) move(a, "x", centre().x - (b.left + a.clientWidth / 2));
         }
-        scrollBy(0, centre().y - innerHeight / 2);
-      }, marks[target]!);
+        move(document.scrollingElement!, "y", centre().y - innerHeight / 2);
+      }, { m: marks[target]!, origins });
     }
     const drawn = await page.evaluate(ms => {
       document.querySelector("[data-render-check-marks]")?.remove();
@@ -564,7 +575,14 @@ export async function shoot(page: Page, marks: Mark[], base: string, out: string
     if (target < 0) break;
   }
   await page.evaluate(() => document.querySelector("[data-render-check-marks]")?.remove());
-  await scrollHome(page);
+  await origins.evaluate(async saved => {
+    for (const [el, { x, y }] of saved) {
+      if (x !== undefined) el.scrollLeft = x;
+      if (y !== undefined) el.scrollTop = y;
+    }
+    await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  });
+  await origins.dispose();
   return { images, shownIn, inView: seenInView, marksMoved, clipScrolled };
 }
 
