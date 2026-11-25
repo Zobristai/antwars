@@ -584,9 +584,9 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect(await w.store.get(`waits/${seated}`)).toMatchObject({ kind: "lobby", expiresAt: expiryField(lobby.expiresAt + WAIT_GRACE_MS) });
 
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
-    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const challengeLobby = value(await w.lobbies.readLobby(requested.lobbyId));
     expect(challengeLobby.expiresAt - challengeLobby.createdAt).toBe(15 * 60 * 1000);
     expect(await w.store.get(`waits/${tokenOf(requested)}`)).toMatchObject({ kind: "lobby", expiresAt: expiryField(challengeLobby.expiresAt + WAIT_GRACE_MS) });
@@ -595,9 +595,9 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
   it("a wait read final early is removed by the timed sweep once its grace passes, with no join; readable until then", async () => {
     const w = await world();
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
-    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const token = tokenOf(requested);
     await w.ok("report_challenge_launch", { key: cast.house.key, requestId: requested.requestId, outcome: "failed", reason: "failed" });
     const ended = [...end("expired", { state: "expired", reason: "ended" })];
@@ -618,7 +618,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const w = await world();
     const ann = await w.claim("Ann");
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
     const records = async () => (await w.store.query("waits", { orderBy: "expiresAt", direction: "ASCENDING", limit: 200 })).rows.map((row) => row.path).sort();
     const sets: string[][] = [];
@@ -629,7 +629,7 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
       const { lobby } = value(await w.lobbies.createLobby(ann.key, "public", 1));
       const seated = tokenOf(await w.ok("join_lobby", { key: ann.key, lobbyId: lobby.id }));
       await w.ok("leave_lobby", { key: ann.key, lobbyId: lobby.id });
-      const challenge = n < 3 ? await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" }) : null;
+      const challenge = n < 3 ? await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" }) : null;
       if (challenge) await w.ok("leave_lobby", { key: builder.key, lobbyId: challenge.lobbyId });
       w.clock.t += 1;
       const now = await records();
@@ -780,9 +780,9 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     const { lobby } = value(await w.lobbies.createLobby(bob.key, "public", 2));
     const seated = tokenOf(await w.ok("join_lobby", { key: bob.key, lobbyId: lobby.id }));
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
-    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const challenger = tokenOf(requested), challengeLobbyId: string = requested.lobbyId;
     const queued = tokenOf(await w.ok("join_queue", { key: ann.key, mode: "1v1" }));
     // More expired records than one page holds, of both stored kinds.
@@ -839,9 +839,9 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
   it("request_challenge's token waits on the challenge's lobby and ends expired: ended when the launch fails, never with its reason", async () => {
     const w = await world();
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
-    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const token = tokenOf(requested);
     const lobby = value(await w.lobbies.readLobby(requested.lobbyId));
     expect((await read(w.fast, token, 300)).frames).toEqual([{ event: null, data: { state: "waiting", lobby: "open", expiresAt: lobby.expiresAt } }]);
@@ -869,9 +869,9 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect(final.frames.slice(-2).map((f) => f.event)).toEqual(["slot_ready", "done"]);
 
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
-    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const challenger = tokenOf(requested);
     const challengeLobby = value(await w.lobbies.readLobby(requested.lobbyId));
     expect(await w.store.get(`waits/${challenger}`)).toMatchObject({ kind: "lobby", identityId: builder.id, expiresAt: expiryField(challengeLobby.expiresAt + WAIT_GRACE_MS) });
@@ -941,9 +941,9 @@ describe.skipIf(!host)("waiting tokens against the Firestore emulator", { timeou
     expect((await read(w.fast, annToken)).frames).toEqual(ended);
 
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
-    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const token = tokenOf(requested);
     const challengeLobby = value(await w.lobbies.readLobby(requested.lobbyId));
     expect(await w.store.get(seatKeyPath(requested.lobbyId, builder.id))).toEqual({ token, expiresAt: expiryField(challengeLobby.expiresAt + WAIT_GRACE_MS) });
@@ -1224,9 +1224,9 @@ describe.skipIf(!host)("status reads return the caller's own wait link against t
   it("challenge_status returns the challenger's own link, never to the house owner reading its request, and none once it has left", async () => {
     const w = await world();
     const cast = await houseCast(w.identities, w.store, 0);
-    value(await w.identities.createHandle(cast.house.key, "glm-5-3"));
+    value(await w.identities.createHandle(cast.house.key, "glm-5-4-max"));
     const builder = await w.claim("builder");
-    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const requested = await w.ok("request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const status = await w.ok("challenge_status", { key: builder.key });
     expect(linkOf(status)).toEqual(linkOf(requested));
     const owner = await w.ok("challenge_status", { key: cast.house.key, requestId: requested.requestId });

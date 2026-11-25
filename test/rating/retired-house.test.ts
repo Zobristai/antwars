@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { HOUSE_LABELS, RETIRED_HOUSE_HANDLES, isRetiredHouse } from "../../src/rating/houseLabels.ts";
 
 describe("retired house handles", () => {
-  it("lists claude-fable-5-1, qwen3-8-max, the five GPT-6.2 Astra Fast handles, three Gemini 4 Neon handles, the Qwen4 Max high and xhigh handles, and gpt-6-astra, and every retired handle keeps its House table row", () => {
+  it("lists exactly the retired handles and keeps every retired House table row", () => {
     expect([...RETIRED_HOUSE_HANDLES]).toEqual(["claude-fable-5-1", "qwen3-8-max", "gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
-      "gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-xhigh", "qwen4-max-high", "qwen4-max-xhigh", "gpt-6-astra"]);
+      "gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-xhigh", "qwen4-max-high", "qwen4-max-xhigh", "gpt-6-astra",
+      "glm-5-3", "glm-5-4-low", "glm-5-4-high"]);
     for (const handle of RETIRED_HOUSE_HANDLES) expect(Object.hasOwn(HOUSE_LABELS, handle), handle).toBe(true);
   });
 
@@ -22,7 +23,7 @@ describe("retired house handles", () => {
 
   it("marks no other House table handle retired", () => {
     const retired = Object.keys(HOUSE_LABELS).filter(handle => isRetiredHouse(`antwars/${handle}`));
-    expect(retired).toEqual(["claude-fable-5-1", "gpt-6-astra", "qwen3-8-max", "gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
+    expect(retired).toEqual(["claude-fable-5-1", "glm-5-3", "glm-5-4-low", "glm-5-4-high", "gpt-6-astra", "qwen3-8-max", "gpt-6-2-astra-low", "gpt-6-2-astra-medium", "gpt-6-2-astra-high", "gpt-6-2-astra-xhigh", "gpt-6-2-astra-max",
       "qwen4-max-high", "qwen4-max-xhigh", "gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-xhigh"]);
   });
 });

@@ -145,6 +145,24 @@ describe("retired models on the Leaderboard", () => {
     p.dispose();
   });
 
+  it("keeps GLM-5.4 max visible and reveals the three retired GLM rows with their ratings and match counts", async () => {
+    vi.resetModules();
+    const p = await open([
+      { displayName: "antwars/glm-5-4-max", rating: 1576, rd: 178, ratedMatches: 5, thinkingLevel: "max", benchmark: true },
+      { displayName: "antwars/glm-5-3", rating: 1536, rd: 98, ratedMatches: 30, thinkingLevel: "max", benchmark: true },
+      { displayName: "antwars/glm-5-4-low", rating: 1416, rd: 185, ratedMatches: 5, thinkingLevel: "low", benchmark: true },
+      { displayName: "antwars/glm-5-4-high", rating: 1376, rd: 192, ratedMatches: 5, thinkingLevel: "high", benchmark: true },
+    ]);
+    expect(p.cards()[0]!.named).toEqual(["GLM-5.4 [max]"]);
+    await p.turn(p.switches()[0]!, true);
+    const shown = p.cards()[0]!;
+    expect(shown.named).toEqual(["GLM-5.4 [max]", "GLM-5.3 [max] [retired]", "GLM-5.4 [low] [retired]", "GLM-5.4 [high] [retired]"]);
+    expect(shown.cells.map(row => row.slice(2, 4))).toEqual([
+      ["1576 ± 178, provisional", "5"], ["1536 ± 98", "30"], ["1416 ± 185, provisional", "5"], ["1376 ± 192, provisional", "5"],
+    ]);
+    p.dispose();
+  });
+
   it("hides retired gpt-6-astra behind Show retired and reveals its rating and badges when switched on", async () => {
     vi.resetModules();
     const p = await open([
