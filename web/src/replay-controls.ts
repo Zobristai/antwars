@@ -174,14 +174,20 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     text.className = "aw-mark-words";
     const [kind, ...rest] = markWords(e, names);
     const at = rest.pop()!;
-    text.append(doc.createTextNode(`${kind} · `));
+    const label = doc.createElement("span");
+    label.className = "aw-mark-kind";
+    label.textContent = `${kind} · `;
+    text.append(label);
     if (rest.length) {
       const colony = doc.createElement("span");
       colony.className = `aw-mark-colony c${e.colony}`;
       colony.textContent = rest[0]!;
       const note = drawn ? colonyNameNote(rest[0]!) : null;
       if (note) colony.setAttribute("title", note);
-      text.append(colony, doc.createTextNode(" · "));
+      const separator = doc.createElement("span");
+      separator.className = "aw-mark-separator";
+      separator.textContent = " · ";
+      text.append(colony, separator);
     }
     const when = doc.createElement("b");
     when.textContent = at;
@@ -242,7 +248,9 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
       row.type = "button";
       row.className = "aw-mark-row";
       row.setAttribute("role", "menuitem");
-      row.setAttribute("aria-label", markWords(e, names).join(", "));
+      const parts = markWords(e, names);
+      row.setAttribute("aria-label", parts.join(", "));
+      row.title = parts.join(" · ");
       words(row, e);
       // The group as now laid out: a new layout may have moved it since its list opened.
       row.onclick = () => { const at = openItem ?? item; closeList(); at.button.focus(); jump(e, at.x); };

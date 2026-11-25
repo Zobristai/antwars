@@ -382,9 +382,9 @@ describe("scrolling HUD fit evidence", () => {
             const frame = scoreFrame(2);
             window.selectModel = label => {frame.board.agents[0].modelLabel = label; teams.update({frame, connection:"live", selected:null, selectedAgent:0, board:"3d", mode:null}, false);};
             teams.update({frame, connection: 'live', selected: {antId: 123456, agent: -1, colony: 0}, selectedAgent: -1, board:'3d', mode:null}, false);
-            const marks = [0,1,1].map(colony => ({kind:'nest', ms:12000, tick:120, colony}));
+            const marks = [null,2,1].map((colony,i) => ({kind:colony===null?'fight':'nest', ms:12000+100*i, tick:120+i, colony}));
             marks.push({kind:"nest",ms:1200000,tick:12000,colony:1});
-            const controls = mountReplayControls(document, {duration:1220000, rate:1, error:null, position:0, events:marks, seek(){}}, ["Very Large Colony","Lake Skinner Colony"]);
+            const controls = mountReplayControls(document, {duration:1220000, rate:1, error:null, position:0, events:marks, seek(ms){window.lastSeek=ms;}}, ["Very Large Colony","Lake Skinner Colony","Sample ".repeat(35)+"Colony"]);
             document.querySelector('#rail').append(controls.el);
             // The live HUD updates after mount. Its first layout without a connected seek bar has zero travel.
             requestAnimationFrame(() => requestAnimationFrame(() => { controls.update(); document.querySelector('.aw-mark.group').click(); }));
@@ -412,12 +412,44 @@ describe("scrolling HUD fit evidence", () => {
             const fits = await rows.evaluateAll(nodes => nodes.every(row => {
               const box = row.getBoundingClientRect(), words = row.querySelector(".aw-mark-words")!;
               const range = new Range(); range.selectNodeContents(words);
+              const name = row.querySelector<HTMLElement>(".aw-mark-colony");
+              // The unpainted part of a deliberately ellipsized name has a range too.
+              const long = name?.textContent.startsWith("Sample");
+              const check = long ? [...words.children].filter(c => c !== name).flatMap(c => { range.selectNodeContents(c); return [...range.getClientRects()]; }) : [...range.getClientRects()];
+              if (long && (getComputedStyle(name!).textOverflow !== "ellipsis" || name!.scrollWidth <= name!.clientWidth)) return false;
               const next = row.nextElementSibling?.getBoundingClientRect();
               return box.right <= innerWidth + 0.5 && (!next || box.bottom <= next.top + 0.5) &&
-                [...range.getClientRects()].every(r => r.right <= box.right + 0.5 && r.left >= box.left - 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5);
+                check.every(r => r.right <= box.right + 0.5 && r.left >= box.left - 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5);
             }));
             expect(fits, `${width}px ${font}: mark words and time inside their own row`).toBe(true);
           }
+          for (const size of [16, 32] as const) {
+            await applyTextSize(page, size);
+            for (const width of [320, 390, 639, 640, 1280]) {
+              await page.setViewportSize({ width, height: 844 });
+              const rows = page.locator(".aw-mark-list:visible button");
+              const layout = await rows.evaluateAll(rows => rows.map(row => {
+                const text = (el: Element) => { const r = new Range(); r.selectNodeContents(el); return r.getBoundingClientRect(); };
+                const event = row.querySelector(".aw-mark-kind")!, time = row.querySelector("b")!, name = row.querySelector<HTMLElement>(".aw-mark-colony");
+                const label = text(event), when = text(time), colony = name?.getBoundingClientRect();
+                const parts = [event.textContent.replace(/ · $/, ""), ...(name ? [name.textContent] : []), time.textContent];
+                return { firstLine: label.bottom > when.top && when.bottom > label.top && label.right <= when.left + .5,
+                  below: !!colony && colony.top >= label.bottom - .5, long: name?.textContent.startsWith("Sample") ?? false,
+                  cut: !!name && name.scrollWidth > name.clientWidth + 1,
+                  named: row.getAttribute("aria-label") === parts.join(", ") && row.getAttribute("title") === parts.join(" · ") };
+              }));
+              expect(layout, `${font} ${width}px / ${size}px`).toEqual([false, true, false].map((long, i) => ({
+                firstLine: true, below: size === 32 && width < 640 && i !== 0, cut: long, long, named: true,
+              })));
+            }
+          }
+          await page.setViewportSize({ width: 320, height: 844 });
+          const rows = page.locator(".aw-mark-list:visible button");
+          await rows.first().click();
+          expect(await page.evaluate(() => (window as unknown as { lastSeek: number }).lastSeek)).toBe(12000);
+          await page.locator(".aw-mark.group").press("Enter");
+          await rows.last().press("Enter");
+          expect(await page.evaluate(() => (window as unknown as { lastSeek: number }).lastSeek)).toBe(12200);
           for (const width of [320, 390]) {
             await page.setViewportSize({ width, height: 844 });
             const group = page.locator(".aw-mark.group");

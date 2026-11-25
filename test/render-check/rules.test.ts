@@ -70,6 +70,18 @@ describe("render check rules", () => {
     } finally { await page.close(); }
   });
 
+  it("judges event and time as one line and only the whole colony on the next", async () => {
+    const row = (nameStyle = "", style = "", title = "Nest lost · Lake Hodges Colony · 8:18") => `<div class="d1"><div class="aw-mark-list"><button class="aw-mark-row" title="${title}" aria-label="Nest lost, Lake Hodges Colony, 8:18" style="display:grid;grid-template-columns:auto 1fr;width:278px;font:0.75rem sans-serif;text-align:left;${style}"><span class="aw-mark-kind">Nest lost · </span><b style="grid-column:2;grid-row:1">8:18</b><span class="aw-mark-colony" style="grid-column:1/-1;${nameStyle}">Lake Hodges Colony</span></button></div></div>`;
+    expect(rules(await judged(row(), 320, 32))).toEqual([]);
+    expect(rules(await judged(row(), 640, 32))).toContain("wrap");
+    expect(rules(await judged(row(), 320, 16))).toContain("wrap");
+    expect(rules(await judged(row("width:35px;word-break:break-all"), 320, 32))).toContain("wrap");
+    const bounded = "min-width:0;overflow:hidden;white-space:nowrap;";
+    expect(rules(await judged(row(bounded, "width:180px"), 320, 32))).toContain("clipped");
+    expect(rules(await judged(row(bounded + "text-overflow:ellipsis", "width:180px"), 320, 32))).not.toContain("clipped");
+    expect(rules(await judged(row(bounded + "text-overflow:ellipsis", "width:180px", "Incomplete"), 320, 32))).toContain("clipped");
+  });
+
   it("allows only a fully named standings name to shorten, never its badge or a cut by the surrounding row", async () => {
     const row = (label: string, badge = "", width = 100) => `<div class="d1-result-dialog"><div style="width:${width}px;overflow:hidden"><div class="rd-player" style="display:flex;width:100px"><span class="d1-rating-name" role="group" title="Sample player name" aria-label="${label}" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">Sample player name</span>${badge}</div></div></div>`;
     expect(rules(await judged(row("Sample player name")))).not.toContain("clipped");
@@ -471,7 +483,7 @@ describe("render check widths and doubled text", () => {
     } finally { await page.close(); }
   });
 
-  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (136 standard/zoom renders and 60 Users renders)", () => {
+  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (140 standard/zoom/mark-list renders and 60 Users renders)", () => {
     expect([...WIDTHS]).toEqual([1280, 390, 320]);
     expect([...TEXT_SIZES]).toEqual([16, 32]);
     expect(viewport(320)).toEqual({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
@@ -487,7 +499,7 @@ describe("render check widths and doubled text", () => {
         counts[surface.id.startsWith("users-") ? "users" : "existing"]++;
       }
     }
-    expect(counts).toEqual({ existing: 136, users: 60 });
+    expect(counts).toEqual({ existing: 140, users: 60 });
   });
 
   it("renders phones at 2x device scale so subpixel glyph wrapping in Liberation Sans at 320 px doubled text is caught", async () => {
