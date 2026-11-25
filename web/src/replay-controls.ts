@@ -158,12 +158,19 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
    * row's top and the board's top (or the window's, if higher), never under two and a half lines, and scrolls inside
    * past that (replay-marks.css), so every line of a long group stays reachable and none hides under the panels above
    * the board. */
-  const fitList = () => {
+  const fitList = (x: number) => {
+    // Below the board the list is in flow; the containing panel scrolls, not the list.
+    if (el.closest?.(".d1-below")) {
+      list.style.maxHeight = "";
+      list.style.left = "";
+      return;
+    }
     const board = el.closest?.(BOARD_AREA)?.getBoundingClientRect().top ?? 0;
     const room = el.getBoundingClientRect().top - Math.max(0, board) - LIST_GAP - LIST_MARGIN;
     const row = list.children[0] as HTMLElement;
     const least = row.offsetHeight * 2.5 + LIST_PADDING;
     list.style.maxHeight = `${Math.floor(Math.max(least, room))}px`;
+    place(list, x);
   };
   const words = (node: HTMLElement, e: ReplayEvent) => {
     node.replaceChildren();
@@ -257,9 +264,8 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
       list.append(row);
     }
     list.hidden = false;
-    fitList();
+    fitList(item.x);
     list.scrollTop = 0;
-    place(list, item.x);
   };
   const laterClose = () => { if (closeTimer) clearTimeout(closeTimer); closeTimer = setTimeout(() => closeList(), 200); };
   // Pointing (a mouse, not a touch, whose taps also report entering) opens a group's list and shows a mark's label.
@@ -371,8 +377,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
       if (now) {
         openItem = now;
         now.button.setAttribute("aria-expanded", "true");
-        fitList();
-        place(list, now.x);
+        fitList(now.x);
       } else {
         openItem = null;
         list.hidden = true;
