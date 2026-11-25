@@ -34,7 +34,7 @@
  */
 
 export const RULE_IDS = ["wrap", "clipped", "cut", "offscreen", "sideways", "page-wider", "row-uneven", "grid-uneven",
-  "tile-empty", "part-uneven", "page-empty", "column-start", "tight"] as const;
+  "tile-empty", "part-uneven", "page-empty", "column-start", "comparison-figures", "tight"] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
 export const RULE_LIMITS = {
@@ -61,7 +61,7 @@ export interface Finding {
 }
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
-export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; markList?: boolean }): PageJudgement {
+export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean }): PageJudgement {
   const vw = document.documentElement.clientWidth;
   const failures: Finding[] = [];
   const tight: Finding[] = [];
@@ -161,9 +161,49 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary";
   // For the finished replay the open native modal, not the inert HUD behind it, is the surface.
   const scope = limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
-    : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])") : document.body;
+    : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])")
+    : limits.comparisonOnly ? document.querySelector<HTMLElement>(".sb-comparison") : document.body;
   if (!scope) throw new Error("The expected replay surface did not open");
   const all = [...(scope !== document.body ? [scope] : []), ...scope.querySelectorAll("*")].filter(el => !skipped(el));
+
+  const gauges = [...scope.querySelectorAll(".sb-gauge")];
+  if (limits.comparisonColonies) {
+    for (const title of ["Kills", "Territory", "Ants"]) {
+      const gauge = gauges.find(g => g.querySelector("h3")?.textContent === title);
+      const figures = gauge ? [...gauge.querySelectorAll(".sb-value")].filter(shown) : [];
+      if (figures.length !== limits.comparisonColonies || figures.some(f => !/\d/.test(text(f)))) {
+        fail({ rule: "comparison-figures", element: ".sb-gauge", text: title, measure: `expected ${limits.comparisonColonies} recorded figures`,
+          extent: 1, box: gauge ? box(gauge.getBoundingClientRect()) : null }, gauge ?? null);
+      }
+    }
+  }
+  for (const gauge of gauges) {
+    const bar = gauge.querySelector(".sb-bar")?.getBoundingClientRect();
+    const figures = [...gauge.querySelectorAll(".sb-figure")].filter(shown);
+    if (!bar || !figures.length) continue; // Historical totals may be unavailable.
+    let previousRight = -Infinity;
+    let row: DOMRect | undefined;
+    for (const [i, figure] of figures.entries()) {
+      const value = figure.querySelector(".sb-value"), chip = figure.querySelector(".sb-swatch");
+      const runs = value ? textRects(value) : [];
+      const n = runs[0]?.r, s = chip?.getBoundingClientRect();
+      const last = i === figures.length - 1;
+      let reason: string | undefined;
+      if (runs.length !== 1 || !n || !s || !chip || !shown(chip)) reason = "missing or wrapped value or swatch";
+      else {
+        const left = Math.min(n.left, s.left), right = Math.max(n.right, s.right);
+        if (last ? s.left <= n.right : n.left <= s.right) reason = "swatch on the wrong side or touching its value";
+        else if (Math.min(n.bottom, s.bottom) <= Math.max(n.top, s.top)) reason = "swatch and value on different lines";
+        else if (vw >= 320 && row && (Math.min(row.bottom, n.bottom) <= Math.max(row.top, n.top) || left <= previousRight)) reason = "figures wrapped, touching or overlapping";
+        else if (left < bar.left - 0.1 || right > bar.right + 0.1) reason = "figure outside the bar ends";
+        else if (i === 0 && Math.abs(left - bar.left) > 0.1 || last && Math.abs(right - bar.right) > 0.1) reason = "outer swatch not aligned to the bar end";
+        row ??= n;
+        previousRight = right;
+      }
+      if (reason) fail({ rule: "comparison-figures", element: name(figure), text: gauge.querySelector("h3")?.textContent ?? "",
+        measure: `colony ${i + 1}: ${reason}`, extent: 1, box: box(figure.getBoundingClientRect()) }, figure);
+    }
+  }
 
   // One-line items: the outermost line-able blocks with text, and every label, button, table heading and badge wherever
   // it stands (inside a paragraph too) and however long its text: those are one line by what they are, not by where they

@@ -49,7 +49,9 @@ export function mountDeck(doc: Document): Deck {
       item.style.setProperty("--sb-ink", COLONY_INK[c]!);
       const said = h(doc, "span", "d1-sr");
       const value = h(doc, "span", "sb-value");
-      item.append(said, value);
+      const swatch = h(doc, "span", "sb-swatch");
+      swatch.setAttribute("aria-hidden", "true");
+      item.append(swatch, said, value);
       bar.append(segment); values.append(item);
       return { segment, item, said, value };
     });

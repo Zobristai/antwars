@@ -53,6 +53,8 @@ export interface Surface {
   readySelector?: string;
   /** Judge the open result after its replay plays, rather than the inert page behind it. */
   resultDialog?: boolean;
+  /** Number of recorded figures required in each comparison gauge. */
+  comparisonColonies?: 2 | 4;
   /** Open and judge the grouped marks in the finished replay. */
   markList?: "2d" | "3d";
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
@@ -105,12 +107,14 @@ export const SURFACES: readonly Surface[] = [
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
+  { id: "replay-comparison-sample", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true, comparisonColonies: 4,
+    fixtures: "comparison-sample-fixture.json", what: "The comparison band with recorded figures for all four colonies" },
   { id: "replay-result", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json", resultDialog: true, what: "Rated result with long player names, badges and signed ratings" },
   { id: "replay-mark-list", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json",
     markList: "3d", widths: [320, 390], textSizes: [32], what: "Open grouped nest losses with a long colony name at enlarged phone text" },
   { id: "replay-mark-list-2d", url: `/?replay=${GROUPED_SEATS_REPLAY}&board=2d&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json",
     markList: "2d", widths: [320, 390], textSizes: [32], what: "Open grouped nest losses in the 2D replay at enlarged phone text" },
-  { id: "replay-grouped-seats", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, what: "a 2v2 replay where one player holds both seats of each colony: the Score Band's grouped seat badges over the board" },
+  { id: "replay-grouped-seats", comparisonColonies: 2, url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, what: "a 2v2 replay where one player holds both seats of each colony: the Score Band's grouped seat badges over the board" },
 ];
 
 /** The browser context of a window `width` px wide, at a browser zoom of `zoom` (Surface.zoom). Phone screens
@@ -680,7 +684,8 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
-            const limits = { ...RULE_LIMITS, resultDialog: surface.resultDialog, markList: !!surface.markList };
+            const limits = { ...RULE_LIMITS, resultDialog: surface.resultDialog, markList: !!surface.markList,
+              comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.id === "replay-comparison-sample" };
             judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);
             const wrongFont = fontProblem(typeface, fonts);

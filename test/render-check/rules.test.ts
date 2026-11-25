@@ -32,6 +32,16 @@ async function judged(body: string, width = 400, textSize: TextSize = 16): Promi
 const rules = (j: PageJudgement): RuleId[] => j.failures.map(f => f.rule);
 
 describe("render check rules", () => {
+  it.each(["Kills", "Territory", "Ants"])("rejects a misplaced outer swatch on %s", async title => {
+    const figure = (last: boolean, misplaced: boolean) => `<span class="sb-figure" style="display:flex;align-items:center;gap:4px;${last ? "justify-content:flex-end" : ""}">`
+      + (last && !misplaced ? '<span class="sb-value">61</span><i class="sb-swatch"></i>' : '<i class="sb-swatch"></i><span class="sb-value">96</span>') + "</span>";
+    const gauge = (misplaced: boolean) => `<section class="sb-gauge"><h3>${title}</h3><div class="sb-bar"></div>`
+      + `<div style="display:grid;grid-template-columns:1fr 1fr">${figure(false, false)}${figure(true, misplaced)}</div></section>`;
+    const css = '<style>.sb-gauge{width:170px}.sb-bar{height:8px}.sb-swatch{width:8px;height:8px;background:blue}</style>';
+    expect(rules(await judged(css + gauge(false)))).not.toContain("comparison-figures");
+    expect(rules(await judged(css + gauge(true)))).toContain("comparison-figures");
+  });
+
   it("fails a one-line item that wraps, but not prose", async () => {
     expect(rules(await judged('<div style="width:100px"><span>Riverbank GPT-6.1 Sol</span></div>'))).toContain("wrap");
     expect(rules(await judged('<div style="width:300px"><span>Riverbank GPT-6.1 Sol</span></div>'))).not.toContain("wrap");
@@ -483,7 +493,7 @@ describe("render check widths and doubled text", () => {
     } finally { await page.close(); }
   });
 
-  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (144 standard/zoom/mark-list renders and 60 Users renders)", () => {
+  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (144 standard/zoom/mark-list, 60 Users and 12 comparison sample renders)", () => {
     expect([...WIDTHS]).toEqual([1280, 390, 320]);
     expect([...TEXT_SIZES]).toEqual([16, 32]);
     expect(viewport(320)).toEqual({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
@@ -491,15 +501,15 @@ describe("render check widths and doubled text", () => {
     expect(viewport(1280)).toEqual({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
     expect(viewport(1280, 2)).toEqual({ viewport: { width: 640, height: 400 }, deviceScaleFactor: 2 });
     expect(viewport(1280, 4)).toEqual({ viewport: { width: 320, height: 200 }, deviceScaleFactor: 4 });
-    const counts = { existing: 0, users: 0 };
+    const counts = { existing: 0, users: 0, comparisonSample: 0 };
     for (const _typeface of TYPEFACES) {
       for (const width of WIDTHS) for (const textSize of TEXT_SIZES) for (const surface of SURFACES) {
         if (!(surface.widths ?? WIDTHS).includes(width)) continue;
         if (!(surface.textSizes ?? TEXT_SIZES).includes(textSize)) continue;
-        counts[surface.id.startsWith("users-") ? "users" : "existing"]++;
+        counts[surface.id === "replay-comparison-sample" ? "comparisonSample" : surface.id.startsWith("users-") ? "users" : "existing"]++;
       }
     }
-    expect(counts).toEqual({ existing: 144, users: 60 });
+    expect(counts).toEqual({ existing: 144, users: 60, comparisonSample: 12 });
     const markLists = SURFACES.filter(surface => surface.markList);
     expect(markLists.map(({ markList, widths, textSizes, url }) => [markList, widths, textSizes, new URL(url, "http://localhost").searchParams.get("board")]))
       .toEqual([["3d", [320, 390], [32], null], ["2d", [320, 390], [32], "2d"]]);
