@@ -86,13 +86,13 @@ async function challenge(joins: Joins) {
   const w = world();
   // The house holds colony 0 for its handle; the builder sits in colony 1.
   const house = value(await w.identities.claimUsername("antwars"));
-  const handle = value(await w.identities.createHandle(house.key, "glm-5-3"));
+  const handle = value(await w.identities.createHandle(house.key, "glm-5-4-max"));
   const builder = value(await w.identities.claimUsername("builder-player"));
   const allowances = async () => {
     const list = value(await w.lobbies.listChallengeOpponentsFor(builder.key));
     return { shared: list.allowanceLeft, username: list.usernameAllowanceLeft };
   };
-  const { requestId, lobbyId } = value(await w.lobbies.requestChallenge(builder.key, "antwars/glm-5-3"));
+  const { requestId, lobbyId } = value(await w.lobbies.requestChallenge(builder.key, "antwars/glm-5-4-max"));
   value(await w.lobbies.join(lobbyId, handle.key));
   value(await w.lobbies.reportChallengeLaunch(house.key, requestId, "launched"));
   let playing: Awaited<ReturnType<typeof allowances>> | undefined;

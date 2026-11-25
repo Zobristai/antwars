@@ -224,10 +224,10 @@ describe("create_lobby and request_challenge take test: true", () => {
     const w = await world();
     const house = await w.identities.claimUsername("antwars");
     if (!house.ok) throw new Error("fixture house claim failed");
-    const handle = await w.identities.createHandle(house.value.key, "glm-5-3");
+    const handle = await w.identities.createHandle(house.value.key, "glm-5-4-max");
     if (!handle.ok) throw new Error("fixture handle failed");
-    const tested = await w.lobbies.requestChallenge(w.tester.key, "antwars/glm-5-3", undefined, { test: true });
-    const ordinary = await w.lobbies.requestChallenge(w.player.key, "antwars/glm-5-3");
+    const tested = await w.lobbies.requestChallenge(w.tester.key, "antwars/glm-5-4-max", undefined, { test: true });
+    const ordinary = await w.lobbies.requestChallenge(w.player.key, "antwars/glm-5-4-max");
     if (!tested.ok || !ordinary.ok) throw new Error(`challenge refused: ${tested.ok ? "" : tested.reason} ${ordinary.ok ? "" : ordinary.reason}`);
     const testLobby = await w.lobbies.readLobby(tested.value.lobbyId), ordinaryLobby = await w.lobbies.readLobby(ordinary.value.lobbyId);
     if (!testLobby.ok || !ordinaryLobby.ok) throw new Error("challenge lobby unreadable");

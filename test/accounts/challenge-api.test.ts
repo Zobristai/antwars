@@ -122,7 +122,7 @@ async function serve(transport: (port: number) => Promise<Call>) {
     const made = value(await identities.claimUsername(name));
     return { id: made.identity.id, key: made.key, displayName: made.identity.displayName };
   };
-  const glm = await handle(cast.house, "glm-5-3");
+  const glm = await handle(cast.house, "glm-5-4-max");
   const grok = await handle(cast.house, "grok-4-7");
   const call = await transport(server.port);
   return { clock, store, lobbies, ratings, stores, call, claim, handle, glm, grok, ...cast, raw: (path: string) => store.get(path) };
@@ -147,12 +147,12 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const w = await serve(open);
       const builder = await w.claim("builder");
       const ordinary = value(await w.lobbies.createLobby(w.rival.key, "public", 1)).lobby;
-      const reply = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const reply = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
       expect(Object.keys(reply).sort()).toEqual(["lobbyId", "requestId", "seat", "waitToken", "waitUrl"]);
       expect(reply.seat).toBe(1);
       const { lobby } = await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: reply.lobbyId });
       expect(lobby).toMatchObject({ id: reply.lobbyId, kind: "public", size: 1, state: "open", rated: false, creatorId: builder.id,
-        challenge: { kind: "house", heldFor: "antwars/glm-5-3", heldColony: 0 } });
+        challenge: { kind: "house", heldFor: "antwars/glm-5-4-max", heldColony: 0 } });
       expect(lobby.colonies).toEqual([[], [{ id: builder.id, displayName: builder.displayName }]]);
       const listed = (await okBody(w.call, "list_lobbies")).lobbies as Body[];
       expect(listed.find((row) => row.id === reply.lobbyId)).toEqual(lobby);
@@ -165,7 +165,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const w = await serve(open);
       const builder = await w.claim("builder");
       const sameOwner = await w.handle(builder, "helper");
-      const { lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const { lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
       for (const other of [w.rival, w.rivalHandle, w.house, w.grok, sameOwner, ...w.lookalikes]) {
         expect(await refusal(w.call, "join_lobby", { key: other.key, lobbyId }), other.displayName).toMatch(/^seat_held( 409)?$/);
         expect(await refusal(w.call, "join_lobby", { key: other.key, lobbyId, colony: 0 }), other.displayName).toMatch(/^seat_held( 409)?$/);
@@ -197,7 +197,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         expect(await refusal(w.call, "request_challenge", args), code).toMatch(new RegExp(`^${code}( \\d{3})?$`));
         expect(await snapshot(who)).toEqual(before);
       };
-      await refusedUnchanged(builder, { key: "not-a-key", opponent: "antwars/glm-5-3" }, "invalid_key");
+      await refusedUnchanged(builder, { key: "not-a-key", opponent: "antwars/glm-5-4-max" }, "invalid_key");
       await refusedUnchanged(builder, { key: builder.key, opponent: "antwars/not-in-the-table" }, "opponent_unavailable");
       await refusedUnchanged(builder, { key: builder.key, opponent: "rival/scout" }, "opponent_unavailable");
       await okBody(w.call, "set_challenge_availability", { key: w.house.key, handle: "antwars/grok-4-7", available: false });
@@ -210,29 +210,29 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const queued = await w.claim("queued");
       w.clock.t -= 12 * 60 * MINUTE;
       value(await w.lobbies.joinQueue(queued.key, "1v1"));
-      await refusedUnchanged(queued, { key: queued.key, opponent: "antwars/glm-5-3" }, "already_queued");
+      await refusedUnchanged(queued, { key: queued.key, opponent: "antwars/glm-5-4-max" }, "already_queued");
       w.clock.t += 12 * 60 * MINUTE + 16 * MINUTE;
       const entryBefore = [await w.raw(`queueEntries/${queued.id}`), await w.raw("queueWaiting/1v1")];
       expect(entryBefore[0]?.state).toBe("waiting");
-      await okBody(w.call, "request_challenge", { key: queued.key, opponent: "antwars/glm-5-3" });
+      await okBody(w.call, "request_challenge", { key: queued.key, opponent: "antwars/glm-5-4-max" });
       expect([await w.raw(`queueEntries/${queued.id}`), await w.raw("queueWaiting/1v1")]).toEqual(entryBefore);
 
       // Seated in another live lobby.
       const seated = await w.claim("seated");
       const { lobby } = value(await w.lobbies.createLobby(w.rival.key, "public", 2));
       value(await w.lobbies.join(lobby.id, seated.key));
-      await refusedUnchanged(seated, { key: seated.key, opponent: "antwars/glm-5-3" }, "seated_elsewhere");
+      await refusedUnchanged(seated, { key: seated.key, opponent: "antwars/glm-5-4-max" }, "seated_elsewhere");
 
       // The owner's active challenge, from another of its identities.
       const handle = await w.handle(builder, "second");
-      await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
-      await refusedUnchanged(handle, { key: handle.key, opponent: "antwars/glm-5-3" }, "active_challenge");
+      await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
+      await refusedUnchanged(handle, { key: handle.key, opponent: "antwars/glm-5-4-max" }, "active_challenge");
     });
 
     it("refuses join_queue and join_lobby live_challenge while the caller's challenge is live, with no wait token and nothing stored", async () => {
       const w = await serve(open);
       const builder = await w.claim("builder");
-      await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
       const { lobby } = value(await w.lobbies.createLobby(w.rival.key, "public", 1));
       const snapshot = async () => ({
         docs: await Promise.all([`queueEntries/${builder.id}`, "queueWaiting/1v1", `lobbies/${lobby.id}`].map(w.raw)),
@@ -252,15 +252,15 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const w = await serve(open);
       const owner = await w.claim("owner");
       for (let n = 0; n < 5; n++) {
-        const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: owner.key, opponent: "antwars/glm-5-3" });
+        const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: owner.key, opponent: "antwars/glm-5-4-max" });
         await okBody(w.call, "join_lobby", { key: w.glm.key, lobbyId });
         await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId, outcome: "launched" });
         value(await w.lobbies.releaseSlot(lobbyId));
       }
-      expect(await refusal(w.call, "request_challenge", { key: owner.key, opponent: "antwars/glm-5-3" })).toMatch(/^owner_daily_limit( 429)?$/);
-      for (let n = 0; n < 15; n++) await okBody(w.call, "request_challenge", { key: (await w.claim(`b${n}`)).key, opponent: "antwars/glm-5-3" });
+      expect(await refusal(w.call, "request_challenge", { key: owner.key, opponent: "antwars/glm-5-4-max" })).toMatch(/^owner_daily_limit( 429)?$/);
+      for (let n = 0; n < 15; n++) await okBody(w.call, "request_challenge", { key: (await w.claim(`b${n}`)).key, opponent: "antwars/glm-5-4-max" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(0);
-      expect(await refusal(w.call, "request_challenge", { key: (await w.claim("late")).key, opponent: "antwars/glm-5-3" })).toMatch(/^shared_daily_limit( 429)?$/);
+      expect(await refusal(w.call, "request_challenge", { key: (await w.claim("late")).key, opponent: "antwars/glm-5-4-max" })).toMatch(/^shared_daily_limit( 429)?$/);
     });
 
     it("lists every House-table seat handle without a key, with level, tier, availability and reason, the allowance left and the next reset", async () => {
@@ -273,16 +273,16 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         // With no records, a launch-table handle is open and any other seat is closed.
         ...(isRetiredHouse(handle) ? { available: false, reason: RETIRED_REASON } : isLaunchable(handle) ? { available: true, reason: null } : { available: false, reason: "not on the house launch table" }),
       })));
-      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(46);
+      expect(listed.opponents.filter((entry: { available: boolean }) => entry.available)).toHaveLength(43);
       // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available with no records.
       for (const handle of ["claude-fable-5-2", "claude-fable-5-2-high", "claude-fable-5-2-xhigh", "claude-fable-5-2-medium", "claude-fable-5-2-low",
         "gemini-4-carbon-low", "gemini-4-carbon-medium", "gemini-4-carbon-high"]) {
         expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
       }
-      for (const level of ["low", "high", "max"]) {
-        const handle = `antwars/glm-5-4-${level}`;
-        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === handle), handle).toMatchObject({ available: true, reason: null });
+      for (const handle of ["antwars/glm-5-3", "antwars/glm-5-4-low", "antwars/glm-5-4-high"]) {
+        expect(listed.opponents.find((entry: { handle: string }) => entry.handle === handle), handle).toMatchObject({ available: false, reason: RETIRED_REASON });
       }
+      expect(listed.opponents.find((entry: { handle: string }) => entry.handle === "antwars/glm-5-4-max")).toMatchObject({ available: true, reason: null });
       // The three Muse handles are listed available with no records.
       for (const handle of ["muse-spark-1-3", "muse-wonder-1-0", "muse-wonder-full-1-0"]) {
         expect(listed.opponents.find((entry: { handle: string }) => entry.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -304,7 +304,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       // gpt-6-astra is retired, so it is listed unavailable with the retired reason.
       expect(listed.opponents.find((entry: { handle: string }) => entry.handle === "antwars/gpt-6-astra")).toMatchObject({ available: false, reason: RETIRED_REASON });
       expect([listed.allowanceLeft, listed.resetsAt]).toEqual([20, Date.UTC(2026, 10, 3)]);
-      await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-3" });
+      await okBody(w.call, "request_challenge", { key: (await w.claim("builder")).key, opponent: "antwars/glm-5-4-max" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(19);
     });
 
@@ -314,7 +314,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const keyless = await okBody(w.call, "list_challenge_opponents");
       expect(Object.keys(keyless).sort()).toEqual(["allowanceLeft", "opponents", "resetsAt"]);
       expect(await okBody(w.call, "list_challenge_opponents", { key: owner.key })).toEqual({ ...keyless, usernameAllowanceLeft: 5 });
-      await okBody(w.call, "request_challenge", { key: owner.key, opponent: "antwars/glm-5-3" });
+      await okBody(w.call, "request_challenge", { key: owner.key, opponent: "antwars/glm-5-4-max" });
       const keyed = await okBody(w.call, "list_challenge_opponents", { key: owner.key });
       expect([keyed.allowanceLeft, keyed.usernameAllowanceLeft]).toEqual([19, 4]);
       expect(Object.keys(await okBody(w.call, "list_challenge_opponents")).sort()).toEqual(["allowanceLeft", "opponents", "resetsAt"]);
@@ -325,23 +325,23 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     it("lets only the house owner set availability; unavailable is refused at once, a playing game continues, available restores it", async () => {
       const w = await serve(open);
       for (const other of [w.glm, w.rival, w.rivalHandle, ...w.lookalikes]) {
-        expect(await refusal(w.call, "set_challenge_availability", { key: other.key, handle: "antwars/glm-5-3", available: false }), other.displayName).toMatch(/^not_house_owner( 403)?$/);
+        expect(await refusal(w.call, "set_challenge_availability", { key: other.key, handle: "antwars/glm-5-4-max", available: false }), other.displayName).toMatch(/^not_house_owner( 403)?$/);
       }
       const builder = await w.claim("builder");
-      const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
       await okBody(w.call, "join_lobby", { key: w.glm.key, lobbyId });
       await w.lobbies.registerInstance("public-0", { runId: "run-1", mcpUrl: "http://m", spectatorUrl: "http://s" });
       value(await w.lobbies.beginMatch(lobbyId, "public-0", "run-1"));
       expect((await okBody(w.call, "challenge_status", { key: builder.key })).state).toBe("playing");
 
-      expect(await okBody(w.call, "set_challenge_availability", { key: w.house.key, handle: "antwars/glm-5-3", available: false })).toEqual({ handle: "antwars/glm-5-3", available: false });
-      const row = (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/glm-5-3");
+      expect(await okBody(w.call, "set_challenge_availability", { key: w.house.key, handle: "antwars/glm-5-4-max", available: false })).toEqual({ handle: "antwars/glm-5-4-max", available: false });
+      const row = (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/glm-5-4-max");
       expect([row.available, row.reason]).toEqual([false, "marked unavailable by the house owner"]);
-      expect(await refusal(w.call, "request_challenge", { key: (await w.claim("next")).key, opponent: "antwars/glm-5-3" })).toMatch(/^opponent_unavailable( 409)?$/);
+      expect(await refusal(w.call, "request_challenge", { key: (await w.claim("next")).key, opponent: "antwars/glm-5-4-max" })).toMatch(/^opponent_unavailable( 409)?$/);
       expect((await okBody(w.call, "challenge_status", { key: builder.key, requestId })).state).toBe("playing");
       expect(value(await w.lobbies.readLobby(lobbyId)).state).toBe("holding");
 
-      await okBody(w.call, "set_challenge_availability", { key: w.house.key, handle: "glm-5-3", available: true });
+      await okBody(w.call, "set_challenge_availability", { key: w.house.key, handle: "glm-5-4-max", available: true });
       const other = await w.claim("other");
       const failed = await okBody(w.call, "request_challenge", { key: other.key, opponent: "antwars/grok-4-7" });
       await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId: failed.requestId, outcome: "failed", reason: "no seat available" });
@@ -387,7 +387,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     it("accepts launch reports only from the house owner: launched once, failed closes the lobby uncharged with the handle unavailable", async () => {
       const w = await serve(open);
       const builder = await w.claim("builder");
-      const launched = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const launched = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
       for (const other of [w.glm, builder, w.rival, ...w.lookalikes]) {
         expect(await refusal(w.call, "report_challenge_launch", { key: other.key, requestId: launched.requestId, outcome: "launched" }), other.displayName).toMatch(/^not_house_owner( 403)?$/);
       }
@@ -422,17 +422,17 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     it("accepts unavailable only from the house owner: it ends the challenge house_unavailable uncharged with its reason and lists no handle unavailable", async () => {
       const w = await serve(open);
       const REASON = "maintenance";
-      const rowOf = async () => (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/glm-5-3");
+      const rowOf = async () => (await okBody(w.call, "list_challenge_opponents")).opponents.find((o: Body) => o.handle === "antwars/glm-5-4-max");
       const rowBefore = await rowOf();
       expect([rowBefore.available, rowBefore.reason]).toEqual([true, null]);
-      const availabilityBefore = await w.raw("challengeAvailability/glm-5-3");
+      const availabilityBefore = await w.raw("challengeAvailability/glm-5-4-max");
       // The probe: a requestId that is no challenge id is refused no_such_challenge, with or without a reason.
       for (const probe of [{}, { reason: REASON }]) {
         expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: "halt-probe", outcome: "unavailable", ...probe })).toMatch(/^no_such_challenge( 404)?$/);
         expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: "00000000-0000-4000-8000-000000000000", outcome: "unavailable", ...probe })).toMatch(/^no_such_challenge( 404)?$/);
       }
       const builder = await w.claim("builder");
-      const told = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const told = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
       for (const other of [w.glm, builder, w.rival, ...w.lookalikes]) {
         expect(await refusal(w.call, "report_challenge_launch", { key: other.key, requestId: told.requestId, outcome: "unavailable", reason: REASON }), other.displayName).toMatch(/^not_house_owner( 403)?$/);
       }
@@ -442,16 +442,16 @@ describe.skipIf(!host)("house challenges through the account operations", { time
         .toEqual({ requestId: told.requestId, launchReport: "unavailable", state: "house_unavailable" });
       expect((await okBody(w.call, "read_lobby", { key: builder.key, lobbyId: told.lobbyId })).lobby).toMatchObject({ state: "ended", outcome: "not_played" });
       expect(await okBody(w.call, "challenge_status", { key: builder.key })).toEqual({
-        requestId: told.requestId, lobbyId: told.lobbyId, handle: "antwars/glm-5-3", state: "house_unavailable", reason: "challenges are unavailable right now: maintenance",
+        requestId: told.requestId, lobbyId: told.lobbyId, handle: "antwars/glm-5-4-max", state: "house_unavailable", reason: "challenges are unavailable right now: maintenance",
         waitToken: told.waitToken, waitUrl: told.waitUrl });
       expect((await okBody(w.call, "challenge_status", { key: w.house.key, requestId: told.requestId })).launchReport).toBe("unavailable");
       expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "failed", reason: "late" })).toMatch(/^already_reported( 409)?$/);
       expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: told.requestId, outcome: "unavailable", reason: REASON })).toMatch(/^already_reported( 409)?$/);
       // No handle marked: the same row, no availability write, the allowance back, and the handle challengeable at once.
       expect(await rowOf()).toEqual(rowBefore);
-      expect(await w.raw("challengeAvailability/glm-5-3")).toEqual(availabilityBefore);
+      expect(await w.raw("challengeAvailability/glm-5-4-max")).toEqual(availabilityBefore);
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(20);
-      const next = await okBody(w.call, "request_challenge", { key: (await w.claim("next")).key, opponent: "antwars/glm-5-3" });
+      const next = await okBody(w.call, "request_challenge", { key: (await w.claim("next")).key, opponent: "antwars/glm-5-4-max" });
       await okBody(w.call, "join_lobby", { key: w.glm.key, lobbyId: next.lobbyId });
       expect(await refusal(w.call, "report_challenge_launch", { key: w.house.key, requestId: next.requestId, outcome: "unavailable", reason: REASON })).toMatch(/^house_seated( 409)?$/);
     });
@@ -459,7 +459,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     it("ends a challenge whose held seat stays empty for 15 minutes expired and uncharged, including after a launched report", async () => {
       const w = await serve(open);
       const plainKey = (await w.claim("plain")).key;
-      const plain = await okBody(w.call, "request_challenge", { key: plainKey, opponent: "antwars/glm-5-3" });
+      const plain = await okBody(w.call, "request_challenge", { key: plainKey, opponent: "antwars/glm-5-4-max" });
       // A house challenge lobby keeps 15 minutes, not a player lobby's 12 hours.
       const { lobby } = await okBody(w.call, "read_lobby", { key: plainKey, lobbyId: plain.lobbyId });
       expect(lobby.expiresAt - lobby.createdAt).toBe(15 * MINUTE);
@@ -476,7 +476,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       await okBody(w.call, "request_challenge", { key: early.key, opponent: "antwars/grok-4-7" });
 
       // A failed close after an early launched report returns its place too.
-      const closing = await okBody(w.call, "request_challenge", { key: (await w.claim("closing")).key, opponent: "antwars/glm-5-3" });
+      const closing = await okBody(w.call, "request_challenge", { key: (await w.claim("closing")).key, opponent: "antwars/glm-5-4-max" });
       await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId: closing.requestId, outcome: "launched" });
       expect((await okBody(w.call, "list_challenge_opponents")).allowanceLeft).toBe(18);
       expect((await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId: closing.requestId, outcome: "failed", reason: "launch refused" })).state)
@@ -489,8 +489,8 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const blocker = await occupySlot(w, "blk");
       const builder = await w.claim("builder");
       const sibling = await w.handle(builder, "sibling");
-      const { requestId, lobbyId, waitToken, waitUrl } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
-      const own = (state: string) => ({ requestId, lobbyId, handle: "antwars/glm-5-3", state });
+      const { requestId, lobbyId, waitToken, waitUrl } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
+      const own = (state: string) => ({ requestId, lobbyId, handle: "antwars/glm-5-4-max", state });
       // The builder's own reads carry its wait link; the house owner's read of the same request never does.
       const mine = (state: string) => ({ ...own(state), waitToken, waitUrl });
       const MATCHED = `pinned harness matched @ ${"89abcdef".repeat(5)}`;
@@ -537,7 +537,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const before = await tables();
       expect(before.docs.filter(Boolean)).toHaveLength(2);
       for (const winner of ["colony_0_won", "colony_1_won", "draw"] as const) {
-        const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+        const { requestId, lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
         await okBody(w.call, "join_lobby", { key: w.glm.key, lobbyId });
         await okBody(w.call, "report_challenge_launch", { key: w.house.key, requestId, outcome: "launched" });
         await w.lobbies.registerInstance("public-0", { runId: `run-${winner}`, mcpUrl: "http://m", spectatorUrl: "http://s" });
@@ -556,7 +556,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
     value(await w.lobbies.join(lobby.id, ordinary.key));
     w.clock.t += 1_000;
     const builder = await w.claim("builder");
-    const { lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+    const { lobbyId } = await okBody(w.call, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
     const unstarted = await w.lobbies.listUnstarted();
     expect(unstarted.map((row) => Object.keys(row).sort())).toEqual([
       ["colonies", "colonyNames", "createdAt", "mode", "seated", "size"], ["challenge", "colonies", "colonyNames", "createdAt", "mode", "seated", "size"]]);
@@ -593,7 +593,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
       const made = value(await identities.createHandle(cast.house.key, name));
       return { id: made.identity.id, key: made.key, displayName: made.identity.displayName };
     };
-    const glm = await handle("glm-5-3"), grok = await handle("grok-4-7");
+    const glm = await handle("glm-5-4-max"), grok = await handle("grok-4-7");
     // A rated history for both handles in every mode, so "unchanged" is measured against recorded ratings.
     for (const mode of RANKED_MODES) {
       expect((await ratings.applyResult({ matchId: `seed-${mode}`, teams: [[glm.id], [grok.id]], winner: "a", mode })).status).toBe("applied");
@@ -606,7 +606,7 @@ describe.skipIf(!host)("house challenges through the account operations", { time
 
     const games = [["mirror", glm, 2], ["owner to handle", cast.house, 1], ["handle to handle", grok, 1]] as const;
     for (const [name, builder, seat] of games) {
-      const reply = await okBody(viaHttp, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-3" });
+      const reply = await okBody(viaHttp, "request_challenge", { key: builder.key, opponent: "antwars/glm-5-4-max" });
       expect(reply.seat, name).toBe(seat);
       const { lobby } = await okBody(call, "join_lobby", { key: glm.key, lobbyId: reply.lobbyId });
       expect([lobby.state, lobby.rated, lobby.slot], name).toEqual(["holding", false, "public-0"]);

@@ -15,7 +15,6 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "gpt-6-1-terra-max-fast",
   "gpt-6-luna",
   "claude-sonnet-5-5",
-  "glm-5-3",
   "k3-1-pro",
   "k3-1-pro-highspeed",
   "deepseek-flash",
@@ -47,8 +46,6 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "muse-spark-1-3",
   "muse-wonder-1-0",
   "muse-wonder-full-1-0",
-  "glm-5-4-low",
-  "glm-5-4-high",
   "glm-5-4-max",
 ];
 

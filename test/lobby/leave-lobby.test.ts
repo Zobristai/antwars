@@ -15,7 +15,7 @@ import { createFirestore } from "../../src/store/firestore.ts";
 // FIRESTORE_EMULATOR_HOST and GCLOUD_PROJECT; skipped only when the variable is unset.
 const host = process.env.FIRESTORE_EMULATOR_HOST;
 const projectId = process.env.GCLOUD_PROJECT || "demo-antwar";
-const HANDLE = "glm-5-3";
+const HANDLE = "glm-5-4-max";
 
 let counter = 0;
 const freshNamespace = () => `lv${process.pid}-${Date.now().toString(36)}-${counter++}`;

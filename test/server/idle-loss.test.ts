@@ -511,9 +511,9 @@ it("the real server records a house challenge whose builder never joined as aban
   }
   // The house holds colony 0 for its handle; the builder sits in colony 1.
   const house = value(await identities.claimUsername("antwars"));
-  const handle = value(await identities.createHandle(house.key, "glm-5-3"));
+  const handle = value(await identities.createHandle(house.key, "glm-5-4-max"));
   const builder = value(await identities.claimUsername("builder-player"));
-  const { lobbyId } = value(await lobbies.requestChallenge(builder.key, "antwars/glm-5-3"));
+  const { lobbyId } = value(await lobbies.requestChallenge(builder.key, "antwars/glm-5-4-max"));
   value(await lobbies.join(lobbyId, handle.key));
   const config = { ...PUBLIC_CONFIG, startAnts: 0, commandIdleTicks: 1800 };
   const idleTicks = config.ticksPerSecond; // a 1 s server idle limit
