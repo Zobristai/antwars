@@ -1,5 +1,10 @@
 # GLM house retirements on the leaderboard
 
+Compared commits (both render sets):
+
+- Base (`main`): `acddedff48d9a7a4392a9442adb8aebfec833519`
+- Code head (`retire-glm-house-handles`): `5bb1e121e99f7e7cd26fab9bcdc78e6d72c33cc0`
+
 ## Public leaderboard — primary comparison
 
 Both builds received the **same unmodified response** to the public leaderboard's first-page request: `POST /api/leaderboard` on `antwars.ai` with `{"limit":50,"mode":"house-1v1"}` at `2026-11-25T13:38:56Z`. The response contained all four GLM handles. No row was inserted, removed, sorted or reconstructed for these captures. The browser drew the page from the saved response; “Load more” was not pressed. Screenshot strips follow the card while scrolling, joined in order so all loaded rows and the switch are visible in one image. Phone captures use 2× device scale.
