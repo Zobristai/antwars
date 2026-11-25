@@ -56,7 +56,7 @@ const PINNED: Readonly<Record<string, readonly [displayName: string, thinkingLev
   "gpt-6-2-astra-high": ["GPT-6.2 Astra", "high", "fast"],
   "gpt-6-2-astra-xhigh": ["GPT-6.2 Astra", "xhigh", "fast"],
   "gpt-6-2-astra-max": ["GPT-6.2 Astra", "max", "fast"],
-  "gpt-6-2-astra-high-std": ["GPT-6.2 Astra Standard", "high", null],
+  "gpt-6-2-astra-high-std": ["GPT-6.2 Astra", "high", null],
   "qwen4-max-low": ["Qwen4 Max", "low", null],
   "qwen4-max-high": ["Qwen4 Max", "high", null],
   "qwen4-max-xhigh": ["Qwen4 Max", "xhigh", null],

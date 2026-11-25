@@ -857,7 +857,7 @@ describe("the house handle list", () => {
     for (const handle of ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium", "gemini-4-hydrogen-high", "gemini-4-hydrogen-xhigh"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
-    // The GPT-6.2 Astra Standard handle and the Qwen4 Max low handle are listed available.
+    // The standard-tier GPT-6.2 Astra handle and the Qwen4 Max low handle are listed available.
     for (const handle of ["gpt-6-2-astra-high-std", "qwen4-max-low"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
@@ -887,7 +887,7 @@ describe("the house handle list", () => {
         level: handle.slice("gpt-6-2-astra-".length), tier: "fast", available: false, reason: RETIRED_REASON });
     }
     expect(opponents.find(o => o.handle === "antwars/gpt-6-2-astra-high-std")).toEqual({ handle: "antwars/gpt-6-2-astra-high-std",
-      displayName: "GPT-6.2 Astra Standard", level: "high", tier: null, available: true, reason: null });
+      displayName: "GPT-6.2 Astra", level: "high", tier: null, available: true, reason: null });
     // The Gemini 4 Neon low, medium and xhigh handles: parked the same way, off the launch table and closed as retired,
     // each with its name and level.
     for (const handle of ["gemini-4-neon-low", "gemini-4-neon-medium", "gemini-4-neon-xhigh"]) {

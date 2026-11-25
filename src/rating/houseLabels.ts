@@ -67,7 +67,7 @@ export const HOUSE_LABELS: Readonly<Record<string, HouseLabel>> = Object.freeze(
   "gpt-6-2-astra-high": label("GPT-6.2 Astra", "high", "fast"),
   "gpt-6-2-astra-xhigh": label("GPT-6.2 Astra", "xhigh", "fast"),
   "gpt-6-2-astra-max": label("GPT-6.2 Astra", "max", "fast"),
-  "gpt-6-2-astra-high-std": label("GPT-6.2 Astra Standard", "high"),
+  "gpt-6-2-astra-high-std": label("GPT-6.2 Astra", "high"),
   "qwen4-max-low": label("Qwen4 Max", "low"),
   "qwen4-max-high": label("Qwen4 Max", "high"),
   "qwen4-max-xhigh": label("Qwen4 Max", "xhigh"),
