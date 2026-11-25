@@ -14,8 +14,10 @@ import { shippedTopMatchList } from "../../src/replays/top-matches.ts";
 import { ReplayEventScan } from "../../web/src/replay-events.ts";
 import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
 import { SEAT } from "../../web/src/compose.ts";
+import { dom, type ElementPort } from "../spectator/pages/dom.ts";
+import { mountResultModal } from "../../web/src/ui/deck/result-modal.ts";
 import { resultView, teamPlayer } from "../../web/src/ui/deck/model.ts";
-import { FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY, HUD_PLAY_MS, longClockExcerpt } from "../../web/render-check/check.ts";
+import { FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY, HUD_PLAY_MS, MARK_LIST_FINISH_PLAY_MS, longClockExcerpt } from "../../web/render-check/check.ts";
 import { MAX_FILE_BYTES, MAX_LINE_BYTES, joinReplayText, replayFromText, splitReplayText } from "../../web/render-check/replay-text.ts";
 import { readFixtures } from "../../web/render-check/serve.ts";
 
@@ -64,6 +66,29 @@ it("plays the late-clock sample through a continuous ten-minute span and finishe
   const scan = new ReplayEventScan();
   messages.forEach(m => scan.push(m));
   expect(scan.events().map(e => [e.kind, e.ms])).toEqual(Array(3).fill(["nest", 601_000]));
+
+  // The full scan above checks every tick. For the dialog clock only the opening board and
+  // final event are needed: the intervening stationary frames carry no board changes.
+  expect(messages.slice(1, -1).every(m => m.events.length === 0 && m.full === null)).toBe(true);
+  const playback = new Playback(), frame = new Frame();
+  playback.push(first, 0);
+  playback.push(last, (last.tick - first.tick) * TICK_MS);
+  const port = dom(), modal = mountResultModal(port.doc);
+  const dialog = modal.dialog as unknown as ElementPort;
+  port.body.append(dialog);
+  // A seek targets the displayed time, which trails the recording clock by the render delay.
+  const seekClock = 600_000 + RENDER_DELAY_MS;
+  playback.sample(seekClock + 2000, frame);
+  expect(frame.board?.result?.tick).toBe(last.tick);
+  modal.update(frame);
+  expect(dialog.open).toBe(false); // The recording has ended, but its result is not on screen yet.
+  playback.sample(seekClock + MARK_LIST_FINISH_PLAY_MS, frame);
+  modal.update(frame);
+  expect(dialog.open).toBe(true);
+  dialog.byClass("d1-close")[0]!.click();
+  modal.update(frame);
+  expect(dialog.open).toBe(false);
+  modal.destroy();
 });
 
 it("refuses a replay excerpt whose bytes differ from its recorded sha256", async () => {

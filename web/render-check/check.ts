@@ -23,6 +23,7 @@ import { packMessages, unpackMessages, TICK_MS } from "../../src/live/snapshot.t
 import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { renderRules, ruleSections, rulesAssets } from "../rules.ts";
+import { RENDER_DELAY_MS, RESULT_BEAT_MS } from "../src/buffer.ts";
 import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
 import { HUD_SAMPLE_CYCLES, measureHudProbe, type HudMeasurement, type HudOnScreen, type HudProbe, type HudTriplet } from "./hud-pixels.ts";
 import { heldFrom, judge, publish, readHeld, type Render } from "./report.ts";
@@ -89,13 +90,18 @@ export const GROUPED_SEATS_REPLAY = "2026-11-16T09-21-43-735Z-11240848029112";
 /** The recordings surfaces' focused element: the first recording's Replay link. */
 const RECORDINGS_FOCUS = ".d1p-rec-rows > li:first-child .d1p-rec-replay";
 
+const MARK_LIST_SEEK_MS = 600_000;
+const MARK_LIST_END_MS = 601_000;
+// The seek clock stops at the last tick. The result modal opens on the board clock, one beat after the end.
+export const MARK_LIST_FINISH_PLAY_MS = MARK_LIST_END_MS - MARK_LIST_SEEK_MS + TICK_MS + RESULT_BEAT_MS + RENDER_DELAY_MS;
+
 /** Lengthen the sample finish for the transport check without storing thousands of identical frames.
  * The board and the three nest losses come from the committed excerpt. The quiet span carries a single
  * stationary ant. Times advance on the real recording clock, not by substituting text in the HUD. */
 export function longClockExcerpt(source: Buffer): Buffer {
   const [first, quiet, ...rest] = unpackMessages(source).map(decodeMessage);
   const finish = rest.at(-1)!;
-  const end = first!.tick + 601_000 / TICK_MS;
+  const end = first!.tick + MARK_LIST_END_MS / TICK_MS;
   const frames = [encodeMessage(first!)];
   const ants = { ...quiet!.ants, count: 1 };
   for (let tick = first!.tick + 1; tick <= end; tick++) {
@@ -693,11 +699,11 @@ async function renderAll(o: Options): Promise<Render[]> {
               const hud = page.locator(".d1-hud.score-band");
               await hud.locator(".aw-mark.group").waitFor({ state: "attached" });
               const seek = hud.locator('input[aria-label="Replay position"]');
-              await seek.evaluate(input => {
+              await seek.evaluate((input, ms) => {
                 const range = input as HTMLInputElement;
-                range.value = "600000";
+                range.value = String(ms);
                 range.dispatchEvent(new Event("change", { bubbles: true }));
-              });
+              }, MARK_LIST_SEEK_MS);
               // One seek consumes only the buffered messages each frame; yield between batches.
               await page.waitForFunction(() => {
                 window.__antwar.frame(false);
@@ -708,7 +714,7 @@ async function renderAll(o: Options): Promise<Render[]> {
               const late = await page.evaluate(judgePage, { ...RULE_LIMITS, markList: true });
               if (late.failures.length) invalid.push(`at 10:00: ${late.failures.map(f => `${f.element}: ${f.measure}`).join("; ")}`);
               await page.keyboard.press("Escape");
-              await playRecording(page, 2000);
+              await playRecording(page, MARK_LIST_FINISH_PLAY_MS);
               if (await hud.locator(".aw-replay-time").textContent() !== "10:01 / 10:01") invalid.push("the replay clock did not reach the end");
               await page.locator(".d1-result-dialog:modal .d1-close").click();
               await hud.locator(".aw-mark.group").press("Enter");
