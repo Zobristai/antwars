@@ -195,7 +195,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       space = probe.getBoundingClientRect().width;
       probe.remove();
     }
-    let required = 0, previousRight = -Infinity, previousGridRight = -Infinity, lines = 0;
+    let packedWidth = 0, minimumLines = 1, previousRight = -Infinity, previousGridRight = -Infinity, lines = 0;
     let row: DOMRect | undefined;
     for (const [i, figure] of figures.entries()) {
       const value = figure.querySelector(".sb-value"), chip = figure.querySelector(".sb-swatch");
@@ -209,7 +209,10 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
         // Undo only the figure's horizontal translation to locate its normal grid position.
         const shift = parseFloat(style(figure).translate) || 0, gridLeft = left - shift;
         const gridCollision = gridLeft <= previousGridRight;
-        required += right - left + (i > 0 && (last || gridCollision) ? space : 0);
+        // Independently pack the painted widths in reading order; no gap crosses a line break.
+        const width = right - left, gap = i > 0 && (last || gridCollision) ? space : 0;
+        if (i > 0 && packedWidth + gap + width > bar.width) { minimumLines++; packedWidth = width; }
+        else packedWidth += gap + width;
         const nextLine = !row || n.top >= row.bottom;
         if (nextLine) { row = n; lines++; }
         if (last ? s.left <= n.right : n.left <= s.right) reason = "swatch on the wrong side or touching its value";
@@ -230,10 +233,10 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       if (reason) fail({ rule: "comparison-figures", element: name(figure), text: gauge.querySelector("h3")?.textContent ?? "",
         measure: `colony ${i + 1}: ${reason}`, extent: 1, box: box(figure.getBoundingClientRect()) }, figure);
     }
-    if (vw >= 320 && lines > 1 && !(lines === 2 && matchMedia("(320px <= width < 20em)").matches
-      && required > bar.width)) {
+    const expectedLines = matchMedia("(320px <= width < 20em)").matches ? minimumLines : 1;
+    if (vw >= 320 && lines && lines !== expectedLines) {
       fail({ rule: "comparison-figures", element: name(gauge), text: gauge.querySelector("h3")?.textContent ?? "",
-        measure: `unexpected ${lines} lines: figures need ${required.toFixed(2)} of ${bar.width.toFixed(2)} px`, extent: lines, box: box(bar) }, gauge);
+        measure: `expected ${expectedLines} lines, found ${lines} in ${bar.width.toFixed(2)} px`, extent: lines, box: box(bar) }, gauge);
     }
   }
 

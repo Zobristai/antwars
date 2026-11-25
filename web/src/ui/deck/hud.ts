@@ -333,18 +333,21 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
           gaps[touch] = space;
         }
       };
-      const apply = (from: number, shifts: number[]) => shifts.forEach((shift, j) => {
+      const apply = (from: number, shifts: number[], row = 1) => shifts.forEach((shift, j) => {
         const i = from + j;
-        if (from) figures[i]!.style.gridArea = `2 / ${i + 1}`;
+        if (row > 1) figures[i]!.style.gridArea = `${row} / ${i + 1}`;
         if (shift && i > 0 && i < figures.length - 1) figures[i]!.style.translate = `${shift}px`;
       });
       const whole = fitLine(0, spans.length);
       // At default text 20em is 320px, so this range opens only with enlarged browser text.
       if (!whole.fits && narrowGauges?.matches) {
-        // Keep the longest fitting prefix on line one, without separating a number from its swatch.
-        for (let split = spans.length - 1; split > 0; split--) {
-          const first = fitLine(0, split), second = fitLine(split, spans.length);
-          if (first.fits && second.fits) { apply(0, first.shifts); apply(split, second.shifts); break; }
+        // With order fixed, filling each row with its longest fitting prefix leaves the fewest rows.
+        for (let from = 0, row = 1; from < figures.length; row++) {
+          let to = figures.length;
+          let line = from === 0 ? whole : fitLine(from, to);
+          while (!line.fits && to > from + 1) line = fitLine(from, --to);
+          apply(from, line.shifts, row);
+          from = to;
         }
       } else apply(0, whole.shifts);
     }

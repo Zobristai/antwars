@@ -170,7 +170,9 @@ describe("scrolling HUD fit evidence", () => {
         import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
         const hud = mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions: {} });
         const show = kills => {
-          const frame = scoreFrame(kills.length); frame.board.kills = kills;
+          const frame = scoreFrame(kills.length);
+          if (kills.length === 2) frame.board.deaths = [kills[1], kills[0]];
+          else frame.board.kills = kills;
           hud.update({ frame, connection:'live', mode:null, board:'2d', selected:null, selectedAgent:-1, stalled:false });
         };
         addEventListener('test-scores', event => show(event.detail)); show([0, 0, 0, 0]);
@@ -258,22 +260,36 @@ describe("scrolling HUD fit evidence", () => {
       await update([0, 0, 0, 0]);
       await expect.poll(bounds).toEqual(ordinary);
 
-      // A browser preference other than doubled text uses the same measured fit, not a preset size.
-      await cdp.send("Page.setFontSizes", { fontSizes: { standard: 40 } });
-      await expect.poll(async () => (await bounds()).parts[0]!.swatchWidth).toBe(20);
-      await update([1000, 0, 0, 0]);
-      await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThan(0);
-      expect(await lineCount()).toBe(1);
-      const wideValue = (await bounds()).parts[0]!.width;
-      await update([1000, 1000, 1000, 1000]);
-      await expect.poll(lineCount).toBe(2);
-      const enlarged = await bounds();
-      expect(enlarged.parts[0]!.left).toBe(enlarged.bar[0]);
-      expect(enlarged.parts[3]!.right).toBe(enlarged.bar[1]);
-      expect(enlarged.parts.every(p => p.swatchWidth === 20 && p.width === wideValue)).toBe(true);
-      expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(Array(4).fill("1,000"));
-      expect((await page.evaluate(judgePage, { ...RULE_LIMITS, comparisonOnly: true })).failures
-        .filter(f => f.rule === "comparison-figures" && f.text === "Kills")).toEqual([]);
+      // The same four totals need two lines at 40px and four at 64px; small totals still fit one.
+      for (const [size, lines] of [[40, 2], [64, 4]] as const) {
+        await cdp.send("Page.setFontSizes", { fontSizes: { standard: size } });
+        await update([0, 0, 0, 0]);
+        await expect.poll(async () => (await bounds()).parts[0]!.swatchWidth).toBe(size / 2);
+        await expect.poll(lineCount).toBe(1);
+        await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThan(0);
+        // Read a single full-sized 1,000 from a control that fits without colliding.
+        await update(size === 40 ? [1000, 0, 0, 0] : [1000, 0]);
+        await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThan(0);
+        expect(await lineCount()).toBe(1);
+        expect(await gauge.locator(".sb-value:visible").first().textContent()).toBe("1,000");
+        const wideValue = (await bounds()).parts[0]!.width;
+        await update([1000, 1000, 1000, 1000]);
+        await expect.poll(lineCount).toBe(lines);
+        const enlarged = await bounds();
+        expect(enlarged.parts[0]!.left).toBe(enlarged.bar[0]);
+        expect(enlarged.parts[3]!.right).toBe(enlarged.bar[1]);
+        expect(enlarged.parts.every(p => p.swatchWidth === size / 2 && p.width === wideValue)).toBe(true);
+        expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(Array(4).fill("1,000"));
+        expect((await page.evaluate(judgePage, { ...RULE_LIMITS, comparisonOnly: true })).failures
+          .filter(f => f.rule === "comparison-figures" && f.text === "Kills")).toEqual([]);
+      }
+      // A small final figure can share the third line. Do not assign four lines just because two failed.
+      await update([1000, 1000, 1000, 0]);
+      await expect.poll(lineCount).toBe(3);
+      const three = await bounds();
+      expect(three.parts[2]!.top).toBe(three.parts[3]!.top);
+      expect(three.gaps[2]).toBeGreaterThan(0);
+      expect(three.parts[3]!.right).toBe(three.bar[1]);
     } finally { await browser.close(); await server.close(); }
   }, 30_000);
   it.each([16, 32])("scales comparison type at a %i px browser default without splitting four-colony figures or showing unavailable values", async size => {

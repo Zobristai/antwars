@@ -42,7 +42,7 @@ describe("render check rules", () => {
     expect(rules(await judged(css + gauge(true)))).toContain("comparison-figures");
   });
 
-  it("accepts two lines of whole comparison figures only when they cannot fit at doubled phone text", async () => {
+  it("accepts only the minimum lines of whole comparison figures at enlarged phone text", async () => {
     const gauge = (barWidth: number) => `<style>.sb-gauge{width:${barWidth}px}.sb-bar{height:8px}
       .sb-values{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sb-figure{display:flex;align-items:center;gap:4px}
       .sb-figure:last-child{flex-direction:row-reverse}.sb-swatch{width:8px;height:8px;background:blue}</style>`
@@ -50,6 +50,10 @@ describe("render check rules", () => {
       + '<span class="sb-figure"><i class="sb-swatch"></i><span class="sb-value">1,000</span></span>'.repeat(4) + "</div></section>";
     // Four 16px monospace numbers with chips are wider than 160 px and narrower than 300 px.
     expect(rules(await judged(gauge(160), 320, 32))).not.toContain("comparison-figures");
+    // One figure per line: correct at 90 px, gratuitous at 160 px where pairs can fit.
+    const singles = (width: number) => gauge(width).replace("grid-template-columns:1fr 1fr", "grid-template-columns:1fr");
+    expect(rules(await judged(singles(90), 320, 32))).not.toContain("comparison-figures");
+    expect(rules(await judged(singles(160), 320, 32))).toContain("comparison-figures");
     expect(rules(await judged(gauge(300), 320, 32))).toContain("comparison-figures"); // unnecessary wrap
     expect(rules(await judged(gauge(160), 320, 16))).toContain("comparison-figures");
     expect(rules(await judged(gauge(160), 640, 32))).toContain("comparison-figures"); // exclusive 20em boundary
