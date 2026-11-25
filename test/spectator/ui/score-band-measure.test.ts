@@ -663,9 +663,11 @@ describe("scrolling HUD fit evidence", () => {
               import '/web/src/ui/ui.css';
               import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
               import { mountReplayControls } from '/web/src/replay-controls.ts';
-              const events = [30000,30500,31000,31500,32000,32500].map(ms => ({kind:'nest', colony:0, ms, tick:ms/100}));
-              const controls = mountReplayControls(document, {duration:60000, rate:1, position:0, error:null, events,
-                seek(ms) { document.body.dataset.sought = String(ms) }}, ['Lake Hodges Colony','Sample Colony']);
+              const events = [450000,450500,451000,451500,452000,452500].map(ms => ({kind:'nest', colony:0, ms, tick:ms/100}));
+              const recording = {duration:900000, rate:1, position:0, error:null, events,
+                seek(ms) { document.body.dataset.sought = String(ms) }};
+              const controls = mountReplayControls(document, recording, ['Lake Hodges Colony','Sample Colony']);
+              window.setPosition = ms => { recording.position = ms; controls.update(); };
               mountDeckHud({doc:document, host:document.querySelector('.aw-hud'), replay:controls.el, tips:[], teamView:null, waiting:null, boardAspect:null, actions:{}});
               function update() { controls.update(); requestAnimationFrame(update); } update();
             ` });
@@ -676,6 +678,28 @@ describe("scrolling HUD fit evidence", () => {
               await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
               const parent = width < 75 * size ? ".d1-below" : ".d1-frame";
               const group = page.locator(`${parent} .aw-mark.group`);
+              // The inline module imports the real HUD asynchronously; viewport frames alone don't guarantee mount.
+              await group.waitFor({ state: "visible" });
+              for (const [ms, clock] of [[0, "0:00"], [599000, "9:59"], [600000, "10:00"], [618000, "10:18"], [900000, "15:00"]] as const) {
+                const state = await page.evaluate(ms => {
+                  (window as unknown as { setPosition(ms: number): void }).setPosition(ms);
+                  const time = document.querySelector(".aw-replay-time")!, r = new Range(); r.selectNodeContents(time);
+                  const rail = document.querySelector('.aw-replay-controls input')!.getBoundingClientRect();
+                  const speed = document.querySelector('.aw-replay-controls label')!.getBoundingClientRect();
+                  const panel = time.closest(".d1-below");
+                  return { clock: time.textContent, size: parseFloat(getComputedStyle(time).fontSize), lines: r.getClientRects().length,
+                    fits: [r.getBoundingClientRect(), rail].every(box => box.width > 0 && box.left >= 0 && box.right <= innerWidth),
+                    apart: speed.right <= r.getBoundingClientRect().left, overflow: panel ? panel.scrollWidth - panel.clientWidth : 0 };
+                }, ms);
+                expect(state, `${cell} at ${clock}`).toEqual({ clock: `${clock} / 15:00`, size: size * .75, lines: 1, fits: true, apart: true, overflow: 0 });
+              }
+              // At default text the longer clock changes the rail width. Open the group at its new position,
+              // after the resize observer has laid the marks on the final rail, not during their replacement.
+              await page.waitForFunction(() => {
+                const input = document.querySelector<HTMLInputElement>('.aw-replay-controls input')!;
+                const layer = document.querySelector<HTMLElement>('.aw-marks')!;
+                return layer.offsetWidth === input.offsetWidth && layer.offsetLeft === input.offsetLeft;
+              });
               await group.press("Enter");
               const rows = page.getByRole("menuitem");
               expect(await rows.count(), cell).toBe(6);
@@ -698,7 +722,7 @@ describe("scrolling HUD fit evidence", () => {
               }
               if (tallGroup) expect(await panel.evaluate(el => el.scrollTop), cell).toBeGreaterThan(0);
               await page.keyboard.press("Enter");
-              expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("32500");
+              expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("452500");
               if (tallGroup) await panel.evaluate(el => { el.scrollTop = 0; });
               await group.hover();
               if (tallGroup) {
@@ -715,10 +739,10 @@ describe("scrolling HUD fit evidence", () => {
                 expect(r!.y, cell).toBeGreaterThanOrEqual(b!.y);
                 expect(r!.y + r!.height, cell).toBeLessThanOrEqual(Math.min(844, b!.y + b!.height));
                 await page.mouse.click(r!.x + r!.width / 2, r!.y + r!.height / 2);
-                expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("32500");
+                expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("452500");
               } else {
                 await rows.first().click();
-                expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("30000");
+                expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("450000");
               }
               await page.mouse.move(0, 0);
             }

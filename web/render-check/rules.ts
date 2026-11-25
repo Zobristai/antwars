@@ -164,6 +164,26 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])")
     : limits.comparisonOnly ? document.querySelector<HTMLElement>(".sb-comparison") : document.body;
   if (!scope) throw new Error("The expected replay surface did not open");
+  // The menu is the text-judging scope, but its size comes from the transport's grid.
+  // A scrollable ancestor is not permission for these controls to run off the phone.
+  if (limits.markList) {
+    const rail = scope.closest(".aw-replay-controls")!;
+    const panel = rail.closest(".d1-below")!;
+    const clock = rail.querySelector(".aw-replay-time")!, seek = rail.querySelector('input[type="range"]')!;
+    const time = new Range(); time.selectNodeContents(clock);
+    const area = panel.getBoundingClientRect();
+    if (panel.scrollWidth > panel.clientWidth) fail({ rule: "sideways", element: name(panel), text: "Replay playback",
+      measure: `panel content ${panel.scrollWidth}px in ${panel.clientWidth}px`, extent: panel.scrollWidth - panel.clientWidth, box: box(area) }, panel);
+    for (const el of [clock, seek, scope, ...scope.querySelectorAll(".aw-mark-row")]) {
+      const r = el === clock ? time.getBoundingClientRect() : el.getBoundingClientRect();
+      const over = Math.max(Math.max(0, area.left) - r.left, r.right - Math.min(vw, area.right));
+      if (over > 0) fail({ rule: "offscreen", element: name(el), text: text(el), measure: `outside panel by ${over}px`, extent: over, box: box(r) }, el);
+      if (el.matches(":focus")) {
+        const cut = Math.max(Math.max(0, area.top) - r.top, r.bottom - Math.min(innerHeight, area.bottom));
+        if (cut > 0) fail({ rule: "cut", element: name(el), text: text(el), measure: `focused row clipped by ${cut}px`, extent: cut, box: box(r) }, el);
+      }
+    }
+  }
   const all = [...(scope !== document.body ? [scope] : []), ...scope.querySelectorAll("*")].filter(el => !skipped(el));
 
   const gauges = [...scope.querySelectorAll(".sb-gauge")];

@@ -300,7 +300,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
       }
       if (doc.documentElement.clientWidth < 320) continue; // Existing sub-phone zoom layout.
       const figures = slots.filter(f => f.getClientRects().length);
-      if (figures.length < 2) continue;
+      // Before the first score, an empty text range is at the viewport origin, not at its swatch.
+      if (figures.length < 2 || gauge.querySelector(".sb-figure:not([hidden]) .sb-value:empty")) continue;
       const spans = figures.map(f => {
         const range = doc.createRange();
         range.selectNodeContents(f.querySelector(".sb-value")!);
