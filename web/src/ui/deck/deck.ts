@@ -52,6 +52,12 @@ export function mountDeck(doc: Document): Deck {
       const swatch = h(doc, "span", "sb-swatch");
       swatch.setAttribute("aria-hidden", "true");
       item.append(swatch, said, value);
+      if (c === 0) {
+        // Same typography as the figures; a real space, outside the flex layout and reading order.
+        const space = h(doc, "span", "sb-number-space", " ");
+        space.setAttribute("aria-hidden", "true");
+        item.append(space);
+      }
       bar.append(segment); values.append(item);
       return { segment, item, said, value };
     });

@@ -289,7 +289,6 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // Keep the grid's normal starts whenever possible. When a broad value spills out of its
   // track, its painted number and swatch, not its track box, determine the space it needs.
-  const clearance = 1; // CSS px, for every typeface and device scale.
   const fitGauges = () => {
     for (const gauge of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) {
       if (typeof gauge.getClientRects !== "function") continue;
@@ -305,13 +304,16 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
         const value = range.getBoundingClientRect(), swatch = f.querySelector(".sb-swatch")!.getBoundingClientRect();
         return { left: Math.min(value.left, swatch.left), right: Math.max(value.right, swatch.right) };
       });
+      // Only the last pair has two numbers beside one another without a swatch in between.
+      const numberSpace = gauge.querySelector(".sb-number-space")!.getBoundingClientRect().width;
+      const clearanceAfter = (i: number) => i === spans.length - 2 ? numberSpace : 1;
       const shifts = spans.map(() => 0);
       let nextLeft = spans.at(-1)!.left;
       for (let i = spans.length - 2; i > 0; i--) {
-        shifts[i] = Math.min(0, nextLeft - clearance - spans[i]!.right);
+        shifts[i] = Math.min(0, nextLeft - clearanceAfter(i) - spans[i]!.right);
         nextLeft = spans[i]!.left + shifts[i]!;
       }
-      if (nextLeft - spans[0]!.right < clearance) {
+      if (nextLeft - spans[0]!.right < clearanceAfter(0)) {
         // Even moving all interior figures cannot fit these reader settings between the ends.
         gauge.classList.add("sb-wrap-figures");
       } else {
@@ -326,7 +328,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   const gaugeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(queueFitGauges);
   // The tracks can stay the same size while a new score (or a loaded font) widens the text.
   if (gaugeObserver) {
-    for (const el of deck.score.querySelectorAll(".sb-gauge, .sb-figure, .sb-value, .sb-swatch")) gaugeObserver.observe(el);
+    for (const el of deck.score.querySelectorAll(".sb-gauge, .sb-figure, .sb-value, .sb-swatch, .sb-number-space")) gaugeObserver.observe(el);
   }
   const keyObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(fitKey);
   if (keyObserver && typeof Node !== "undefined" && key instanceof Node) {

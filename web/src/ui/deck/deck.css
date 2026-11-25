@@ -739,6 +739,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-figure { display: flex; align-items: center; gap: 4px; color: var(--aw-ink-bright); font-size: var(--aw-text-body); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sb-swatch, .score-band .d1-name::before { content: ''; flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--sb-ink, currentColor); }
 .sb-swatch { width: .5rem; height: .5rem; }
+.sb-number-space { position: absolute; visibility: hidden; white-space: pre; }
 /* The unused colony slots remain in the DOM. Mirror the last active slot, not the last child. */
 .sb-values > :nth-last-child(1 of .sb-figure:not([hidden])) { flex-direction: row-reverse; }
 .sb-unavailable, .sb-rule { color: var(--aw-ink-3); font-size: var(--aw-text-meta); white-space: nowrap; }

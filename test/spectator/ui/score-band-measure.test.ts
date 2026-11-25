@@ -187,22 +187,33 @@ describe("scrolling HUD fit evidence", () => {
         return { bar: [bar.left, bar.right], parts, gaps: parts.slice(1).map((p, i) => p.left - parts[i]!.right) };
       });
       const update = (kills: number[]) => page.evaluate(k => { dispatchEvent(new CustomEvent("test-scores", { detail: k })); }, kills);
+      const space = await gauge.locator(".sb-value").first().evaluate(value => {
+        const probe = value.cloneNode(false) as HTMLElement;
+        probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+        probe.textContent = " "; value.parentElement!.append(probe);
+        const width = probe.getBoundingClientRect().width;
+        probe.remove(); return width;
+      });
+      expect(space).toBeGreaterThan(1);
       const ordinary = await bounds();
       await update([0, 0, 512, 1000]);
       // No manual resize: the text changed inside four unchanged grid tracks.
       await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThanOrEqual(0.99);
+      await expect.poll(async () => (await bounds()).gaps[2]!).toBeCloseTo(space, 2);
       const fitted = await bounds();
       expect(fitted.parts[0]!.left).toBe(fitted.bar[0]);
       expect(fitted.parts[3]!.right).toBe(fitted.bar[1]);
       expect(fitted.parts[1]!.left).toBe(ordinary.parts[1]!.left);
-      expect(fitted.gaps[2]).toBeCloseTo(1, 2);
+      expect(fitted.gaps[2]).toBeCloseTo(space, 2);
       expect(new Set(fitted.parts.map(p => p.top)).size).toBe(1);
       expect(fitted.parts.every(p => p.swatchWidth === 16)).toBe(true);
       // Measure the uncorrected row, then deliberately make its last two painted figures overlap.
       const plant = await page.addStyleTag({ content: ".sb-figure { translate: none !important }" });
       const plain = await bounds();
-      expect(fitted.parts[2]!.left).toBeCloseTo(plain.parts[2]!.left - Math.max(0, 1 - plain.gaps[2]!), 2);
+      expect(fitted.parts[2]!.left).toBeCloseTo(plain.parts[2]!.left - Math.max(0, space - plain.gaps[2]!), 2);
       expect(fitted.parts.map(p => p.width)).toEqual(plain.parts.map(p => p.width));
+      await plant.evaluate((e, shift) => { e.textContent = `.sb-figure.c2 { translate:${shift}px !important }`; }, plain.gaps[2]! - 1);
+      expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({ rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("less than one space") }));
       await plant.evaluate(e => { e.textContent = ".sb-figure.c2 { translate: 4px !important }"; });
       expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({ rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("overlapping") }));
       await plant.evaluate(e => e.parentNode!.removeChild(e));

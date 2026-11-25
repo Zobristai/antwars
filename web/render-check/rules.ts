@@ -199,8 +199,18 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
         if (last ? s.left <= n.right : n.left <= s.right) reason = "swatch on the wrong side or touching its value";
         else if (Math.min(n.bottom, s.bottom) <= Math.max(n.top, s.top)) reason = "swatch and value on different lines";
         else if (vw >= 320 && row && (Math.min(row.bottom, n.bottom) <= Math.max(row.top, n.top) || left <= previousRight)) reason = "figures wrapped, touching or overlapping";
-        else if (left < bar.left - 0.1 || right > bar.right + 0.1) reason = "figure outside the bar ends";
-        else if (i === 0 && Math.abs(left - bar.left) > 0.1 || last && Math.abs(right - bar.right) > 0.1) reason = "outer swatch not aligned to the bar end";
+        else if (vw >= 320 && last && i > 0) {
+          // Measure a space independently of the HUD fitter, with the rendered number's font.
+          const probe = value!.cloneNode(false) as HTMLElement;
+          probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+          probe.textContent = " ";
+          figure.append(probe);
+          const space = probe.getBoundingClientRect().width;
+          probe.remove();
+          if (left - previousRight < space - 0.01) reason = "adjacent numbers less than one space apart";
+        }
+        if (!reason && (left < bar.left - 0.1 || right > bar.right + 0.1)) reason = "figure outside the bar ends";
+        else if (!reason && (i === 0 && Math.abs(left - bar.left) > 0.1 || last && Math.abs(right - bar.right) > 0.1)) reason = "outer swatch not aligned to the bar end";
         row ??= n;
         previousRight = right;
       }
