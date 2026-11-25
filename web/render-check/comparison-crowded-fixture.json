@@ -1,0 +1,14 @@
+{
+  "note": "A crowded comparison example. It shares the neutral sample’s ant and territory frames, but starts with explicit four-colony kill credits.",
+  "fixtures": {
+    "/replays/2026-11-17T08-55-08-583Z-151632020035470": {
+      "label": "Crowded four-colony Kills comparison: 0 / 0 / 512 / 1,000",
+      "type": "application/octet-stream",
+      "files": [
+        "comparison-crowded-head.replay.jsonl",
+        "comparison-sample.replay.jsonl"
+      ],
+      "sha256": "e6d4255b81643582e480f941d626611188b2aabc860565a958c10f4bd107525a"
+    }
+  }
+}

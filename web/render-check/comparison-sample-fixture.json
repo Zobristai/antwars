@@ -5,6 +5,7 @@
       "label": "Four-colony comparison sample: kills 96/42/19/61, held tiles 1940/1725/788/1438, living ants 276/240/47/193",
       "type": "application/octet-stream",
       "files": [
+        "comparison-sample-head.replay.jsonl",
         "comparison-sample.replay.jsonl"
       ],
       "sha256": "db6b015bd56a3940c26343ba6e23cfce7144cbfc61b3af4ed24691f873142d0a"
