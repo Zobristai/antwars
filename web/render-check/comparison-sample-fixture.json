@@ -1,0 +1,13 @@
+{
+  "note": "A synthetic comparison example based on the first frame of the neutral Free-for-all excerpt. The ant and territory snapshots stay fixed across three ticks. Kill credits are sample inputs, not historical totals or estimates from deaths.",
+  "fixtures": {
+    "/replays/2026-11-17T08-55-08-583Z-151632020035470": {
+      "label": "Four-colony comparison sample: kills 96/42/19/61, held tiles 1940/1725/788/1438, living ants 276/240/47/193",
+      "type": "application/octet-stream",
+      "files": [
+        "comparison-sample.replay.jsonl"
+      ],
+      "sha256": "0851acc666c84dc02e2cb593f985d90775b05f70f498bd59469dc586b5ff76fb"
+    }
+  }
+}
