@@ -18,6 +18,8 @@ import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
+import { decodeMessage, encodeMessage } from "../../src/live/format.ts";
+import { packMessages, unpackMessages, TICK_MS } from "../../src/live/snapshot.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { renderRules, ruleSections, rulesAssets } from "../rules.ts";
@@ -53,7 +55,7 @@ export interface Surface {
   readySelector?: string;
   /** Judge the open result after its replay plays, rather than the inert page behind it. */
   resultDialog?: boolean;
-  /** Open and judge the grouped marks in the finished replay. */
+  /** Open and judge the grouped marks at the late clock and again at the finish. */
   markList?: "2d" | "3d";
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
    * never judged and the render is invalid. Watch with no live match shows a list instead and leaves this unset. */
@@ -86,6 +88,23 @@ export const GROUPED_SEATS_REPLAY = "2026-11-16T09-21-43-735Z-11240848029112";
 
 /** The recordings surfaces' focused element: the first recording's Replay link. */
 const RECORDINGS_FOCUS = ".d1p-rec-rows > li:first-child .d1p-rec-replay";
+
+/** Lengthen the sample finish for the transport check without storing thousands of identical frames.
+ * The board and the three nest losses come from the committed excerpt. The quiet span carries a single
+ * stationary ant. Times advance on the real recording clock, not by substituting text in the HUD. */
+export function longClockExcerpt(source: Buffer): Buffer {
+  const [first, quiet, ...rest] = unpackMessages(source).map(decodeMessage);
+  const finish = rest.at(-1)!;
+  const end = first!.tick + 601_000 / TICK_MS;
+  const frames = [encodeMessage(first!)];
+  const ants = { ...quiet!.ants, count: 1 };
+  for (let tick = first!.tick + 1; tick <= end; tick++) {
+    const events = tick === end ? finish.events.map(e => e.kind === "queenLost" ? { ...e, queen: { ...e.queen, lostTick: tick - 1 } }
+      : e.kind === "end" ? { ...e, result: { ...e.result, tick } } : e) : [];
+    frames.push(encodeMessage({ tick, full: null, ants, events }));
+  }
+  return Buffer.from(packMessages(frames));
+}
 
 export const SURFACES: readonly Surface[] = [
   { id: "landing", url: "/", hud: false, what: "the front page" },
@@ -583,6 +602,12 @@ async function renderAll(o: Options): Promise<Render[]> {
   const fixtures = await readFixtures([join(HERE, "fixtures.json"), ...o.fixtureFiles]);
   const surfaceFixtures = new Map(await Promise.all(o.surfaces.filter(s => s.fixtures)
     .map(async s => [s.id, { ...fixtures, ...await readFixtures([join(HERE, s.fixtures!)]) }] as const)));
+  for (const surface of o.surfaces.filter(s => s.markList)) {
+    const data = surfaceFixtures.get(surface.id)!;
+    const key = `/replays/${GROUPED_SEATS_REPLAY}`;
+    const replay = { label: "Sample finish with a ten-minute quiet interval", type: "application/octet-stream", bytes: longClockExcerpt(data[key]!.bytes!) };
+    surfaceFixtures.set(surface.id, { ...data, [key]: replay });
+  }
   const manifest = JSON.parse(await readFile(join(o.dist, ".vite/manifest.json"), "utf8"));
   const rulesPage = () => renderRules(undrawnConfig, { undrawn: true, assets: rulesAssets(manifest) });
   const held = await readHeld(o.heldFile).catch(() => ({ note: "", held: [] }));
@@ -667,9 +692,37 @@ async function renderAll(o: Options): Promise<Render[]> {
               }
               const hud = page.locator(".d1-hud.score-band");
               await hud.locator(".aw-mark.group").waitFor({ state: "attached" });
+              const seek = hud.locator('input[aria-label="Replay position"]');
+              await seek.evaluate(input => {
+                const range = input as HTMLInputElement;
+                range.value = "600000";
+                range.dispatchEvent(new Event("change", { bubbles: true }));
+              });
+              // One seek consumes only the buffered messages each frame; yield between batches.
+              await page.waitForFunction(() => {
+                window.__antwar.frame(false);
+                return document.querySelector(".aw-replay-time")?.textContent === "10:00 / 10:01"
+                  && !!document.querySelector('.aw-replay-controls[aria-busy="false"]');
+              }, null, { polling: 10, timeout: 90_000 });
+              await hud.locator(".aw-mark.group").press("Enter");
+              const late = await page.evaluate(judgePage, { ...RULE_LIMITS, markList: true });
+              if (late.failures.length) invalid.push(`at 10:00: ${late.failures.map(f => `${f.element}: ${f.measure}`).join("; ")}`);
+              await page.keyboard.press("Escape");
+              await playRecording(page, 2000);
+              if (await hud.locator(".aw-replay-time").textContent() !== "10:01 / 10:01") invalid.push("the replay clock did not reach the end");
               await page.locator(".d1-result-dialog:modal .d1-close").click();
               await hud.locator(".aw-mark.group").press("Enter");
               const rows = hud.locator(".aw-mark-list:visible .aw-mark-row");
+              // Tab through the open menu, without locator-driven scrolling. Its focused
+              // row must be whole, even when the panel edge lands between CSS pixels.
+              for (let i = 0, n = await rows.count(); i < n; i++) {
+                if (i) await page.keyboard.press("Tab");
+                const whole = await rows.nth(i).evaluate(row => {
+                  const r = row.getBoundingClientRect(), panel = row.closest(".d1-below")!.getBoundingClientRect();
+                  return row === document.activeElement && r.top >= Math.max(0, panel.top) && r.bottom <= Math.min(innerHeight, panel.bottom);
+                });
+                if (!whole) invalid.push(`menu row ${i + 1} did not take focus fully inside its panel`);
+              }
               if (await rows.count() !== 3 || !await rows.evaluateAll(buttons => buttons.every(button => {
                 const name = button.querySelector<HTMLElement>(".aw-mark-colony");
                 return name?.textContent === "Lake Hodges Colony" && name.clientWidth > 0 && name.scrollWidth <= name.clientWidth + 1;

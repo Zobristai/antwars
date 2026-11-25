@@ -15,7 +15,7 @@ import { ReplayEventScan } from "../../web/src/replay-events.ts";
 import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
 import { SEAT } from "../../web/src/compose.ts";
 import { resultView, teamPlayer } from "../../web/src/ui/deck/model.ts";
-import { FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY, HUD_PLAY_MS } from "../../web/render-check/check.ts";
+import { FREE_FOR_ALL_REPLAY, GROUPED_SEATS_REPLAY, HUD_PLAY_MS, longClockExcerpt } from "../../web/render-check/check.ts";
 import { MAX_FILE_BYTES, MAX_LINE_BYTES, joinReplayText, replayFromText, splitReplayText } from "../../web/render-check/replay-text.ts";
 import { readFixtures } from "../../web/render-check/serve.ts";
 
@@ -51,6 +51,19 @@ it("the result surface plays a rated finish with a long house label, two badges 
   messages.forEach((m, i) => replay.push(m, i * TICK_MS));
   replay.sample(HUD_PLAY_MS, frame);
   expect(resultView(frame)?.moments.map(m => m.what)).toEqual(["Queen 1 lost", "Queen 11 lost", "Queen 12 lost"]);
+});
+
+it("plays the late-clock sample through a continuous ten-minute span and finishes with grouped nest losses", async () => {
+  const fixtures = await readFixtures([resolve(FIXTURES, "..", "result-standings-fixture.json")]);
+  const messages = unpackMessages(longClockExcerpt(fixtures[`/replays/${GROUPED_SEATS_REPLAY}`]!.bytes!)).map(decodeMessage);
+  const first = messages[0]!, last = messages.at(-1)!;
+  expect(first.full).not.toBeNull();
+  expect(messages.every((m, i) => m.tick === first.tick + i)).toBe(true);
+  expect((last.tick - first.tick) * TICK_MS).toBe(601_000);
+  expect(last.events.find(e => e.kind === "end")?.result.tick).toBe(last.tick);
+  const scan = new ReplayEventScan();
+  messages.forEach(m => scan.push(m));
+  expect(scan.events().map(e => [e.kind, e.ms])).toEqual(Array(3).fill(["nest", 601_000]));
 });
 
 it("refuses a replay excerpt whose bytes differ from its recorded sha256", async () => {

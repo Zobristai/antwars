@@ -1139,9 +1139,13 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1-sel-ant .d1-sel-title { --d1-fit-ant: 1; font-size: var(--d1-ant-fit, var(--aw-text-lead)); }
   .d1-sel-ant > .d1-sel-head > .d1-close { grid-column: 2; grid-row: 1; }
   .d1-sel:not(.d1-sel-ant) > .d1-sel-head > .d1-close { grid-column: 3; grid-row: 1; }
-  .d1 .aw-replay-controls { grid-template-rows: var(--d1-tap) var(--d1-tap); border-radius: calc(var(--d1-tap) / 2); }
+  /* Speed and time share one row. An empty third track would still consume a second gap. */
+  .d1 .aw-replay-controls {
+    grid-template-columns: auto minmax(0, 1fr); grid-template-rows: var(--d1-tap) var(--d1-tap);
+    padding-inline: var(--aw-space-1); column-gap: var(--aw-space-1); border-radius: calc(var(--d1-tap) / 2);
+  }
   .d1 .aw-replay-controls > label { grid-column: 1; grid-row: 1; }
-  .d1 .aw-replay-controls > .aw-replay-time { grid-column: 3; grid-row: 1; justify-self: end; }
+  .d1 .aw-replay-controls > .aw-replay-time { grid-column: 2; grid-row: 1; justify-self: end; white-space: nowrap; }
   .d1 .aw-replay-controls > input[type="range"] { grid-column: 1 / -1; grid-row: 2; width: 100%; }
   .d1-history-line { grid-template-columns: calc(38em / 12) calc(14em / 12) minmax(0, 1fr); row-gap: 4px; }
   .d1-history-line > :is(.d1-chip, .d1-gone) { grid-column: 1 / -1; justify-self: end; }

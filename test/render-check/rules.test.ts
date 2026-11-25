@@ -38,6 +38,22 @@ describe("render check rules", () => {
     expect(rules(await judged('<p style="width:100px">A sentence that wraps over lines.</p>'))).not.toContain("wrap");
   });
 
+  it("rejects transport overflow outside the open mark list even when the page itself fits", async () => {
+    const page = await browser.newPage({ ...viewport(320) });
+    try {
+      await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0} .d1-below{overflow:auto;height:400px}</style>'
+        + '<div class="d1-below"><div class="aw-replay-controls"><output class="aw-replay-time">15:00 / 15:00</output>'
+        + '<input type="range"><div class="aw-mark-list"><button class="aw-mark-row"><span class="aw-mark-kind">Fight · </span><b>10:00</b></button></div></div></div>');
+      const check = () => page.evaluate(judgePage, { ...RULE_LIMITS, markList: true });
+      expect((await check()).failures).toEqual([]);
+      await page.addStyleTag({ content: '.aw-replay-controls input { width:330px; }' });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+      const failures = (await check()).failures;
+      expect(failures.some(f => f.rule === "sideways" && f.element.endsWith("div.d1-below"))).toBe(true);
+      expect(failures.some(f => f.rule === "offscreen" && f.element.endsWith("input"))).toBe(true);
+    } finally { await page.close(); }
+  });
+
   it("judges Rules section titles as one line, including their in-flow children, but lets ordinary headings and prose wrap", async () => {
     const section = (style: string, title = "Autonomous ants") => `<section class="d1p-rule" id="d1-autonomous-ants" aria-labelledby="d1-autonomous-ants-title">`
       + `<h3 class="d1p-rule-title" id="d1-autonomous-ants-title" style="${style}">${title}</h3>`

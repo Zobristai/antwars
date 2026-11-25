@@ -113,6 +113,8 @@
     display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-content: center;
     gap: 0 var(--aw-space-1); padding: var(--aw-space-1); min-height: var(--aw-mark-row); height: auto;
   }
+  /* Native focus scrolling rounds to a pixel; leave the whole row inside the panel. */
+  .d1-below .aw-mark-row { scroll-margin-block: 1px; }
   .d1 .aw-mark-row .aw-mark-words { display: contents; }
   .d1 .aw-mark-row b { grid-column: 3; grid-row: 1; }
   .d1 .aw-mark-row .aw-mark-separator { display: none; }
