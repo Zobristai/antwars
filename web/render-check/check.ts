@@ -18,9 +18,12 @@ import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
+import { decodeMessage, encodeMessage } from "../../src/live/format.ts";
+import { packMessages, unpackMessages, TICK_MS } from "../../src/live/snapshot.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { renderRules, ruleSections, rulesAssets } from "../rules.ts";
+import { RENDER_DELAY_MS, RESULT_BEAT_MS } from "../src/buffer.ts";
 import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
 import { HUD_SAMPLE_CYCLES, measureHudProbe, type HudMeasurement, type HudOnScreen, type HudProbe, type HudTriplet } from "./hud-pixels.ts";
 import { heldFrom, judge, publish, readHeld, type Render } from "./report.ts";
@@ -53,7 +56,7 @@ export interface Surface {
   readySelector?: string;
   /** Judge the open result after its replay plays, rather than the inert page behind it. */
   resultDialog?: boolean;
-  /** Open and judge the grouped marks in the finished replay. */
+  /** Open and judge the grouped marks at the late clock and again at the finish. */
   markList?: "2d" | "3d";
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
    * never judged and the render is invalid. Watch with no live match shows a list instead and leaves this unset. */
@@ -86,6 +89,28 @@ export const GROUPED_SEATS_REPLAY = "2026-11-16T09-21-43-735Z-11240848029112";
 
 /** The recordings surfaces' focused element: the first recording's Replay link. */
 const RECORDINGS_FOCUS = ".d1p-rec-rows > li:first-child .d1p-rec-replay";
+
+const MARK_LIST_SEEK_MS = 600_000;
+const MARK_LIST_END_MS = 601_000;
+// The seek clock stops at the last tick. The result modal opens on the board clock, one beat after the end.
+export const MARK_LIST_FINISH_PLAY_MS = MARK_LIST_END_MS - MARK_LIST_SEEK_MS + TICK_MS + RESULT_BEAT_MS + RENDER_DELAY_MS;
+
+/** Lengthen the sample finish for the transport check without storing thousands of identical frames.
+ * The board and the three nest losses come from the committed excerpt. The quiet span carries a single
+ * stationary ant. Times advance on the real recording clock, not by substituting text in the HUD. */
+export function longClockExcerpt(source: Buffer): Buffer {
+  const [first, quiet, ...rest] = unpackMessages(source).map(decodeMessage);
+  const finish = rest.at(-1)!;
+  const end = first!.tick + MARK_LIST_END_MS / TICK_MS;
+  const frames = [encodeMessage(first!)];
+  const ants = { ...quiet!.ants, count: 1 };
+  for (let tick = first!.tick + 1; tick <= end; tick++) {
+    const events = tick === end ? finish.events.map(e => e.kind === "queenLost" ? { ...e, queen: { ...e.queen, lostTick: tick - 1 } }
+      : e.kind === "end" ? { ...e, result: { ...e.result, tick } } : e) : [];
+    frames.push(encodeMessage({ tick, full: null, ants, events }));
+  }
+  return Buffer.from(packMessages(frames));
+}
 
 export const SURFACES: readonly Surface[] = [
   { id: "landing", url: "/", hud: false, what: "the front page" },
@@ -476,6 +501,8 @@ export async function shoot(page: Page, marks: Mark[], base: string, out: string
   let marksMoved: string | null = null;
   let clipScrolled: string | null = null;
   const judgedClips = await clipOffsets(page);
+  // Keyboard focus may already have scrolled the panel. Undo only our own navigation to findings.
+  const origins = await page.evaluateHandle(() => new Map<Element, { x?: number; y?: number }>());
   const shownIn: string[] = Array.from({ length: marks.length }, () => "");
   const seenInView: boolean[] = marks.map(() => false);
   // Each pass after the first renders the first finding not yet shown, so this ends after at most one pass per finding.
@@ -483,16 +510,25 @@ export async function shoot(page: Page, marks: Mark[], base: string, out: string
     if (target >= 0) {
       // Bring the finding into view the way a reader can: by scrolling the boxes that scroll (and the page), never a box
       // that clips (overflow hidden or clip), whose cut is the finding. scrollIntoView would scroll those too.
-      await page.evaluate(m => {
+      await page.evaluate(({ m, origins }) => {
         const el = (window as unknown as { __renderCheckAnchors: Element[] }).__renderCheckAnchors[m.anchor.index]!;
+        const move = (node: Element, axis: "x" | "y", delta: number) => {
+          const prop = axis === "x" ? "scrollLeft" : "scrollTop";
+          const start = node[prop];
+          node[prop] += delta;
+          if (node[prop] === start) return;
+          const origin = origins.get(node) ?? {};
+          origin[axis] ??= start;
+          origins.set(node, origin);
+        };
         const centre = () => { const r = el.getBoundingClientRect(); return { x: r.left + m.anchor.dx + m.box.w / 2, y: r.top + m.anchor.dy + m.box.h / 2 }; };
         for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
           const cs = getComputedStyle(a), b = a.getBoundingClientRect();
-          if (/auto|scroll/.test(cs.overflowY) && a.scrollHeight > a.clientHeight) a.scrollTop += centre().y - (b.top + a.clientHeight / 2);
-          if (/auto|scroll/.test(cs.overflowX) && a.scrollWidth > a.clientWidth) a.scrollLeft += centre().x - (b.left + a.clientWidth / 2);
+          if (/auto|scroll/.test(cs.overflowY) && a.scrollHeight > a.clientHeight) move(a, "y", centre().y - (b.top + a.clientHeight / 2));
+          if (/auto|scroll/.test(cs.overflowX) && a.scrollWidth > a.clientWidth) move(a, "x", centre().x - (b.left + a.clientWidth / 2));
         }
-        scrollBy(0, centre().y - innerHeight / 2);
-      }, marks[target]!);
+        move(document.scrollingElement!, "y", centre().y - innerHeight / 2);
+      }, { m: marks[target]!, origins });
     }
     const drawn = await page.evaluate(ms => {
       document.querySelector("[data-render-check-marks]")?.remove();
@@ -539,7 +575,14 @@ export async function shoot(page: Page, marks: Mark[], base: string, out: string
     if (target < 0) break;
   }
   await page.evaluate(() => document.querySelector("[data-render-check-marks]")?.remove());
-  await scrollHome(page);
+  await origins.evaluate(async saved => {
+    for (const [el, { x, y }] of saved) {
+      if (x !== undefined) el.scrollLeft = x;
+      if (y !== undefined) el.scrollTop = y;
+    }
+    await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  });
+  await origins.dispose();
   return { images, shownIn, inView: seenInView, marksMoved, clipScrolled };
 }
 
@@ -583,6 +626,12 @@ async function renderAll(o: Options): Promise<Render[]> {
   const fixtures = await readFixtures([join(HERE, "fixtures.json"), ...o.fixtureFiles]);
   const surfaceFixtures = new Map(await Promise.all(o.surfaces.filter(s => s.fixtures)
     .map(async s => [s.id, { ...fixtures, ...await readFixtures([join(HERE, s.fixtures!)]) }] as const)));
+  for (const surface of o.surfaces.filter(s => s.markList)) {
+    const data = surfaceFixtures.get(surface.id)!;
+    const key = `/replays/${GROUPED_SEATS_REPLAY}`;
+    const replay = { label: "Sample finish with a ten-minute quiet interval", type: "application/octet-stream", bytes: longClockExcerpt(data[key]!.bytes!) };
+    surfaceFixtures.set(surface.id, { ...data, [key]: replay });
+  }
   const manifest = JSON.parse(await readFile(join(o.dist, ".vite/manifest.json"), "utf8"));
   const rulesPage = () => renderRules(undrawnConfig, { undrawn: true, assets: rulesAssets(manifest) });
   const held = await readHeld(o.heldFile).catch(() => ({ note: "", held: [] }));
@@ -667,9 +716,37 @@ async function renderAll(o: Options): Promise<Render[]> {
               }
               const hud = page.locator(".d1-hud.score-band");
               await hud.locator(".aw-mark.group").waitFor({ state: "attached" });
+              const seek = hud.locator('input[aria-label="Replay position"]');
+              await seek.evaluate((input, ms) => {
+                const range = input as HTMLInputElement;
+                range.value = String(ms);
+                range.dispatchEvent(new Event("change", { bubbles: true }));
+              }, MARK_LIST_SEEK_MS);
+              // One seek consumes only the buffered messages each frame; yield between batches.
+              await page.waitForFunction(() => {
+                window.__antwar.frame(false);
+                return document.querySelector(".aw-replay-time")?.textContent === "10:00 / 10:01"
+                  && !!document.querySelector('.aw-replay-controls[aria-busy="false"]');
+              }, null, { polling: 10, timeout: 90_000 });
+              await hud.locator(".aw-mark.group").press("Enter");
+              const late = await page.evaluate(judgePage, { ...RULE_LIMITS, markList: true });
+              if (late.failures.length) invalid.push(`at 10:00: ${late.failures.map(f => `${f.element}: ${f.measure}`).join("; ")}`);
+              await page.keyboard.press("Escape");
+              await playRecording(page, MARK_LIST_FINISH_PLAY_MS);
+              if (await hud.locator(".aw-replay-time").textContent() !== "10:01 / 10:01") invalid.push("the replay clock did not reach the end");
               await page.locator(".d1-result-dialog:modal .d1-close").click();
               await hud.locator(".aw-mark.group").press("Enter");
               const rows = hud.locator(".aw-mark-list:visible .aw-mark-row");
+              // Tab through the open menu, without locator-driven scrolling. Its focused
+              // row must be whole, even when the panel edge lands between CSS pixels.
+              for (let i = 0, n = await rows.count(); i < n; i++) {
+                if (i) await page.keyboard.press("Tab");
+                const whole = await rows.nth(i).evaluate(row => {
+                  const r = row.getBoundingClientRect(), panel = row.closest(".d1-below")!.getBoundingClientRect();
+                  return row === document.activeElement && r.top >= Math.max(0, panel.top) && r.bottom <= Math.min(innerHeight, panel.bottom);
+                });
+                if (!whole) invalid.push(`menu row ${i + 1} did not take focus fully inside its panel`);
+              }
               if (await rows.count() !== 3 || !await rows.evaluateAll(buttons => buttons.every(button => {
                 const name = button.querySelector<HTMLElement>(".aw-mark-colony");
                 return name?.textContent === "Lake Hodges Colony" && name.clientWidth > 0 && name.scrollWidth <= name.clientWidth + 1;
