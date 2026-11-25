@@ -162,7 +162,7 @@ describe("scrolling HUD fit evidence", () => {
       const addr = server.httpServer!.address();
       if (!addr || typeof addr === "string") throw Error("Missing test server port");
       const page = await browser.newPage({ viewport: { width: 320, height: 844 }, isMobile: true, deviceScaleFactor: 2 });
-      await applyTextSize(page, 32);
+      const cdp = await applyTextSize(page, 32);
       await page.goto(`http://127.0.0.1:${addr.port}/comparison-test`);
       await page.addStyleTag({ content: readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8") });
       await page.addScriptTag({ type: "module", content: `
@@ -257,6 +257,23 @@ describe("scrolling HUD fit evidence", () => {
       await expect.poll(async () => (await bounds()).parts.at(-1)!.right).toBe(fitted.bar[1]);
       await update([0, 0, 0, 0]);
       await expect.poll(bounds).toEqual(ordinary);
+
+      // A browser preference other than doubled text uses the same measured fit, not a preset size.
+      await cdp.send("Page.setFontSizes", { fontSizes: { standard: 40 } });
+      await expect.poll(async () => (await bounds()).parts[0]!.swatchWidth).toBe(20);
+      await update([1000, 0, 0, 0]);
+      await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThan(0);
+      expect(await lineCount()).toBe(1);
+      const wideValue = (await bounds()).parts[0]!.width;
+      await update([1000, 1000, 1000, 1000]);
+      await expect.poll(lineCount).toBe(2);
+      const enlarged = await bounds();
+      expect(enlarged.parts[0]!.left).toBe(enlarged.bar[0]);
+      expect(enlarged.parts[3]!.right).toBe(enlarged.bar[1]);
+      expect(enlarged.parts.every(p => p.swatchWidth === 20 && p.width === wideValue)).toBe(true);
+      expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(Array(4).fill("1,000"));
+      expect((await page.evaluate(judgePage, { ...RULE_LIMITS, comparisonOnly: true })).failures
+        .filter(f => f.rule === "comparison-figures" && f.text === "Kills")).toEqual([]);
     } finally { await browser.close(); await server.close(); }
   }, 30_000);
   it.each([16, 32])("scales comparison type at a %i px browser default without splitting four-colony figures or showing unavailable values", async size => {

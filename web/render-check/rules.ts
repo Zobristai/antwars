@@ -231,7 +231,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
         measure: `colony ${i + 1}: ${reason}`, extent: 1, box: box(figure.getBoundingClientRect()) }, figure);
     }
     if (vw >= 320 && lines > 1 && !(lines === 2 && matchMedia("(320px <= width < 20em)").matches
-      && style(document.documentElement).fontSize === "32px" && required > bar.width)) {
+      && required > bar.width)) {
       fail({ rule: "comparison-figures", element: name(gauge), text: gauge.querySelector("h3")?.textContent ?? "",
         measure: `unexpected ${lines} lines: figures need ${required.toFixed(2)} of ${bar.width.toFixed(2)} px`, extent: lines, box: box(bar) }, gauge);
     }

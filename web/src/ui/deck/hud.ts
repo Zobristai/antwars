@@ -339,7 +339,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
         if (shift && i > 0 && i < figures.length - 1) figures[i]!.style.translate = `${shift}px`;
       });
       const whole = fitLine(0, spans.length);
-      if (!whole.fits && narrowGauges?.matches && win.getComputedStyle(doc.documentElement).fontSize === "32px") {
+      // At default text 20em is 320px, so this range opens only with enlarged browser text.
+      if (!whole.fits && narrowGauges?.matches) {
         // Keep the longest fitting prefix on line one, without separating a number from its swatch.
         for (let split = spans.length - 1; split > 0; split--) {
           const first = fitLine(0, split), second = fitLine(split, spans.length);
