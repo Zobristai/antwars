@@ -148,6 +148,70 @@ describe("scrolling HUD fit evidence", () => {
       } finally { await browser.close(); }
     }
   }, 60_000);
+  it.each(["Roboto", "Liberation Sans"] as const)("fits the painted crowded Kills row with positive clearance in %s", async font => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/comparison-test") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><main class="aw-hud"></main>');
+    });
+    await server.listen();
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 }, isMobile: true, deviceScaleFactor: 2 });
+      await applyTextSize(page, 32);
+      await page.goto(`http://127.0.0.1:${addr.port}/comparison-test`);
+      await page.addStyleTag({ content: readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8") });
+      await page.addScriptTag({ type: "module", content: `
+        import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+        import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+        const hud = mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions: {} });
+        const show = kills => {
+          const frame = scoreFrame(kills.length); frame.board.kills = kills;
+          hud.update({ frame, connection:'live', mode:null, board:'2d', selected:null, selectedAgent:-1, stalled:false });
+        };
+        addEventListener('test-scores', event => show(event.detail)); show([0, 0, 0, 0]);
+      ` });
+      const gauge = page.locator(".sb-gauge").first();
+      await gauge.waitFor({ state: "visible" });
+      const bounds = () => gauge.evaluate(g => {
+        const bar = g.querySelector(".sb-bar")!.getBoundingClientRect();
+        const parts = [...g.querySelectorAll<HTMLElement>(".sb-figure:not([hidden])")].map(f => {
+          const v = f.querySelector(".sb-value")!, r = new Range(); r.selectNodeContents(v);
+          const t = r.getBoundingClientRect(), s = f.querySelector(".sb-swatch")!.getBoundingClientRect();
+          return { left: Math.min(t.left, s.left), right: Math.max(t.right, s.right), top: t.top, width: t.width, swatchWidth: s.width };
+        });
+        return { bar: [bar.left, bar.right], parts, gaps: parts.slice(1).map((p, i) => p.left - parts[i]!.right) };
+      });
+      const update = (kills: number[]) => page.evaluate(k => { dispatchEvent(new CustomEvent("test-scores", { detail: k })); }, kills);
+      const ordinary = await bounds();
+      await update([0, 0, 512, 1000]);
+      // No manual resize: the text changed inside four unchanged grid tracks.
+      await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThanOrEqual(0.99);
+      const fitted = await bounds();
+      expect(fitted.parts[0]!.left).toBe(fitted.bar[0]);
+      expect(fitted.parts[3]!.right).toBe(fitted.bar[1]);
+      expect(fitted.parts[1]!.left).toBe(ordinary.parts[1]!.left);
+      expect(fitted.gaps[2]).toBeCloseTo(1, 2);
+      expect(new Set(fitted.parts.map(p => p.top)).size).toBe(1);
+      expect(fitted.parts.every(p => p.swatchWidth === 16)).toBe(true);
+      // Measure the uncorrected row, then deliberately make its last two painted figures overlap.
+      const plant = await page.addStyleTag({ content: ".sb-figure { translate: none !important }" });
+      const plain = await bounds();
+      expect(fitted.parts[2]!.left).toBeCloseTo(plain.parts[2]!.left - Math.max(0, 1 - plain.gaps[2]!), 2);
+      expect(fitted.parts.map(p => p.width)).toEqual(plain.parts.map(p => p.width));
+      await plant.evaluate(e => { e.textContent = ".sb-figure.c2 { translate: 4px !important }"; });
+      expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({ rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("overlapping") }));
+      await plant.evaluate(e => e.parentNode!.removeChild(e));
+      await update([0, 1, 2]);
+      await expect.poll(async () => (await bounds()).parts.at(-1)!.right).toBe(fitted.bar[1]);
+      await update([0, 0, 0, 0]);
+      await expect.poll(bounds).toEqual(ordinary);
+    } finally { await browser.close(); await server.close(); }
+  }, 30_000);
   it.each([16, 32])("scales comparison type at a %i px browser default without splitting four-colony figures or showing unavailable values", async size => {
     const css = ["design-system/tokens.css", "ui/deck/deck.css"].map(path =>
       readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");

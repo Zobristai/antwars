@@ -61,7 +61,7 @@ export interface Finding {
 }
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
-export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean }): PageJudgement {
+export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
   const vw = document.documentElement.clientWidth;
   const failures: Finding[] = [];
   const tight: Finding[] = [];
@@ -171,6 +171,10 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     for (const title of ["Kills", "Territory", "Ants"]) {
       const gauge = gauges.find(g => g.querySelector("h3")?.textContent === title);
       const figures = gauge ? [...gauge.querySelectorAll(".sb-value")].filter(shown) : [];
+      if (title === "Kills" && limits.expectedKills && figures.map(text).join("|") !== limits.expectedKills.join("|")) {
+        fail({ rule: "comparison-figures", element: ".sb-gauge", text: title, measure: `expected Kills: ${limits.expectedKills.join(" / ")}`,
+          extent: 1, box: gauge ? box(gauge.getBoundingClientRect()) : null }, gauge ?? null);
+      }
       if (figures.length !== limits.comparisonColonies || figures.some(f => !/\d/.test(text(f)))) {
         fail({ rule: "comparison-figures", element: ".sb-gauge", text: title, measure: `expected ${limits.comparisonColonies} recorded figures`,
           extent: 1, box: gauge ? box(gauge.getBoundingClientRect()) : null }, gauge ?? null);

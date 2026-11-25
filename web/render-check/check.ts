@@ -55,6 +55,9 @@ export interface Surface {
   resultDialog?: boolean;
   /** Number of recorded figures required in each comparison gauge. */
   comparisonColonies?: 2 | 4;
+  /** The dedicated comparison cases judge just this band rather than the rest of the HUD. */
+  comparisonOnly?: boolean;
+  expectedKills?: readonly string[];
   /** Open and judge the grouped marks in the finished replay. */
   markList?: "2d" | "3d";
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
@@ -108,7 +111,10 @@ export const SURFACES: readonly Surface[] = [
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
   { id: "replay-comparison-sample", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true, comparisonColonies: 4,
-    fixtures: "comparison-sample-fixture.json", what: "The comparison band with recorded figures for all four colonies" },
+    comparisonOnly: true, fixtures: "comparison-sample-fixture.json", what: "The comparison band with recorded figures for all four colonies" },
+  { id: "replay-comparison-crowded", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
+    comparisonOnly: true, comparisonColonies: 4, expectedKills: ["0", "0", "512", "1,000"],
+    fixtures: "comparison-crowded-fixture.json", widths: [320], textSizes: [32], what: "Crowded Kills at enlarged phone text" },
   { id: "replay-result", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json", resultDialog: true, what: "Rated result with long player names, badges and signed ratings" },
   { id: "replay-mark-list", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json",
     markList: "3d", widths: [320, 390], textSizes: [32], what: "Open grouped nest losses with a long colony name at enlarged phone text" },
@@ -685,7 +691,7 @@ async function renderAll(o: Options): Promise<Render[]> {
               }
             }
             const limits = { ...RULE_LIMITS, resultDialog: surface.resultDialog, markList: !!surface.markList,
-              comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.id === "replay-comparison-sample" };
+              comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.comparisonOnly, expectedKills: surface.expectedKills };
             judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);
             const wrongFont = fontProblem(typeface, fonts);

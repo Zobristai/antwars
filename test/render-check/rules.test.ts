@@ -493,7 +493,7 @@ describe("render check widths and doubled text", () => {
     } finally { await page.close(); }
   });
 
-  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (144 standard/zoom/mark-list, 60 Users and 12 comparison sample renders)", () => {
+  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (144 standard/zoom/mark-list, 60 Users and 14 comparison sample renders)", () => {
     expect([...WIDTHS]).toEqual([1280, 390, 320]);
     expect([...TEXT_SIZES]).toEqual([16, 32]);
     expect(viewport(320)).toEqual({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
@@ -506,10 +506,10 @@ describe("render check widths and doubled text", () => {
       for (const width of WIDTHS) for (const textSize of TEXT_SIZES) for (const surface of SURFACES) {
         if (!(surface.widths ?? WIDTHS).includes(width)) continue;
         if (!(surface.textSizes ?? TEXT_SIZES).includes(textSize)) continue;
-        counts[surface.id === "replay-comparison-sample" ? "comparisonSample" : surface.id.startsWith("users-") ? "users" : "existing"]++;
+        counts[surface.comparisonOnly ? "comparisonSample" : surface.id.startsWith("users-") ? "users" : "existing"]++;
       }
     }
-    expect(counts).toEqual({ existing: 144, users: 60, comparisonSample: 12 });
+    expect(counts).toEqual({ existing: 144, users: 60, comparisonSample: 14 });
     const markLists = SURFACES.filter(surface => surface.markList);
     expect(markLists.map(({ markList, widths, textSizes, url }) => [markList, widths, textSizes, new URL(url, "http://localhost").searchParams.get("board")]))
       .toEqual([["3d", [320, 390], [32], null], ["2d", [320, 390], [32], "2d"]]);

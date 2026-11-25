@@ -287,53 +287,47 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   listen(below, "scroll", scheduleRefit);
   listen(host, "scroll", scheduleRefit);
 
-  // Under reader text-spacing overrides at 320 px and wider, move whole gauge figures onto a further row only when they
-  // cannot fit their row without clipping, overlapping or running past the screen.
-  const overlap = (a: DOMRect, b: DOMRect) =>
-    Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
-    Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
-  const gaugeMisfit = (g: HTMLElement): boolean => {
-    const vw = doc.documentElement?.clientWidth ?? 0;
-    const figs = [...g.querySelectorAll<HTMLElement>(".sb-figure")]
-      .filter(e => !e.hidden && !e.parentElement?.hidden && typeof e.getClientRects === "function" && e.getClientRects().length > 0);
-    if (!figs.length) return false;
-    const labels = [...g.children]
-      .filter((e): e is HTMLElement => e instanceof HTMLElement && e.classList.contains("d1-ml") && typeof e.getClientRects === "function" && e.getClientRects().length > 0);
-    const parts = [...figs, ...labels];
-    if (figs.some(e => e.scrollWidth > e.clientWidth + 0.5)) return true;
-    const boxes = parts.map(e => e.getBoundingClientRect());
-    if (boxes.some(b => b.left < -0.5 || b.right > vw + 0.5)) return true;
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) if (overlap(boxes[i]!, boxes[j]!)) return true;
-    }
-    const neighbours = [...(g.parentElement?.children ?? [])]
-      .filter((e): e is HTMLElement => e !== g && e instanceof HTMLElement && (e.classList.contains("sb-gauge") || e.classList.contains("sb-hold")) && typeof e.getClientRects === "function" && e.getClientRects().length > 0)
-      .map(e => e.getBoundingClientRect());
-    return figs.some(e => {
-      const b = e.getBoundingClientRect();
-      return neighbours.some(n => overlap(b, n));
-    });
-  };
-  let fittingGauges = false;
+  // Keep the grid's normal starts whenever possible. When a broad value spills out of its
+  // track, its painted number and swatch, not its track box, determine the space it needs.
+  const clearance = 1; // CSS px, for every typeface and device scale.
   const fitGauges = () => {
-    if (fittingGauges) return;
-    fittingGauges = true;
-    const vw = doc.documentElement?.clientWidth ?? 0;
-    for (const g of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) {
-      g.classList.remove("sb-wrap-figures");
-      if (vw >= 320 && typeof g.getClientRects === "function" && g.getClientRects().length > 0 && gaugeMisfit(g)) {
-        g.classList.add("sb-wrap-figures");
+    for (const gauge of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) {
+      if (typeof gauge.getClientRects !== "function") continue;
+      gauge.classList.remove("sb-wrap-figures");
+      const slots = [...gauge.querySelectorAll<HTMLElement>(".sb-figure")];
+      for (const slot of slots) slot.style.removeProperty("translate");
+      if (doc.documentElement.clientWidth < 320) continue; // Existing sub-phone zoom layout.
+      const figures = slots.filter(f => f.getClientRects().length);
+      if (figures.length < 2) continue;
+      const spans = figures.map(f => {
+        const range = doc.createRange();
+        range.selectNodeContents(f.querySelector(".sb-value")!);
+        const value = range.getBoundingClientRect(), swatch = f.querySelector(".sb-swatch")!.getBoundingClientRect();
+        return { left: Math.min(value.left, swatch.left), right: Math.max(value.right, swatch.right) };
+      });
+      const shifts = spans.map(() => 0);
+      let nextLeft = spans.at(-1)!.left;
+      for (let i = spans.length - 2; i > 0; i--) {
+        shifts[i] = Math.min(0, nextLeft - clearance - spans[i]!.right);
+        nextLeft = spans[i]!.left + shifts[i]!;
+      }
+      if (nextLeft - spans[0]!.right < clearance) {
+        // Even moving all interior figures cannot fit these reader settings between the ends.
+        gauge.classList.add("sb-wrap-figures");
+      } else {
+        for (const [i, shift] of shifts.entries()) if (shift) figures[i]!.style.translate = `${shift}px`;
       }
     }
-    fittingGauges = false;
   };
   let fitQueued = 0;
   const queueFitGauges = () => {
     if (!fitQueued) fitQueued = win.requestAnimationFrame(() => { fitQueued = 0; fitGauges(); });
   };
   const gaugeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(queueFitGauges);
-  for (const g of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) gaugeObserver?.observe(g);
-  for (const f of deck.score.querySelectorAll<HTMLElement>(".sb-figure")) gaugeObserver?.observe(f);
+  // The tracks can stay the same size while a new score (or a loaded font) widens the text.
+  if (gaugeObserver) {
+    for (const el of deck.score.querySelectorAll(".sb-gauge, .sb-figure, .sb-value, .sb-swatch")) gaugeObserver.observe(el);
+  }
   const keyObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(fitKey);
   if (keyObserver && typeof Node !== "undefined" && key instanceof Node) {
     keyObserver.observe(key, { attributes: true, attributeFilter: ["hidden"] });
