@@ -47,6 +47,9 @@ export const LAUNCHABLE_HANDLES: readonly string[] = [
   "muse-spark-1-3",
   "muse-wonder-1-0",
   "muse-wonder-full-1-0",
+  "glm-5-4-low",
+  "glm-5-4-high",
+  "glm-5-4-max",
 ];
 
 const LAUNCHABLE = new Set(LAUNCHABLE_HANDLES);
