@@ -374,7 +374,7 @@ describe("scrolling HUD fit evidence", () => {
           await applyTextSize(page, 32);
           await page.goto(`http://127.0.0.1:${addr.port}/hud-fit`);
           await page.addScriptTag({ type: "module", content: `
-            import '/web/src/design-system/tokens.css'; import '/web/src/ui/ui.css'; import '/web/src/ui/deck/deck.css';
+            import '/web/src/design-system/tokens.css'; import '/web/src/ui/deck/deck.css';
             import { mountTeams } from '/web/src/ui/deck/pane.ts'; import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
             import { mountReplayControls } from '/web/src/replay-controls.ts';
             const teams = mountTeams(document, {}, {search: () => '', economy: [0,1].map(() => document.createElement('div'))});
@@ -423,40 +423,24 @@ describe("scrolling HUD fit evidence", () => {
             }));
             expect(fits, `${width}px ${font}: mark words and time inside their own row`).toBe(true);
           }
-          // Exercise both mounts of the same recording controls, including either side of the 20em boundary.
-          for (const board of ["2d", "3d"] as const) {
-            await page.evaluate(board => {
-              const controls = document.querySelector(".aw-replay-controls")!;
-              if (board === "2d") {
-                const hud = document.createElement("main"); hud.className = "d2 d2-hud has-transport";
-                hud.style.setProperty("--aw-sans", "system-ui, sans-serif");
-                hud.innerHTML = '<section class="d2-stage"><div class="d2-lane"><div class="d2-transport"></div></div></section>';
-                document.body.append(hud); hud.querySelector(".d2-transport")!.append(controls);
-              } else {
-                document.querySelector("#rail")!.append(controls); document.querySelector(".d2-hud")!.remove();
-              }
-            }, board);
-            for (const size of [16, 32] as const) {
-              await applyTextSize(page, size);
-              for (const width of [320, 390, 639, 640, 1280]) {
-                await page.setViewportSize({ width, height: 844 });
-                if (board === "2d") await page.locator(".d2-hud").evaluate((hud, narrow) => { hud.dataset.layout = narrow ? "narrow" : "wide"; }, width < 860);
-                const rows = page.locator(".aw-mark-list:visible button");
-                const layout = await rows.evaluateAll(rows => rows.map(row => {
-                  const text = (el: Element) => { const r = new Range(); r.selectNodeContents(el); return r.getBoundingClientRect(); };
-                  const event = row.querySelector(".aw-mark-kind")!, time = row.querySelector("b")!, name = row.querySelector<HTMLElement>(".aw-mark-colony");
-                  const label = text(event), when = text(time), colony = name?.getBoundingClientRect();
-                  const parts = [event.textContent.replace(/ · $/, ""), ...(name ? [name.textContent] : []), time.textContent];
-                  return { fontSize: getComputedStyle(time).fontSize, firstLine: label.bottom > when.top && when.bottom > label.top && label.right <= when.left + .5,
-                    below: !!colony && colony.top >= label.bottom - .5, long: name?.textContent.startsWith("Sample") ?? false,
-                    cut: !!name && name.scrollWidth > name.clientWidth + 1,
-                    named: row.getAttribute("aria-label") === parts.join(", ") && row.getAttribute("title") === parts.join(" · ") };
-                }));
-                expect(layout, `${board} ${font} ${width}px / ${size}px`).toEqual([false, true, false].map((long, i) => ({
-                  fontSize: `${size * ((board === "2d" ? width < 860 : width < 560) ? 12 : 11) / 16}px`,
-                  firstLine: true, below: size === 32 && width < 640 && i !== 0, cut: long, long, named: true,
-                })));
-              }
+          for (const size of [16, 32] as const) {
+            await applyTextSize(page, size);
+            for (const width of [320, 390, 639, 640, 1280]) {
+              await page.setViewportSize({ width, height: 844 });
+              const rows = page.locator(".aw-mark-list:visible button");
+              const layout = await rows.evaluateAll(rows => rows.map(row => {
+                const text = (el: Element) => { const r = new Range(); r.selectNodeContents(el); return r.getBoundingClientRect(); };
+                const event = row.querySelector(".aw-mark-kind")!, time = row.querySelector("b")!, name = row.querySelector<HTMLElement>(".aw-mark-colony");
+                const label = text(event), when = text(time), colony = name?.getBoundingClientRect();
+                const parts = [event.textContent.replace(/ · $/, ""), ...(name ? [name.textContent] : []), time.textContent];
+                return { firstLine: label.bottom > when.top && when.bottom > label.top && label.right <= when.left + .5,
+                  below: !!colony && colony.top >= label.bottom - .5, long: name?.textContent.startsWith("Sample") ?? false,
+                  cut: !!name && name.scrollWidth > name.clientWidth + 1,
+                  named: row.getAttribute("aria-label") === parts.join(", ") && row.getAttribute("title") === parts.join(" · ") };
+              }));
+              expect(layout, `${font} ${width}px / ${size}px`).toEqual([false, true, false].map((long, i) => ({
+                firstLine: true, below: size === 32 && width < 640 && i !== 0, cut: long, long, named: true,
+              })));
             }
           }
           await page.setViewportSize({ width: 320, height: 844 });

@@ -659,13 +659,21 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the finished replay did not show the long player, rated row and two-badge player");
               }
             }
-            if (surface.markList) {
-              const hud = page.locator(surface.markList === "2d" ? ".d2-hud" : ".d1-hud");
+            if (surface.markList && settled.readiness?.state === "ready") {
+              // Both renderers mount the Score Band. The URL selects a renderer but does not prove which one started.
+              const renderer = await page.evaluate(async () => (await window.__antwar.ready).rendererName);
+              if (surface.markList === "2d" ? renderer !== "webgl" : !renderer.startsWith("babylon ")) {
+                invalid.push(`expected the ${surface.markList} replay board, got ${renderer}`);
+              }
+              const hud = page.locator(".d1-hud.score-band");
               await hud.locator(".aw-mark.group").waitFor({ state: "attached" });
               await page.locator(".d1-result-dialog:modal .d1-close").click();
               await hud.locator(".aw-mark.group").press("Enter");
               const rows = hud.locator(".aw-mark-list:visible .aw-mark-row");
-              if (await rows.count() !== 3 || !await rows.first().getByText("Lake Hodges Colony", { exact: true }).isVisible()) {
+              if (await rows.count() !== 3 || !await rows.evaluateAll(buttons => buttons.every(button => {
+                const name = button.querySelector<HTMLElement>(".aw-mark-colony");
+                return name?.textContent === "Lake Hodges Colony" && name.clientWidth > 0 && name.scrollWidth <= name.clientWidth + 1;
+              }))) {
                 invalid.push("the replay did not show the grouped nest losses and their colony name");
               } else if (!await rows.evaluateAll((buttons, px) => buttons.every(button =>
                 [...button.querySelectorAll(".aw-mark-kind, .aw-mark-colony, b")].every(part => parseFloat(getComputedStyle(part).fontSize) === px)), textSize * .75)) {
