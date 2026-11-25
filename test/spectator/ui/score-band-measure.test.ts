@@ -555,17 +555,18 @@ describe("scrolling HUD fit evidence", () => {
               if (tallGroup) expect(await panel.evaluate(el => el.scrollTop), cell).toBeGreaterThan(0);
               await page.keyboard.press("Enter");
               expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("32500");
+              if (tallGroup) await panel.evaluate(el => { el.scrollTop = 0; });
               await group.hover();
               if (tallGroup) {
-                // Scroll the outer panel, not the menu. Pick the last row at its measured centre
-                // without Playwright scrolling it into view on our behalf.
-                await rows.last().evaluate(row => {
-                  const panel = row.closest(".d1-below")!;
-                  panel.scrollTop = 0;
-                  panel.scrollTop = row.getBoundingClientRect().bottom - panel.getBoundingClientRect().bottom + 8;
-                  delete document.body.dataset.sought;
-                });
-                expect(await panel.evaluate(el => el.scrollTop), cell).toBeGreaterThan(0);
+                // Wheel over a visible row just as a viewer would; the menu must stay open
+                // while the panel scrolls. Click by coordinates so the test cannot scroll the row.
+                await rows.first().hover();
+                const pastEdge = await rows.last().evaluate(row => row.getBoundingClientRect().bottom - innerHeight);
+                expect(pastEdge, cell).toBeGreaterThan(0);
+                const start = await panel.evaluate(el => el.scrollTop);
+                await page.mouse.wheel(0, Math.ceil(pastEdge) + 8);
+                await expect.poll(() => panel.evaluate(el => el.scrollTop), { message: cell }).toBeGreaterThanOrEqual(start + pastEdge);
+                await page.evaluate(() => { delete document.body.dataset.sought; });
                 const r = await rows.last().boundingBox(), b = await panel.boundingBox();
                 expect(r!.y, cell).toBeGreaterThanOrEqual(b!.y);
                 expect(r!.y + r!.height, cell).toBeLessThanOrEqual(Math.min(844, b!.y + b!.height));
