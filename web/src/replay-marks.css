@@ -90,6 +90,16 @@
   --aw-mark-chip-h: 28px; --aw-mark-font: 12px; --aw-mark-icon: 20px; --aw-mark-row: 44px; --aw-mark-list-w: 250px;
   --aw-mark-sep: rgba(233, 239, 240, 0.08);
 }
+/* The 2D list floats above its rail. Scale only the list, not the single-mark
+   chip or the controls in the fixed-height transport. */
+.d2-hud .aw-mark-list {
+  font-size: var(--aw-text-badge, 0.6875rem);
+  --aw-mark-row: 1.75rem; --aw-mark-list-w: min(15rem, 100%);
+}
+.d2-hud[data-layout="narrow"] .aw-mark-list {
+  font-size: var(--aw-text-meta, 0.75rem);
+  --aw-mark-row: 2.75rem; --aw-mark-list-w: min(15.625rem, 100%);
+}
 @media (max-width: 559px) {
   .d1 .aw-replay-controls {
     --aw-mark-gap: 28px; --aw-mark-size: 20px; --aw-mark-hit-w: 28px; --aw-mark-hit-h: 44px;
@@ -105,12 +115,13 @@
 @media (320px <= width < 20em) {
   .d1 .aw-mark-label { position: static; grid-column: 1 / -1; justify-self: start; }
   .d1 .aw-mark-list { position: static; grid-column: 1 / -1; width: 100%; min-width: 0; grid-auto-rows: auto; }
-  .d1 .aw-mark-row {
+  .d2-hud .aw-mark-list { grid-auto-rows: auto; }
+  :is(.d1, .d2-hud) .aw-mark-row {
     display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-content: center;
-    gap: 0 var(--aw-space-1); padding: var(--aw-space-1); min-height: var(--aw-mark-row); height: auto;
+    gap: 0 var(--aw-space-1, 4px); padding: var(--aw-space-1, 4px); min-height: var(--aw-mark-row); height: auto;
   }
-  .d1 .aw-mark-row .aw-mark-words { display: contents; }
-  .d1 .aw-mark-row b { grid-column: 3; grid-row: 1; }
-  .d1 .aw-mark-row .aw-mark-separator { display: none; }
-  .d1 .aw-mark-row .aw-mark-colony { grid-column: 1 / -1; grid-row: 2; }
+  :is(.d1, .d2-hud) .aw-mark-row .aw-mark-words { display: contents; }
+  :is(.d1, .d2-hud) .aw-mark-row b { grid-column: 3; grid-row: 1; }
+  :is(.d1, .d2-hud) .aw-mark-row .aw-mark-separator { display: none; }
+  :is(.d1, .d2-hud) .aw-mark-row .aw-mark-colony { grid-column: 1 / -1; grid-row: 2; }
 }

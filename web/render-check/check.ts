@@ -54,7 +54,7 @@ export interface Surface {
   /** Judge the open result after its replay plays, rather than the inert page behind it. */
   resultDialog?: boolean;
   /** Open and judge the grouped marks in the finished replay. */
-  markList?: boolean;
+  markList?: "2d" | "3d";
   /** The surface exists to show a match HUD over a board (a replay): if its board never becomes ready, the HUD was
    * never judged and the render is invalid. Watch with no live match shows a list instead and leaves this unset. */
   board?: boolean;
@@ -107,7 +107,9 @@ export const SURFACES: readonly Surface[] = [
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
   { id: "replay-result", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json", resultDialog: true, what: "Rated result with long player names, badges and signed ratings" },
   { id: "replay-mark-list", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json",
-    markList: true, widths: [320, 390], textSizes: [32], what: "Open grouped nest losses with a long colony name at enlarged phone text" },
+    markList: "3d", widths: [320, 390], textSizes: [32], what: "Open grouped nest losses with a long colony name at enlarged phone text" },
+  { id: "replay-mark-list-2d", url: `/?replay=${GROUPED_SEATS_REPLAY}&board=2d&capture=1`, hud: true, board: true, fixtures: "result-standings-fixture.json",
+    markList: "2d", widths: [320, 390], textSizes: [32], what: "Open grouped nest losses in the 2D replay at enlarged phone text" },
   { id: "replay-grouped-seats", url: `/?replay=${GROUPED_SEATS_REPLAY}&capture=1`, hud: true, board: true, what: "a 2v2 replay where one player holds both seats of each colony: the Score Band's grouped seat badges over the board" },
 ];
 
@@ -658,14 +660,19 @@ async function renderAll(o: Options): Promise<Render[]> {
               }
             }
             if (surface.markList) {
+              const hud = page.locator(surface.markList === "2d" ? ".d2-hud" : ".d1-hud");
+              await hud.locator(".aw-mark.group").waitFor({ state: "attached" });
               await page.locator(".d1-result-dialog:modal .d1-close").click();
-              await page.locator(".aw-mark.group").press("Enter");
-              const rows = page.locator(".aw-mark-list:visible .aw-mark-row");
+              await hud.locator(".aw-mark.group").press("Enter");
+              const rows = hud.locator(".aw-mark-list:visible .aw-mark-row");
               if (await rows.count() !== 3 || !await rows.first().getByText("Lake Hodges Colony", { exact: true }).isVisible()) {
                 invalid.push("the replay did not show the grouped nest losses and their colony name");
+              } else if (!await rows.evaluateAll((buttons, px) => buttons.every(button =>
+                [...button.querySelectorAll(".aw-mark-kind, .aw-mark-colony, b")].every(part => parseFloat(getComputedStyle(part).fontSize) === px)), textSize * .75)) {
+                invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
-            const limits = { ...RULE_LIMITS, resultDialog: surface.resultDialog, markList: surface.markList };
+            const limits = { ...RULE_LIMITS, resultDialog: surface.resultDialog, markList: !!surface.markList };
             judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);
             const wrongFont = fontProblem(typeface, fonts);

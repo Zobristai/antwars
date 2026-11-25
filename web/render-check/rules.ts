@@ -292,7 +292,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     const label = row.querySelector(".aw-mark-kind"), when = row.querySelector("b"), colony = row.querySelector<HTMLElement>(".aw-mark-colony");
     const fixed = [label, when].flatMap(el => el ? textRects(el).map(t => t.r) : []);
     const names = colony ? textRects(colony).map(t => t.r) : [];
-    const below = narrowStandings && row.closest(".d1") && colony;
+    const below = narrowStandings && row.closest(".d1, .d2-hud") && colony;
     if (!label || !when || !shown(label) || !shown(when) || lineCount(fixed) !== 1 || (colony && lineCount(names) !== 1)
       || (below ? Math.min(...names.map(r => r.top)) < Math.max(...fixed.map(r => r.bottom)) - .5 : lineCount([...fixed, ...names]) !== 1)) {
       fail({ rule: "wrap", element: name(row), text: text(row), measure: "event, time or colony not on its expected line",
