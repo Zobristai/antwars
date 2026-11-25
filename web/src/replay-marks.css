@@ -100,6 +100,10 @@
   .d1 .aw-replay-controls .aw-mark-label { line-height: calc(16em / 12); }
 }
 
+/* In the scroller below the board, a list above its rail would be clipped at the
+   scroller's top. Give it a row after the controls instead (also in their flex layout). */
+.d1-below .aw-mark-list { position: static; grid-column: 1 / -1; order: 5; width: 100%; min-width: 0; }
+
 /* On a phone with enlarged text, give the colony the entire second line below
    the icon, event and time. A fight has no colony and needs only the first. */
 @media (320px <= width < 20em) {

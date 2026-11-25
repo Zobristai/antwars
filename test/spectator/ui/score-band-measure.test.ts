@@ -496,6 +496,69 @@ describe("scrolling HUD fit evidence", () => {
       }
     } finally { await server.close(); }
   }, 60_000);
+  it("lets replay rows take focus and pointer hits on either side of the stacked layout", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/replay-list") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end(`<meta name="viewport" content="width=device-width,initial-scale=1"><canvas style="position:fixed;inset:0;width:100%;height:100%"></canvas><main class="aw-hud"></main>`);
+    });
+    await server.listen();
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      for (const font of ["Roboto", "Liberation Sans"] as const) {
+        const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+          args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+        try {
+          for (const size of [16, 32] as const) {
+            const page = await browser.newPage({ viewport: { width: 320, height: 844 } });
+            await applyTextSize(page, size);
+            await page.goto(`http://127.0.0.1:${addr.port}/replay-list`);
+            await page.addScriptTag({ type: "module", content: `
+              import '/web/src/ui/ui.css';
+              import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+              import { mountReplayControls } from '/web/src/replay-controls.ts';
+              const events = [30000,31000,32000].map(ms => ({kind:'nest', colony:0, ms, tick:ms/100}));
+              const controls = mountReplayControls(document, {duration:60000, rate:1, position:0, error:null, events,
+                seek(ms) { document.body.dataset.sought = String(ms) }}, ['Lake Hodges Colony','Sample Colony']);
+              mountDeckHud({doc:document, host:document.querySelector('.aw-hud'), replay:controls.el, tips:[], teamView:null, waiting:null, boardAspect:null, actions:{}});
+              function update() { controls.update(); requestAnimationFrame(update); } update();
+            ` });
+            for (const width of [320, 390, 1024, 75 * size - 1, 75 * size, 1280]) {
+              const cell = `${width}px, ${size}px text, ${font}`;
+              await page.setViewportSize({ width, height: 844 });
+              // Let the HUD relocate the lane and the size observer lay out its groups before opening one.
+              await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+              const parent = width < 75 * size ? ".d1-below" : ".d1-frame";
+              const group = page.locator(`${parent} .aw-mark.group`);
+              await group.press("Enter");
+              const rows = page.getByRole("menuitem");
+              expect(await rows.count(), cell).toBe(3);
+              // No forced clicks or locator scrolling: keyboard focus itself must reveal the whole row.
+              for (let i = 0; i < 3; i++) {
+                if (i) await page.keyboard.press("Tab");
+                const hit = await rows.nth(i).evaluate(row => {
+                  const r = row.getBoundingClientRect(), scroller = row.closest(".d1-below")?.getBoundingClientRect();
+                  return { focused: row === document.activeElement, inside: r.left >= 0 && r.right <= innerWidth &&
+                    r.top >= Math.max(scroller?.top ?? 0, 0) && r.bottom <= Math.min(scroller?.bottom ?? innerHeight, innerHeight),
+                    hit: row.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)) };
+                });
+                expect(hit, `${cell}, focused row ${i + 1}`).toEqual({ focused: true, inside: true, hit: true });
+              }
+              await page.keyboard.press("Enter");
+              expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("32000");
+              await group.hover();
+              await rows.first().click();
+              expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("30000");
+              await page.mouse.move(0, 0);
+            }
+            await page.close();
+          }
+        } finally { await browser.close(); }
+      }
+    } finally { await server.close(); }
+  }, 60_000);
   it("moves only the waiting message when the legend cannot fit, at default or enlarged text", async () => {
     const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
     server.middlewares.use((req, res, next) => {

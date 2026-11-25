@@ -891,12 +891,12 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 .sb-key-toggle:focus-visible { outline: 2px solid var(--aw-ink-bright); outline-offset: 2px; }
 .sb-key { flex: 0 0 100%; min-width: 0; white-space: normal; line-height: 1.5; }
 .sb-key p { margin: 8px 0; }
-@media (max-width: 74.9375em) {
+@media (width < 75em) {
   .sb-key-toggle { min-width: 44px; min-height: 44px; }
 }
 
 /* Keep in sync with DECK_FIRST: 75em (1200 px at default text) fits the Flyers grid before stacking. */
-@media (max-width: 74.9375em) {
+@media (width < 75em) {
   /* The frame holds the legend and the window only; metadata and the board control strip open the one scroller under it. */
   .score-band.d1-hud { grid-template-rows: auto var(--d1-legend-half) auto 8px minmax(0, 1fr); overflow: visible; }
   .score-band .d1-frame { grid-row: 3; grid-template-rows: var(--d1-window-h); padding-top: var(--d1-legend-half); --d1-window-h: min(73vw, 42vh); }
@@ -959,11 +959,11 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .d1-deck-end { padding: 16px 8px; }
 }
 /* In stacked form at 40em and wider (wide windows at enlarged text or 200% zoom), keep at least desktop board height. */
-@media (min-width: 40em) and (max-width: 74.9375em) {
+@media (min-width: 40em) and (width < 75em) {
   .score-band .d1-frame { --d1-window-h: min(73vw, 46vh); }
 }
 /* From 1200 CSS px wide when stacked by enlarged text, never shrink the board window below the desktop live window. */
-@media (min-width: 1200px) and (max-width: 74.9375em) {
+@media (min-width: 1200px) and (width < 75em) {
   .score-band .d1-frame { --d1-window-h: max(min(73vw, 46vh), calc(100vh - 431px)); }
 }
 @media (max-width: 34.9375em) {
@@ -1079,7 +1079,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .sb-key .sb-key-term { display: inline-block; max-width: 100%; }
   .score-band .d1-tl-none { white-space: nowrap; }
 }
-@media (min-width: 320px) and (max-width: 74.9375em) {
+@media (min-width: 320px) and (width < 75em) {
   .score-band .sb-gauge.sb-wrap-figures .sb-values:not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px; }
   .score-band .sb-gauge.sb-wrap-figures .sb-values:not([hidden]) > .sb-figure { flex: 1 1 0; }
 }
