@@ -519,7 +519,7 @@ describe("scrolling HUD fit evidence", () => {
               import '/web/src/ui/ui.css';
               import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
               import { mountReplayControls } from '/web/src/replay-controls.ts';
-              const events = [30000,31000,32000].map(ms => ({kind:'nest', colony:0, ms, tick:ms/100}));
+              const events = [30000,30500,31000,31500,32000,32500].map(ms => ({kind:'nest', colony:0, ms, tick:ms/100}));
               const controls = mountReplayControls(document, {duration:60000, rate:1, position:0, error:null, events,
                 seek(ms) { document.body.dataset.sought = String(ms) }}, ['Lake Hodges Colony','Sample Colony']);
               mountDeckHud({doc:document, host:document.querySelector('.aw-hud'), replay:controls.el, tips:[], teamView:null, waiting:null, boardAspect:null, actions:{}});
@@ -534,9 +534,15 @@ describe("scrolling HUD fit evidence", () => {
               const group = page.locator(`${parent} .aw-mark.group`);
               await group.press("Enter");
               const rows = page.getByRole("menuitem");
-              expect(await rows.count(), cell).toBe(3);
+              expect(await rows.count(), cell).toBe(6);
+              const panel = page.locator(".d1-below");
+              const tallGroup = size === 32 && width <= 390;
+              if (tallGroup) {
+                await panel.evaluate(el => { el.scrollTop = 0; });
+                expect(await rows.last().evaluate(el => el.getBoundingClientRect().bottom > innerHeight), cell).toBe(true);
+              }
               // No forced clicks or locator scrolling: keyboard focus itself must reveal the whole row.
-              for (let i = 0; i < 3; i++) {
+              for (let i = 0; i < 6; i++) {
                 if (i) await page.keyboard.press("Tab");
                 const hit = await rows.nth(i).evaluate(row => {
                   const r = row.getBoundingClientRect(), scroller = row.closest(".d1-below")?.getBoundingClientRect();
@@ -546,11 +552,29 @@ describe("scrolling HUD fit evidence", () => {
                 });
                 expect(hit, `${cell}, focused row ${i + 1}`).toEqual({ focused: true, inside: true, hit: true });
               }
+              if (tallGroup) expect(await panel.evaluate(el => el.scrollTop), cell).toBeGreaterThan(0);
               await page.keyboard.press("Enter");
-              expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("32000");
+              expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("32500");
               await group.hover();
-              await rows.first().click();
-              expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("30000");
+              if (tallGroup) {
+                // Scroll the outer panel, not the menu. Pick the last row at its measured centre
+                // without Playwright scrolling it into view on our behalf.
+                await rows.last().evaluate(row => {
+                  const panel = row.closest(".d1-below")!;
+                  panel.scrollTop = 0;
+                  panel.scrollTop = row.getBoundingClientRect().bottom - panel.getBoundingClientRect().bottom + 8;
+                  delete document.body.dataset.sought;
+                });
+                expect(await panel.evaluate(el => el.scrollTop), cell).toBeGreaterThan(0);
+                const r = await rows.last().boundingBox(), b = await panel.boundingBox();
+                expect(r!.y, cell).toBeGreaterThanOrEqual(b!.y);
+                expect(r!.y + r!.height, cell).toBeLessThanOrEqual(Math.min(844, b!.y + b!.height));
+                await page.mouse.click(r!.x + r!.width / 2, r!.y + r!.height / 2);
+                expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("32500");
+              } else {
+                await rows.first().click();
+                expect(await page.locator("body").getAttribute("data-sought"), cell).toBe("30000");
+              }
               await page.mouse.move(0, 0);
             }
             await page.close();
