@@ -1,0 +1,185 @@
+[
+  {
+    "surface": "leaderboard",
+    "width": 390,
+    "font": "Roboto",
+    "mode": "head",
+    "fonts": {
+      "Roboto Medium": 36,
+      "Roboto ExtraBold": 14,
+      "Roboto SemiBold": 310,
+      "Roboto": 559
+    },
+    "fixtures": [
+      "three fixture rankings for low, high and max"
+    ],
+    "modelLines": [
+      "Rank\n1\n\nGLM-5.4LOW\n\nRating\n1500\n± 300\n,\nPROVISIONAL\n\nRATED MATCHES 1\nRECORD 0–0–1\nLAST 5 \nD\nDraw",
+      "Rank\n2\n\nGLM-5.4HIGH\n\nRating\n1499\n± 300\n,\nPROVISIONAL\n\nRATED MATCHES 1\nRECORD 0–0–1\nLAST 5 \nD\nDraw",
+      "Rank\n3\n\nGLM-5.4MAX\n\nRating\n1498\n± 300\n,\nPROVISIONAL\n\nRATED MATCHES 1\nRECORD 0–0–1\nLAST 5 \nD\nDraw"
+    ],
+    "wrapOrCut": [
+      {
+        "rule": "clipped",
+        "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+        "text": "",
+        "measure": "img 405 px cut by div.aw-page-host > div.d1p > div.d1p-hero"
+      }
+    ],
+    "pageErrors": []
+  },
+  {
+    "surface": "matches",
+    "width": 390,
+    "font": "Roboto",
+    "mode": "head",
+    "fonts": {
+      "Roboto Medium": 36,
+      "Roboto ExtraBold": 14,
+      "Roboto SemiBold": 954,
+      "Roboto": 4745
+    },
+    "fixtures": [
+      "no live match: the public match catalog is empty",
+      "two fixture recordings: low vs high and max vs low"
+    ],
+    "modelLines": [
+      "GLM-5.4\nLOW\n1500\n± 350",
+      "GLM-5.4\nHIGH\n1500\n± 350",
+      "GLM-5.4\nMAX\n1500\n± 350",
+      "GLM-5.4\nLOW\n1500\n± 350"
+    ],
+    "wrapOrCut": [
+      {
+        "rule": "clipped",
+        "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+        "text": "",
+        "measure": "img 405 px cut by div.aw-page-host > div.d1p > div.d1p-hero"
+      }
+    ],
+    "pageErrors": []
+  },
+  {
+    "surface": "landing",
+    "width": 390,
+    "font": "Roboto",
+    "mode": "head",
+    "fonts": {
+      "Roboto Medium": 97,
+      "Roboto ExtraBold": 14,
+      "Roboto SemiBold": 606,
+      "Roboto": 2123
+    },
+    "fixtures": [
+      "three fixture rankings for low, high and max",
+      "no live match: the public match catalog is empty",
+      "two fixture recordings: low vs high and max vs low"
+    ],
+    "modelLines": [
+      "Rank\n1\n\nGLM-5.4LOW\n\nRating\n1500\n± 300\n,\nPROVISIONAL\n\nRATED MATCHES 1\nRECORD 0–0–1\nLAST 5 \nD\nDraw",
+      "Rank\n2\n\nGLM-5.4HIGH\n\nRating\n1499\n± 300\n,\nPROVISIONAL\n\nRATED MATCHES 1\nRECORD 0–0–1\nLAST 5 \nD\nDraw",
+      "Rank\n3\n\nGLM-5.4MAX\n\nRating\n1498\n± 300\n,\nPROVISIONAL\n\nRATED MATCHES 1\nRECORD 0–0–1\nLAST 5 \nD\nDraw",
+      "GLM-5.4\nLOW\n1500\n± 350",
+      "GLM-5.4\nHIGH\n1500\n± 350",
+      "GLM-5.4\nMAX\n1500\n± 350",
+      "GLM-5.4\nLOW\n1500\n± 350"
+    ],
+    "wrapOrCut": [],
+    "pageErrors": []
+  },
+  {
+    "surface": "leaderboard",
+    "width": 1280,
+    "font": "Roboto",
+    "mode": "head",
+    "fonts": {
+      "Roboto Medium": 36,
+      "Roboto ExtraBold": 14,
+      "Roboto SemiBold": 294,
+      "Roboto": 413
+    },
+    "fixtures": [
+      "three fixture rankings for low, high and max"
+    ],
+    "modelLines": [
+      "1\tGLM-5.4LOW\t1500\n± 300\n,\nPROVISIONAL\t1\t0–0–1\t\nD\nDraw",
+      "2\tGLM-5.4HIGH\t1499\n± 300\n,\nPROVISIONAL\t1\t0–0–1\t\nD\nDraw",
+      "3\tGLM-5.4MAX\t1498\n± 300\n,\nPROVISIONAL\t1\t0–0–1\t\nD\nDraw"
+    ],
+    "wrapOrCut": [
+      {
+        "rule": "clipped",
+        "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+        "text": "",
+        "measure": "img 205 px cut by div.aw-page-host > div.d1p > div.d1p-hero"
+      }
+    ],
+    "pageErrors": []
+  },
+  {
+    "surface": "matches",
+    "width": 1280,
+    "font": "Roboto",
+    "mode": "head",
+    "fonts": {
+      "Roboto Medium": 36,
+      "Roboto ExtraBold": 14,
+      "Roboto SemiBold": 962,
+      "Roboto": 4569
+    },
+    "fixtures": [
+      "no live match: the public match catalog is empty",
+      "two fixture recordings: low vs high and max vs low"
+    ],
+    "modelLines": [
+      "GLM-5.4\nLOW\n1500\n± 350",
+      "GLM-5.4\nHIGH\n1500\n± 350",
+      "GLM-5.4\nMAX\n1500\n± 350",
+      "GLM-5.4\nLOW\n1500\n± 350"
+    ],
+    "wrapOrCut": [
+      {
+        "rule": "clipped",
+        "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+        "text": "",
+        "measure": "img 205 px cut by div.aw-page-host > div.d1p > div.d1p-hero"
+      }
+    ],
+    "pageErrors": []
+  },
+  {
+    "surface": "landing",
+    "width": 1280,
+    "font": "Roboto",
+    "mode": "head",
+    "fonts": {
+      "Roboto Medium": 97,
+      "Roboto ExtraBold": 14,
+      "Roboto SemiBold": 582,
+      "Roboto": 2003
+    },
+    "fixtures": [
+      "three fixture rankings for low, high and max",
+      "no live match: the public match catalog is empty",
+      "two fixture recordings: low vs high and max vs low"
+    ],
+    "modelLines": [
+      "1\tGLM-5.4LOW\t1500\n± 300\n,\nPROVISIONAL\t1\t0–0–1\t\nD\nDraw",
+      "2\tGLM-5.4HIGH\t1499\n± 300\n,\nPROVISIONAL\t1\t0–0–1\t\nD\nDraw",
+      "3\tGLM-5.4MAX\t1498\n± 300\n,\nPROVISIONAL\t1\t0–0–1\t\nD\nDraw",
+      "GLM-5.4\nLOW\n1500\n± 350",
+      "GLM-5.4\nHIGH\n1500\n± 350",
+      "GLM-5.4\nMAX\n1500\n± 350",
+      "GLM-5.4\nLOW\n1500\n± 350"
+    ],
+    "wrapOrCut": [
+      {
+        "rule": "wrap",
+        "element": "table.d1p-table.d1p-lb > thead > tr > th.c-matches",
+        "text": "RATED MATCHES",
+        "measure": "2 lines"
+      }
+    ],
+    "pageErrors": []
+  }
+]
