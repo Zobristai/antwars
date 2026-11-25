@@ -71,7 +71,7 @@ describe("every seatable handle has a HOUSE_LABELS row", () => {
     ["qwen4-max-low", "Qwen4 Max", "low"],
     ["qwen4-max-high", "Qwen4 Max", "high"],
     ["qwen4-max-xhigh", "Qwen4 Max", "xhigh"],
-    ["gpt-6-2-astra-high-std", "GPT-6.2 Astra Standard", "high"],
+    ["gpt-6-2-astra-high-std", "GPT-6.2 Astra", "high"],
     ["gemini-4-neon-low", "Gemini 4 Neon", "low"],
     ["gemini-4-neon-medium", "Gemini 4 Neon", "medium"],
     ["gemini-4-neon-high", "Gemini 4 Neon", "high"],
