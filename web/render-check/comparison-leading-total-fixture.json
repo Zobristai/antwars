@@ -1,0 +1,14 @@
+{
+  "note": "A wide first figure in a comparison that fits on one line. The Kills totals are sample inputs; the ant and territory frames are unchanged.",
+  "fixtures": {
+    "/replays/2026-11-17T08-55-08-583Z-151632020035470": {
+      "label": "Four-colony Kills comparison: 1,000 / 0 / 0 / 0",
+      "type": "application/octet-stream",
+      "files": [
+        "comparison-leading-total-head.replay.jsonl",
+        "comparison-sample.replay.jsonl"
+      ],
+      "sha256": "34c7ab2c2ba47f1e74e086c6c0abd9056798d27226d4c1a0baf3ac8ac853e38a"
+    }
+  }
+}
