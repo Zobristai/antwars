@@ -11,6 +11,7 @@ import { decodeMessage } from "../../src/live/format.ts";
 import { TICK_MS, unpackMessages } from "../../src/live/snapshot.ts";
 import { TEST_BACKFILL_IDS } from "../../src/replays/testBackfillIds.ts";
 import { shippedTopMatchList } from "../../src/replays/top-matches.ts";
+import { ReplayEventScan } from "../../web/src/replay-events.ts";
 import { Frame, Playback, RENDER_DELAY_MS } from "../../web/src/buffer.ts";
 import { SEAT } from "../../web/src/compose.ts";
 import { resultView, teamPlayer } from "../../web/src/ui/deck/model.ts";
@@ -41,6 +42,9 @@ it("the result surface plays a rated finish with a long house label, two badges 
     "antwars/gpt-6-1-terra-max-fast #1", "antwars/k3-1-pro-highspeed #1", "sample-orbit", "sample-wren",
   ]);
   expect(messages.map(m => m.tick)).toEqual(messages.map((_, i) => messages[0]!.tick + i));
+  const scan = new ReplayEventScan();
+  messages.forEach(m => scan.push(m));
+  expect(scan.events().map(e => [e.kind, e.colony, e.ms])).toEqual(Array(3).fill(["nest", 1, 500]));
   const end = messages.flatMap(m => m.events).find(e => e.kind === "end");
   expect(end?.result.ratingChanges).toHaveLength(4);
   const replay = new Playback(), frame = new Frame();

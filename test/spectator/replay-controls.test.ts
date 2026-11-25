@@ -265,6 +265,7 @@ describe("marks on the scrubber", () => {
       "Nest lost, Lake Hodges Colony, 12:00", "Nest lost, Lake Hodges Colony, 12:07",
       "Nest lost, Lake Hodges Colony, 12:56", "Nest lost, Lake Hodges Colony, 13:04",
     ]);
+    expect(m.list!.children.map(r => (r as Element & { title: string }).title)).toEqual(m.list!.children.map(r => r.text));
     m.list!.children[1]!.onclick!({ detail: 1 });
     expect(m.seeks).toEqual([727_500]);
     expect(m.list!.hidden).toBe(true);

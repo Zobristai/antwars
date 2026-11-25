@@ -61,7 +61,7 @@ export interface Finding {
 }
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
-export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean }): PageJudgement {
+export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; markList?: boolean }): PageJudgement {
   const vw = document.documentElement.clientWidth;
   const failures: Finding[] = [];
   const tight: Finding[] = [];
@@ -160,9 +160,10 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
   // Running text, which may wrap. Labels, buttons and table headings are not here: they are one-line items.
   const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary";
   // For the finished replay the open native modal, not the inert HUD behind it, is the surface.
-  const scope = limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal") : document.body;
-  if (!scope) throw new Error("The replay result dialog did not open");
-  const all = [...(limits.resultDialog ? [scope] : []), ...scope.querySelectorAll("*")].filter(el => !skipped(el));
+  const scope = limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
+    : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])") : document.body;
+  if (!scope) throw new Error("The expected replay surface did not open");
+  const all = [...(scope !== document.body ? [scope] : []), ...scope.querySelectorAll("*")].filter(el => !skipped(el));
 
   // One-line items: the outermost line-able blocks with text, and every label, button, table heading and badge wherever
   // it stands (inside a paragraph too) and however long its text: those are one line by what they are, not by where they
@@ -282,6 +283,29 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
       // A box too narrow even for a letter and its ellipsis can show a plain clip instead.
       if (run.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) >= 1.5 * parseFloat(cs.fontSize) - 0.5) designedEnds.add(run);
     }
+  }
+
+  // In the enlarged phone deck the name alone moves to a full-width line below
+  // event and time. Judge these units even though the button then uses a grid.
+  for (const row of scope.querySelectorAll<HTMLButtonElement>(".aw-mark-list > button.aw-mark-row")) {
+    if (!shown(row)) continue;
+    const label = row.querySelector(".aw-mark-kind"), when = row.querySelector("b"), colony = row.querySelector<HTMLElement>(".aw-mark-colony");
+    const fixed = [label, when].flatMap(el => el ? textRects(el).map(t => t.r) : []);
+    const names = colony ? textRects(colony).map(t => t.r) : [];
+    const below = narrowStandings && row.closest(".d1") && colony;
+    if (!label || !when || !shown(label) || !shown(when) || lineCount(fixed) !== 1 || (colony && lineCount(names) !== 1)
+      || (below ? Math.min(...names.map(r => r.top)) < Math.max(...fixed.map(r => r.bottom)) - .5 : lineCount([...fixed, ...names]) !== 1)) {
+      fail({ rule: "wrap", element: name(row), text: text(row), measure: "event, time or colony not on its expected line",
+        extent: Math.max(1, lineCount([...fixed, ...names])), box: box(row.getBoundingClientRect()) }, row);
+    }
+    if (!colony || !label || !when) continue;
+    const parts = [label.textContent.replace(/ · $/, ""), colony.textContent, when.textContent];
+    const cs = style(colony), rs = style(row);
+    const fullLine = row.clientWidth - parseFloat(rs.paddingLeft) - parseFloat(rs.paddingRight);
+    if (!colony.children.length && row.title === parts.join(" · ") && row.getAttribute("aria-label") === parts.join(", ")
+      && !row.hasAttribute("aria-labelledby") && !row.closest('[aria-hidden="true"], [inert]')
+      && cs.whiteSpace === "nowrap" && cs.textOverflow === "ellipsis" && cs.overflowX === "hidden"
+      && (!below || colony.clientWidth >= fullLine - 1) && colony.clientWidth >= 1.5 * parseFloat(cs.fontSize)) designedEnds.add(colony);
   }
 
   for (const run of scope.querySelectorAll<HTMLElement>(".d1-result-dialog .rd-player > .d1-rating-name")) {
@@ -590,7 +614,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean 
     else if (boxed(el)) spans.push([r.top, r.top + 1, el], [r.bottom - 1, r.bottom, el]);
   }
   spans.sort((a, b) => a[0] - b[0]);
-  let at = limits.resultDialog ? scope.getBoundingClientRect().top : -scrollY;
+  let at = scope === document.body ? -scrollY : scope.getBoundingClientRect().top;
   let above: Element | null = null;
   const bands: { top: number; bottom: number; above: Element | null; below: Element }[] = [];
   for (const [t, b, el] of spans) {
