@@ -54,6 +54,28 @@ function mount(board: "2d" | "3d", width = 1280, height = 800, rootPx = 16) {
 }
 
 describe("one Score Band for every match", () => {
+  it("keeps the ordered figures and their accessible names as the colony count changes", () => {
+    const { host, show } = mount("2d");
+    for (const count of [2, 3, 4, 2]) {
+      const frame = scoreFrame(count, count * 2);
+      frame.board!.kills = Array.from({ length: count }, (_, i) => 10 + i);
+      show(frame);
+      const scores = balance(frame);
+      const gauges = host.byClass("sb-gauge");
+      expect(gauges.map(g => g.byClass("d1-ml")[0]!.textContent)).toEqual(["Kills", "Territory", "Ants"]);
+      for (const [index, gauge] of gauges.entries()) {
+        const figures = gauge.byClass("sb-figure").filter(visible);
+        expect(figures).toHaveLength(count);
+        expect(figures.map(f => f.byClass("sb-value")[0]!.textContent)).toEqual([scores.kills, scores.territory, scores.ants][index]!.figures);
+        for (const f of figures) {
+          expect(f.byClass("sb-swatch")[0]!.getAttribute("aria-hidden")).toBe("true");
+          expect(f.byClass("d1-sr")[0]!.textContent).toMatch(/.+: /);
+        }
+      }
+    }
+    show(scoreFrame(4)); // No explicit kills on this older frame.
+    expect(host.byClass("sb-gauge")[0]!.byClass("sb-figure").filter(visible)).toHaveLength(0);
+  });
   for (const width of [390, 1100, 1180, 1199, 1200, 1280]) {
     it(`keeps reading order consistent with the ${width}px layout`, () => {
       const { host, show } = mount("2d", width); show(scoreFrame(4));

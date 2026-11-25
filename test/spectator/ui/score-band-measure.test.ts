@@ -148,6 +148,150 @@ describe("scrolling HUD fit evidence", () => {
       } finally { await browser.close(); }
     }
   }, 60_000);
+  it.each(["Roboto", "Liberation Sans"] as const)("keeps fitting Kills rows on one line and splits only the oversized row in %s", async font => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/comparison-test") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><main class="aw-hud"></main>');
+    });
+    await server.listen();
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 }, isMobile: true, deviceScaleFactor: 2 });
+      const cdp = await applyTextSize(page, 32);
+      await page.goto(`http://127.0.0.1:${addr.port}/comparison-test`);
+      await page.addStyleTag({ content: readFileSync(new URL("../../../web/src/ui/ui.css", import.meta.url), "utf8") });
+      await page.addScriptTag({ type: "module", content: `
+        import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+        import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+        const hud = mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions: {} });
+        const show = kills => {
+          const frame = scoreFrame(kills.length);
+          if (kills.length === 2) frame.board.deaths = [kills[1], kills[0]];
+          else frame.board.kills = kills;
+          hud.update({ frame, connection:'live', mode:null, board:'2d', selected:null, selectedAgent:-1, stalled:false });
+        };
+        addEventListener('test-scores', event => show(event.detail)); show([0, 0, 0, 0]);
+      ` });
+      const gauge = page.locator(".sb-gauge").first();
+      await gauge.waitFor({ state: "visible" });
+      const bounds = () => gauge.evaluate(g => {
+        const bar = g.querySelector(".sb-bar")!.getBoundingClientRect();
+        const parts = [...g.querySelectorAll<HTMLElement>(".sb-figure:not([hidden])")].map(f => {
+          const v = f.querySelector(".sb-value")!, r = new Range(); r.selectNodeContents(v);
+          const t = r.getBoundingClientRect(), s = f.querySelector(".sb-swatch")!.getBoundingClientRect();
+          return { left: Math.min(t.left, s.left), right: Math.max(t.right, s.right), top: t.top, width: t.width, swatchWidth: s.width };
+        });
+        return { bar: [bar.left, bar.right], parts, gaps: parts.slice(1).map((p, i) => p.left - parts[i]!.right) };
+      });
+      const update = (kills: number[]) => page.evaluate(k => { dispatchEvent(new CustomEvent("test-scores", { detail: k })); }, kills);
+      const space = await gauge.locator(".sb-value").first().evaluate(value => {
+        const probe = value.cloneNode(false) as HTMLElement;
+        probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+        probe.textContent = " "; value.parentElement!.append(probe);
+        const width = probe.getBoundingClientRect().width;
+        probe.remove(); return width;
+      });
+      expect(space).toBeGreaterThan(1);
+      const ordinary = await bounds();
+      await update([0, 0, 512, 1000]);
+      // No manual resize: the text changed inside four unchanged grid tracks.
+      await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThanOrEqual(0.99);
+      await expect.poll(async () => (await bounds()).gaps[2]!).toBeCloseTo(space, 2);
+      const fitted = await bounds();
+      expect(fitted.parts[0]!.left).toBe(fitted.bar[0]);
+      expect(fitted.parts[3]!.right).toBe(fitted.bar[1]);
+      expect(fitted.parts[1]!.left).toBe(ordinary.parts[1]!.left);
+      expect(fitted.gaps[2]).toBeCloseTo(space, 2);
+      expect(new Set(fitted.parts.map(p => p.top)).size).toBe(1);
+      expect(fitted.parts.every(p => p.swatchWidth === 16)).toBe(true);
+      // Measure the uncorrected row, then deliberately make its last two painted figures overlap.
+      const plant = await page.addStyleTag({ content: ".sb-figure { translate: none !important }" });
+      const plain = await bounds();
+      expect(fitted.parts[2]!.left).toBeCloseTo(plain.parts[2]!.left - Math.max(0, space - plain.gaps[2]!), 2);
+      expect(fitted.parts.map(p => p.width)).toEqual(plain.parts.map(p => p.width));
+      await plant.evaluate((e, shift) => { e.textContent = `.sb-figure.c2 { translate:${shift}px !important }`; }, plain.gaps[2]! - 1);
+      expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({ rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("less than one space") }));
+      await plant.evaluate(e => { e.textContent = ".sb-figure.c2 { translate: 4px !important }"; });
+      expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({ rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("overlapping") }));
+      await plant.evaluate(e => e.parentNode!.removeChild(e));
+      // The first total crosses the second track's start, but all four figures fit on one line.
+      await update([1000, 0, 0, 0]);
+      await expect.poll(async () => {
+        const { bar, parts, gaps } = await bounds();
+        return {
+          lines: new Set(parts.map(p => p.top)).size,
+          left: parts[0]!.left, right: parts[3]!.right,
+          thirdStart: parts[2]!.left,
+          clears: gaps[0]! >= space - 0.01 && gaps[1]! > 0 && gaps[2]! >= space - 0.01,
+          fits: parts.reduce((sum, p) => sum + p.right - p.left, 2 * space) <= bar[1]! - bar[0]!,
+        };
+      }).toEqual({ lines: 1, left: ordinary.bar[0], right: ordinary.bar[1], thirdStart: ordinary.parts[2]!.left, clears: true, fits: true });
+      expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(["1,000", "0", "0", "0"]);
+      const leading = await bounds();
+      expect(leading.gaps[0]).toBeCloseTo(space, 2);
+      const shortShift = leading.parts[0]!.right + 1 - ordinary.parts[1]!.left;
+      const tooClose = await page.addStyleTag({ content: `.sb-figure.c1 { translate: ${shortShift}px !important }` });
+      expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({
+        rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("shifted figures less than one space"),
+      }));
+      await tooClose.evaluate(e => e.parentNode!.removeChild(e));
+      await update([1000, 1000, 1000, 1000]);
+      const lineCount = async () => new Set((await bounds()).parts.map(p => p.top)).size;
+      await expect.poll(lineCount).toBe(2);
+      const split = await bounds();
+      expect(split.parts[0]!.left).toBe(split.bar[0]);
+      expect(split.parts[3]!.right).toBe(split.bar[1]);
+      expect(split.parts.every(p => p.swatchWidth === 16 && p.width === leading.parts[0]!.width)).toBe(true);
+      expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(Array(4).fill("1,000"));
+      const comparison = await page.evaluate(judgePage, { ...RULE_LIMITS, comparisonOnly: true });
+      expect(comparison.failures.filter(f => f.rule === "comparison-figures" || f.rule === "wrap")).toEqual([]);
+      // The same totals fit again when the phone widens, without a score update.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(lineCount).toBe(1);
+      await page.setViewportSize({ width: 320, height: 844 });
+      await expect.poll(lineCount).toBe(2);
+      await update([0, 1, 2]);
+      await expect.poll(async () => (await bounds()).parts.at(-1)!.right).toBe(fitted.bar[1]);
+      await update([0, 0, 0, 0]);
+      await expect.poll(bounds).toEqual(ordinary);
+
+      // The same four totals need two lines at 40px and four at 64px; small totals still fit one.
+      for (const [size, lines] of [[40, 2], [64, 4]] as const) {
+        await cdp.send("Page.setFontSizes", { fontSizes: { standard: size } });
+        await update([0, 0, 0, 0]);
+        await expect.poll(async () => (await bounds()).parts[0]!.swatchWidth).toBe(size / 2);
+        await expect.poll(lineCount).toBe(1);
+        await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThan(0);
+        // Read a single full-sized 1,000 from a control that fits without colliding.
+        await update(size === 40 ? [1000, 0, 0, 0] : [1000, 0]);
+        await expect.poll(async () => Math.min(...(await bounds()).gaps)).toBeGreaterThan(0);
+        expect(await lineCount()).toBe(1);
+        expect(await gauge.locator(".sb-value:visible").first().textContent()).toBe("1,000");
+        const wideValue = (await bounds()).parts[0]!.width;
+        await update([1000, 1000, 1000, 1000]);
+        await expect.poll(lineCount).toBe(lines);
+        const enlarged = await bounds();
+        expect(enlarged.parts[0]!.left).toBe(enlarged.bar[0]);
+        expect(enlarged.parts[3]!.right).toBe(enlarged.bar[1]);
+        expect(enlarged.parts.every(p => p.swatchWidth === size / 2 && p.width === wideValue)).toBe(true);
+        expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(Array(4).fill("1,000"));
+        expect((await page.evaluate(judgePage, { ...RULE_LIMITS, comparisonOnly: true })).failures
+          .filter(f => f.rule === "comparison-figures" && f.text === "Kills")).toEqual([]);
+      }
+      // A small final figure can share the third line. Do not assign four lines just because two failed.
+      await update([1000, 1000, 1000, 0]);
+      await expect.poll(lineCount).toBe(3);
+      const three = await bounds();
+      expect(three.parts[2]!.top).toBe(three.parts[3]!.top);
+      expect(three.gaps[2]).toBeGreaterThan(0);
+      expect(three.parts[3]!.right).toBe(three.bar[1]);
+    } finally { await browser.close(); await server.close(); }
+  }, 30_000);
   it.each([16, 32])("scales comparison type at a %i px browser default without splitting four-colony figures or showing unavailable values", async size => {
     const css = ["design-system/tokens.css", "ui/deck/deck.css"].map(path =>
       readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");

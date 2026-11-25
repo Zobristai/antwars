@@ -287,53 +287,81 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   listen(below, "scroll", scheduleRefit);
   listen(host, "scroll", scheduleRefit);
 
-  // Under reader text-spacing overrides at 320 px and wider, move whole gauge figures onto a further row only when they
-  // cannot fit their row without clipping, overlapping or running past the screen.
-  const overlap = (a: DOMRect, b: DOMRect) =>
-    Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
-    Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1;
-  const gaugeMisfit = (g: HTMLElement): boolean => {
-    const vw = doc.documentElement?.clientWidth ?? 0;
-    const figs = [...g.querySelectorAll<HTMLElement>(".sb-figure")]
-      .filter(e => !e.hidden && !e.parentElement?.hidden && typeof e.getClientRects === "function" && e.getClientRects().length > 0);
-    if (!figs.length) return false;
-    const labels = [...g.children]
-      .filter((e): e is HTMLElement => e instanceof HTMLElement && e.classList.contains("d1-ml") && typeof e.getClientRects === "function" && e.getClientRects().length > 0);
-    const parts = [...figs, ...labels];
-    if (figs.some(e => e.scrollWidth > e.clientWidth + 0.5)) return true;
-    const boxes = parts.map(e => e.getBoundingClientRect());
-    if (boxes.some(b => b.left < -0.5 || b.right > vw + 0.5)) return true;
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) if (overlap(boxes[i]!, boxes[j]!)) return true;
-    }
-    const neighbours = [...(g.parentElement?.children ?? [])]
-      .filter((e): e is HTMLElement => e !== g && e instanceof HTMLElement && (e.classList.contains("sb-gauge") || e.classList.contains("sb-hold")) && typeof e.getClientRects === "function" && e.getClientRects().length > 0)
-      .map(e => e.getBoundingClientRect());
-    return figs.some(e => {
-      const b = e.getBoundingClientRect();
-      return neighbours.some(n => overlap(b, n));
-    });
-  };
-  let fittingGauges = false;
+  // Keep the grid's normal starts whenever possible. When a broad value spills out of its
+  // track, its painted number and swatch, not its track box, determine the space it needs.
+  const narrowGauges = mq("(320px <= width < 20em)");
   const fitGauges = () => {
-    if (fittingGauges) return;
-    fittingGauges = true;
-    const vw = doc.documentElement?.clientWidth ?? 0;
-    for (const g of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) {
-      g.classList.remove("sb-wrap-figures");
-      if (vw >= 320 && typeof g.getClientRects === "function" && g.getClientRects().length > 0 && gaugeMisfit(g)) {
-        g.classList.add("sb-wrap-figures");
+    for (const gauge of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) {
+      if (typeof gauge.getClientRects !== "function") continue;
+      const slots = [...gauge.querySelectorAll<HTMLElement>(".sb-figure")];
+      for (const slot of slots) {
+        slot.style.removeProperty("translate");
+        slot.style.removeProperty("grid-area");
       }
+      if (doc.documentElement.clientWidth < 320) continue; // Existing sub-phone zoom layout.
+      const figures = slots.filter(f => f.getClientRects().length);
+      // Before the first score, an empty text range is at the viewport origin, not at its swatch.
+      if (figures.length < 2 || gauge.querySelector(".sb-figure:not([hidden]) .sb-value:empty")) continue;
+      const spans = figures.map(f => {
+        const range = doc.createRange();
+        range.selectNodeContents(f.querySelector(".sb-value")!);
+        const value = range.getBoundingClientRect(), swatch = f.querySelector(".sb-swatch")!.getBoundingClientRect();
+        return { left: Math.min(value.left, swatch.left), right: Math.max(value.right, swatch.right) };
+      });
+      const space = gauge.querySelector(".sb-number-space")!.getBoundingClientRect().width;
+      const bar = gauge.querySelector(".sb-bar")!.getBoundingClientRect();
+      const fitLine = (from: number, to: number) => {
+        const line = spans.slice(from, to);
+        // Bare numbers always need a space. A swatch-separated pair needs one only if it collides.
+        const gaps = line.slice(1).map((s, i) => from + i + 2 === spans.length || s.left <= line[i]!.right ? space : 0);
+        // Shifting an interior can bring it into contact with its other neighbour. Each retry
+        // reserves a space at a newly touched boundary; there are at most three boundaries.
+        for (;;) {
+          const shifts = line.map(() => 0);
+          let edge = bar.right;
+          for (let i = line.length - 1; i >= 0; i--) {
+            const s = line[i]!;
+            shifts[i] = Math.min(0, edge - s.right);
+            edge = s.left + shifts[i]! - (gaps[i - 1] ?? 0);
+          }
+          edge = bar.left;
+          for (const [i, s] of line.entries()) {
+            shifts[i] = Math.max(shifts[i]!, edge - s.left);
+            edge = s.right + shifts[i]! + (gaps[i] ?? 0);
+          }
+          const touch = gaps.findIndex((gap, i) => gap === 0 && line[i + 1]!.left + shifts[i + 1]! <= line[i]!.right + shifts[i]!);
+          if (touch < 0 || space <= 0) return { shifts, fits: edge <= bar.right };
+          gaps[touch] = space;
+        }
+      };
+      const apply = (from: number, shifts: number[], row = 1) => shifts.forEach((shift, j) => {
+        const i = from + j;
+        if (row > 1) figures[i]!.style.gridArea = `${row} / ${i + 1}`;
+        if (shift && i > 0 && i < figures.length - 1) figures[i]!.style.translate = `${shift}px`;
+      });
+      const whole = fitLine(0, spans.length);
+      // At default text 20em is 320px, so this range opens only with enlarged browser text.
+      if (!whole.fits && narrowGauges?.matches) {
+        // With order fixed, filling each row with its longest fitting prefix leaves the fewest rows.
+        for (let from = 0, row = 1; from < figures.length; row++) {
+          let to = figures.length;
+          let line = from === 0 ? whole : fitLine(from, to);
+          while (!line.fits && to > from + 1) line = fitLine(from, --to);
+          apply(from, line.shifts, row);
+          from = to;
+        }
+      } else apply(0, whole.shifts);
     }
-    fittingGauges = false;
   };
   let fitQueued = 0;
   const queueFitGauges = () => {
     if (!fitQueued) fitQueued = win.requestAnimationFrame(() => { fitQueued = 0; fitGauges(); });
   };
   const gaugeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(queueFitGauges);
-  for (const g of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) gaugeObserver?.observe(g);
-  for (const f of deck.score.querySelectorAll<HTMLElement>(".sb-figure")) gaugeObserver?.observe(f);
+  // The tracks can stay the same size while a new score (or a loaded font) widens the text.
+  if (gaugeObserver) {
+    for (const el of deck.score.querySelectorAll(".sb-gauge, .sb-figure, .sb-value, .sb-swatch, .sb-number-space")) gaugeObserver.observe(el);
+  }
   const keyObserver = typeof MutationObserver === "undefined" ? null : new MutationObserver(fitKey);
   if (keyObserver && typeof Node !== "undefined" && key instanceof Node) {
     keyObserver.observe(key, { attributes: true, attributeFilter: ["hidden"] });
