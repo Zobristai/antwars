@@ -1,0 +1,14 @@
+{
+  "note": "Four equal Kills totals to exercise whole-figure wrapping. The totals are sample inputs; ant and territory frames come from the neutral comparison sample.",
+  "fixtures": {
+    "/replays/2026-11-17T08-55-08-583Z-151632020035470": {
+      "label": "Four-colony Kills comparison: 1,000 / 1,000 / 1,000 / 1,000",
+      "type": "application/octet-stream",
+      "files": [
+        "comparison-thousands-head.replay.jsonl",
+        "comparison-sample.replay.jsonl"
+      ],
+      "sha256": "df0c4912b86dcc7e63173baac3620067f6aee7fa782cd6d080d01d415b58a3b2"
+    }
+  }
+}
