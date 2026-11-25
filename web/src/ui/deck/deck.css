@@ -1074,7 +1074,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 }
 
 /* From 320 CSS px, allow these labels to wrap between words when needed, including at the page's own spacing.
-   Gauge figures move to another row when measured content no longer fits. */
+   The shared gauge fitter places whole figures on grid lines using their painted widths. */
 @media (min-width: 320px) {
   .score-band :is(.d1-map-name, .d1-agent-button) { white-space: normal; }
   .score-band .aw-replay-state { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
@@ -1082,10 +1082,7 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .score-band .sb-key .sb-key-term { display: inline-block; max-width: 100%; }
   .score-band .d1-tl-none { white-space: nowrap; }
 }
-@media (min-width: 320px) and (width < 75em) {
-  .score-band .sb-gauge.sb-wrap-figures .sb-values:not([hidden]) { display: flex; flex-wrap: wrap; gap: 6px; }
-  .score-band .sb-gauge.sb-wrap-figures .sb-values:not([hidden]) > .sb-figure { flex: 1 1 0; }
-}
+
 
 /* Below 240 CSS px (phone screens at 200% zoom), keep History headings stacked as distinct blocks and move the
    timestamp (with refused beside it) onto its own top line so badge, symbol and word-wrapped text keep their room. */

@@ -148,7 +148,7 @@ describe("scrolling HUD fit evidence", () => {
       } finally { await browser.close(); }
     }
   }, 60_000);
-  it.each(["Roboto", "Liberation Sans"] as const)("fits the painted crowded Kills row with positive clearance in %s", async font => {
+  it.each(["Roboto", "Liberation Sans"] as const)("keeps fitting Kills rows on one line and splits only the oversized row in %s", async font => {
     const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
     server.middlewares.use((req, res, next) => {
       if (req.url !== "/comparison-test") return next();
@@ -217,6 +217,36 @@ describe("scrolling HUD fit evidence", () => {
       await plant.evaluate(e => { e.textContent = ".sb-figure.c2 { translate: 4px !important }"; });
       expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({ rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("overlapping") }));
       await plant.evaluate(e => e.parentNode!.removeChild(e));
+      // The first total crosses the second track's start, but all four figures fit on one line.
+      await update([1000, 0, 0, 0]);
+      await expect.poll(async () => {
+        const { bar, parts, gaps } = await bounds();
+        return {
+          lines: new Set(parts.map(p => p.top)).size,
+          left: parts[0]!.left, right: parts[3]!.right,
+          thirdStart: parts[2]!.left,
+          clears: gaps[0]! >= 0.99 && gaps[1]! >= 0.99 && gaps[2]! >= space - 0.01,
+          fits: parts.reduce((sum, p) => sum + p.right - p.left, 2 + space) <= bar[1]! - bar[0]!,
+        };
+      }).toEqual({ lines: 1, left: ordinary.bar[0], right: ordinary.bar[1], thirdStart: ordinary.parts[2]!.left, clears: true, fits: true });
+      expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(["1,000", "0", "0", "0"]);
+      const leading = await bounds();
+      expect(leading.gaps[0]).toBeCloseTo(1, 2); // Minimum right shift; the other interior stays put.
+      await update([1000, 1000, 1000, 1000]);
+      const lineCount = async () => new Set((await bounds()).parts.map(p => p.top)).size;
+      await expect.poll(lineCount).toBe(2);
+      const split = await bounds();
+      expect(split.parts[0]!.left).toBe(split.bar[0]);
+      expect(split.parts[3]!.right).toBe(split.bar[1]);
+      expect(split.parts.every(p => p.swatchWidth === 16 && p.width === leading.parts[0]!.width)).toBe(true);
+      expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(Array(4).fill("1,000"));
+      const comparison = await page.evaluate(judgePage, { ...RULE_LIMITS, comparisonOnly: true });
+      expect(comparison.failures.filter(f => f.rule === "comparison-figures" || f.rule === "wrap")).toEqual([]);
+      // The same totals fit again when the phone widens, without a score update.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(lineCount).toBe(1);
+      await page.setViewportSize({ width: 320, height: 844 });
+      await expect.poll(lineCount).toBe(2);
       await update([0, 1, 2]);
       await expect.poll(async () => (await bounds()).parts.at(-1)!.right).toBe(fitted.bar[1]);
       await update([0, 0, 0, 0]);

@@ -289,12 +289,15 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
 
   // Keep the grid's normal starts whenever possible. When a broad value spills out of its
   // track, its painted number and swatch, not its track box, determine the space it needs.
+  const narrowGauges = mq("(320px <= width < 20em)");
   const fitGauges = () => {
     for (const gauge of deck.score.querySelectorAll<HTMLElement>(".sb-gauge")) {
       if (typeof gauge.getClientRects !== "function") continue;
-      gauge.classList.remove("sb-wrap-figures");
       const slots = [...gauge.querySelectorAll<HTMLElement>(".sb-figure")];
-      for (const slot of slots) slot.style.removeProperty("translate");
+      for (const slot of slots) {
+        slot.style.removeProperty("translate");
+        slot.style.removeProperty("grid-area");
+      }
       if (doc.documentElement.clientWidth < 320) continue; // Existing sub-phone zoom layout.
       const figures = slots.filter(f => f.getClientRects().length);
       if (figures.length < 2) continue;
@@ -307,18 +310,38 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
       // Only the last pair has two numbers beside one another without a swatch in between.
       const numberSpace = gauge.querySelector(".sb-number-space")!.getBoundingClientRect().width;
       const clearanceAfter = (i: number) => i === spans.length - 2 ? numberSpace : 1;
-      const shifts = spans.map(() => 0);
-      let nextLeft = spans.at(-1)!.left;
-      for (let i = spans.length - 2; i > 0; i--) {
-        shifts[i] = Math.min(0, nextLeft - clearanceAfter(i) - spans[i]!.right);
-        nextLeft = spans[i]!.left + shifts[i]!;
+      const bar = gauge.querySelector(".sb-bar")!.getBoundingClientRect();
+      // Split only when the ink and the minimum gaps themselves exceed the bar width.
+      let split = spans.length;
+      if (narrowGauges?.matches && win.getComputedStyle(doc.documentElement).fontSize === "32px") {
+        let used = 0;
+        for (const [i, span] of spans.entries()) {
+          used += span.right - span.left + (i ? clearanceAfter(i - 1) : 0);
+          if (used > bar.width && i > 0) { split = i; break; }
+        }
       }
-      if (nextLeft - spans[0]!.right < clearanceAfter(0)) {
-        // Even moving all interior figures cannot fit these reader settings between the ends.
-        gauge.classList.add("sb-wrap-figures");
-      } else {
-        for (const [i, shift] of shifts.entries()) if (shift) figures[i]!.style.translate = `${shift}px`;
-      }
+      // Keep the same grid columns on both lines. Place the longest fitting prefix on the first.
+      for (let i = split; i < figures.length; i++) figures[i]!.style.gridArea = `2 / ${i + 1}`;
+      const fitLine = (from: number, to: number) => {
+        const shifts: number[] = [];
+        let edge = bar.right;
+        // Reserve space for each right neighbour, working back from the pinned last swatch.
+        for (let i = to - 1; i >= from; i--) {
+          const span = spans[i]!;
+          shifts[i] = Math.min(0, edge - span.right);
+          edge = span.left + shifts[i]! - clearanceAfter(i - 1);
+        }
+        // A wide left neighbour can push an interior right, but no farther than necessary.
+        edge = bar.left;
+        for (let i = from; i < to; i++) {
+          const span = spans[i]!;
+          const shift = Math.max(shifts[i]!, edge - span.left);
+          if (shift && i !== spans.length - 1) figures[i]!.style.translate = `${shift}px`;
+          edge = span.right + shift + clearanceAfter(i);
+        }
+      };
+      fitLine(0, split);
+      if (split < spans.length) fitLine(split, spans.length);
     }
   };
   let fitQueued = 0;

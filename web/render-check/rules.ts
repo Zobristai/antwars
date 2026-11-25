@@ -185,7 +185,17 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     const bar = gauge.querySelector(".sb-bar")?.getBoundingClientRect();
     const figures = [...gauge.querySelectorAll(".sb-figure")].filter(shown);
     if (!bar || !figures.length) continue; // Historical totals may be unavailable.
-    let previousRight = -Infinity;
+    // Measure a real space independently of the fitter. Only adjacent bare numbers need it.
+    const probe = figures.at(-1)!.querySelector(".sb-value")?.cloneNode(false) as HTMLElement | undefined;
+    let space = 0;
+    if (probe) {
+      probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
+      probe.textContent = " ";
+      figures.at(-1)!.append(probe);
+      space = probe.getBoundingClientRect().width;
+      probe.remove();
+    }
+    let required = 0, previousRight = -Infinity, lines = 0;
     let row: DOMRect | undefined;
     for (const [i, figure] of figures.entries()) {
       const value = figure.querySelector(".sb-value"), chip = figure.querySelector(".sb-swatch");
@@ -196,26 +206,28 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       if (runs.length !== 1 || !n || !s || !chip || !shown(chip)) reason = "missing or wrapped value or swatch";
       else {
         const left = Math.min(n.left, s.left), right = Math.max(n.right, s.right);
+        const clearance = last ? space : 1;
+        required += right - left + (i > 0 ? clearance : 0);
+        const nextLine = !row || n.top >= row.bottom;
+        if (nextLine) { row = n; lines++; }
         if (last ? s.left <= n.right : n.left <= s.right) reason = "swatch on the wrong side or touching its value";
         else if (Math.min(n.bottom, s.bottom) <= Math.max(n.top, s.top)) reason = "swatch and value on different lines";
-        else if (vw >= 320 && row && (Math.min(row.bottom, n.bottom) <= Math.max(row.top, n.top) || left <= previousRight)) reason = "figures wrapped, touching or overlapping";
-        else if (vw >= 320 && last && i > 0) {
-          // Measure a space independently of the HUD fitter, with the rendered number's font.
-          const probe = value!.cloneNode(false) as HTMLElement;
-          probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre";
-          probe.textContent = " ";
-          figure.append(probe);
-          const space = probe.getBoundingClientRect().width;
-          probe.remove();
-          if (left - previousRight < space - 0.01) reason = "adjacent numbers less than one space apart";
+        else if (vw >= 320 && !nextLine) {
+          if (n.bottom <= row!.top) reason = "figures out of reading order";
+          else if (left <= previousRight) reason = "figures touching or overlapping";
+          else if (left - previousRight < clearance - 0.01) reason = last ? "adjacent numbers less than one space apart" : "adjacent figures less than one pixel apart";
         }
         if (!reason && (left < bar.left - 0.1 || right > bar.right + 0.1)) reason = "figure outside the bar ends";
         else if (!reason && (i === 0 && Math.abs(left - bar.left) > 0.1 || last && Math.abs(right - bar.right) > 0.1)) reason = "outer swatch not aligned to the bar end";
-        row ??= n;
         previousRight = right;
       }
       if (reason) fail({ rule: "comparison-figures", element: name(figure), text: gauge.querySelector("h3")?.textContent ?? "",
         measure: `colony ${i + 1}: ${reason}`, extent: 1, box: box(figure.getBoundingClientRect()) }, figure);
+    }
+    if (vw >= 320 && lines > 1 && !(lines === 2 && matchMedia("(320px <= width < 20em)").matches
+      && style(document.documentElement).fontSize === "32px" && required > bar.width)) {
+      fail({ rule: "comparison-figures", element: name(gauge), text: gauge.querySelector("h3")?.textContent ?? "",
+        measure: `unexpected ${lines} lines: figures need ${required.toFixed(2)} of ${bar.width.toFixed(2)} px`, extent: lines, box: box(bar) }, gauge);
     }
   }
 

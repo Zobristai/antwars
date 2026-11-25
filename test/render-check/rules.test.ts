@@ -42,6 +42,19 @@ describe("render check rules", () => {
     expect(rules(await judged(css + gauge(true)))).toContain("comparison-figures");
   });
 
+  it("accepts two lines of whole comparison figures only when they cannot fit at doubled phone text", async () => {
+    const gauge = (barWidth: number) => `<style>.sb-gauge{width:${barWidth}px}.sb-bar{height:8px}
+      .sb-values{display:grid;grid-template-columns:1fr 1fr;gap:8px}.sb-figure{display:flex;align-items:center;gap:4px}
+      .sb-figure:last-child{flex-direction:row-reverse}.sb-swatch{width:8px;height:8px;background:blue}</style>`
+      + '<section class="sb-gauge"><h3>Kills</h3><div class="sb-bar"></div><div class="sb-values">'
+      + '<span class="sb-figure"><i class="sb-swatch"></i><span class="sb-value">1,000</span></span>'.repeat(4) + "</div></section>";
+    // Four 16px monospace numbers with chips are wider than 160 px and narrower than 300 px.
+    expect(rules(await judged(gauge(160), 320, 32))).not.toContain("comparison-figures");
+    expect(rules(await judged(gauge(300), 320, 32))).toContain("comparison-figures"); // unnecessary wrap
+    expect(rules(await judged(gauge(160), 320, 16))).toContain("comparison-figures");
+    expect(rules(await judged(gauge(160), 640, 32))).toContain("comparison-figures"); // exclusive 20em boundary
+  });
+
   it("fails a one-line item that wraps, but not prose", async () => {
     expect(rules(await judged('<div style="width:100px"><span>Riverbank GPT-6.1 Sol</span></div>'))).toContain("wrap");
     expect(rules(await judged('<div style="width:300px"><span>Riverbank GPT-6.1 Sol</span></div>'))).not.toContain("wrap");
@@ -493,7 +506,7 @@ describe("render check widths and doubled text", () => {
     } finally { await page.close(); }
   });
 
-  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (144 standard/zoom/mark-list, 60 Users and 14 comparison sample renders)", () => {
+  it("renders standard surfaces at 1280, 390 and 320 px at 16 and 32 px text, and zoom surfaces at 1280 px default text (144 standard/zoom/mark-list, 60 Users and 18 comparison sample renders)", () => {
     expect([...WIDTHS]).toEqual([1280, 390, 320]);
     expect([...TEXT_SIZES]).toEqual([16, 32]);
     expect(viewport(320)).toEqual({ viewport: { width: 320, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
@@ -509,7 +522,12 @@ describe("render check widths and doubled text", () => {
         counts[surface.comparisonOnly ? "comparisonSample" : surface.id.startsWith("users-") ? "users" : "existing"]++;
       }
     }
-    expect(counts).toEqual({ existing: 144, users: 60, comparisonSample: 14 });
+    expect(counts).toEqual({ existing: 144, users: 60, comparisonSample: 18 });
+    expect(SURFACES.filter(s => s.expectedKills).map(s => [s.fixtures, s.widths, s.textSizes, s.expectedKills])).toEqual([
+      ["comparison-crowded-fixture.json", [320], [32], ["0", "0", "512", "1,000"]],
+      ["comparison-leading-total-fixture.json", [320], [32], ["1,000", "0", "0", "0"]],
+      ["comparison-thousands-fixture.json", [320], [32], Array(4).fill("1,000")],
+    ]);
     const markLists = SURFACES.filter(surface => surface.markList);
     expect(markLists.map(({ markList, widths, textSizes, url }) => [markList, widths, textSizes, new URL(url, "http://localhost").searchParams.get("board")]))
       .toEqual([["3d", [320, 390], [32], null], ["2d", [320, 390], [32], "2d"]]);
