@@ -111,6 +111,9 @@ export const RETIRED_HOUSE_HANDLES: ReadonlySet<string> = new Set([
   "qwen4-max-high",
   "qwen4-max-xhigh",
   "gpt-6-astra",
+  "glm-5-3",
+  "glm-5-4-low",
+  "glm-5-4-high",
 ]);
 
 /** Whether a bare handle or an antwars/<handle> name is retired, compared case-insensitively like canonical names. */

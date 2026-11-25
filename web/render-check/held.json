@@ -2208,6 +2208,17 @@
    "typeface": "Roboto",
    "rule": "wrap",
    "element": "div.sb-deck-table > section.d1-team > div.sb-identity > span.d1-team-player",
+   "text": "GLM-5.3 MAX RETIRED 1823 ×2",
+   "extent": 2,
+   "why": "Phone identity-row ruling: the whole name, model with badges, and rating with seat count may occupy two lines at doubled text; each unit stays on one line."
+  },
+  {
+   "surface": "replay-grouped-seats",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Roboto",
+   "rule": "wrap",
+   "element": "div.sb-deck-table > section.d1-team > div.sb-identity > span.d1-team-player",
    "text": "Muse Wonder 1.0 MAX 1500 ×2",
    "extent": 2,
    "why": "Phone identity-row ruling: the whole name, model with badges, and rating with seat count may occupy two lines at doubled text; each unit stays on one line."
@@ -2263,6 +2274,17 @@
    "typeface": "Liberation Sans",
    "rule": "wrap",
    "element": "div.sb-deck-table > section.d1-team > div.sb-identity > span.d1-team-player",
+   "text": "GLM-5.3 MAX RETIRED 1823 ×2",
+   "extent": 2,
+   "why": "Phone identity-row ruling: the whole name, model with badges, and rating with seat count may occupy two lines at doubled text; each unit stays on one line."
+  },
+  {
+   "surface": "replay-grouped-seats",
+   "width": 390,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "wrap",
+   "element": "div.sb-deck-table > section.d1-team > div.sb-identity > span.d1-team-player",
    "text": "Muse Wonder 1.0 MAX 1500 ×2",
    "extent": 2,
    "why": "Phone identity-row ruling: the whole name, model with badges, and rating with seat count may occupy two lines at doubled text; each unit stays on one line."
@@ -2308,6 +2330,17 @@
    "rule": "wrap",
    "element": "ol.d1-agents > li.d1-agent-item > div.d1-agent > span.d1-who",
    "text": "SampleIris GPT-6.1 Terra MAX FAST",
+   "extent": 2,
+   "why": "Phone identity-row ruling: the whole name, model with badges, and rating with seat count may occupy two lines at doubled text; each unit stays on one line."
+  },
+  {
+   "surface": "replay-grouped-seats",
+   "width": 320,
+   "textSize": 32,
+   "typeface": "Liberation Sans",
+   "rule": "wrap",
+   "element": "div.sb-deck-table > section.d1-team > div.sb-identity > span.d1-team-player",
+   "text": "GLM-5.3 MAX RETIRED 1823 ×2",
    "extent": 2,
    "why": "Phone identity-row ruling: the whole name, model with badges, and rating with seat count may occupy two lines at doubled text; each unit stays on one line."
   },

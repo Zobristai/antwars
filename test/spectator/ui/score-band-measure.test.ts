@@ -347,7 +347,8 @@ describe("scrolling HUD fit evidence", () => {
               const [a, b] = row.units as [typeof row.units[number], typeof row.units[number]];
               const stacked = b.top >= a.bottom - 1;
               expect(stacked || b.left >= a.right - 1, label).toBe(true);
-              const needsTwo = size === 32 && (id === FREE_FOR_ALL_REPLAY || row.text.includes("Muse") && (width === 320 || font === "Liberation Sans"));
+              const longGroupedIdentity = row.text.includes("Muse") || row.text.includes("GLM-5.3 MAX RETIRED");
+              const needsTwo = size === 32 && (id === FREE_FOR_ALL_REPLAY || longGroupedIdentity && (width === 320 || font === "Liberation Sans"));
               expect(stacked, `${label}: ${row.text}`).toBe(needsTwo);
             }
           }

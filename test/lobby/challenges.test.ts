@@ -24,7 +24,7 @@ const projectId = process.env.GCLOUD_PROJECT || "demo-antwar";
 const MINUTE = 60_000;
 const TTL = 15 * MINUTE;
 const COUNTDOWN = 10_000;
-const HANDLES = ["glm-5-3", "grok-4-7", "k3-1-pro", "gpt-6-luna"] as const;
+const HANDLES = ["glm-5-4-max", "grok-4-7", "k3-1-pro", "gpt-6-luna"] as const;
 
 let counter = 0;
 const freshNamespace = () => `ch${process.pid}-${Date.now().toString(36)}-${counter++}`;
@@ -833,14 +833,14 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 46 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 43 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(46);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(46);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(43);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(43);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -849,10 +849,11 @@ describe("the house handle list", () => {
     for (const handle of FABLE_5_2_AND_GEMINI_4_CARBON) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
     }
-    for (const level of ["low", "high", "max"]) {
-      const handle = `antwars/glm-5-4-${level}`;
-      expect(opponents.find(o => o.handle === handle)).toEqual({ handle, displayName: "GLM-5.4", level, tier: null, available: true, reason: null });
+    for (const handle of ["glm-5-3", "glm-5-4-low", "glm-5-4-high"]) {
+      expect(LAUNCHABLE_HANDLES, handle).not.toContain(handle);
+      expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: false, reason: RETIRED_REASON });
     }
+    expect(opponents.find(o => o.handle === "antwars/glm-5-4-max")).toMatchObject({ displayName: "GLM-5.4", level: "max", tier: null, available: true, reason: null });
     // The three Muse handles are listed available.
     for (const handle of ["muse-spark-1-3", "muse-wonder-1-0", "muse-wonder-full-1-0"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -938,7 +939,8 @@ describe("a retired house handle", () => {
       const steps = createChallengeSteps(store, builder, { now: () => Date.UTC(2026, 10, 4), challengeLobbyWrites: lobbyWrites } as unknown as ChallengeLobbyRules);
       for (const opponent of ["antwars/claude-fable-5-1", "ANTWARS/Claude-Fable-5-1", "claude-fable-5-1", "antwars/qwen3-8-max", "qwen3-8-max",
         "antwars/gpt-6-2-astra-high", "gpt-6-2-astra-max", "antwars/gemini-4-neon-low", "gemini-4-neon-xhigh",
-        "antwars/qwen4-max-high", "qwen4-max-xhigh", "antwars/gpt-6-astra", "gpt-6-astra"]) {
+        "antwars/qwen4-max-high", "qwen4-max-xhigh", "antwars/gpt-6-astra", "gpt-6-astra",
+        "antwars/glm-5-3", "antwars/glm-5-4-low", "antwars/glm-5-4-high"]) {
         expect(await steps.requestChallenge("key", opponent), opponent).toEqual({ ok: false, reason: "opponent_unavailable", detail: RETIRED_REASON });
       }
     }
