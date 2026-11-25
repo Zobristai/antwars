@@ -833,14 +833,14 @@ describe("the house handle list", () => {
     expect(handles).toEqual(Object.keys(HOUSE_LABELS).filter(handle => handle !== "gpt-6-1-terra").map(handle => `antwars/${handle}`));
   });
 
-  it("with no records, lists exactly the 43 launch-table handles available and every off-table seat closed", async () => {
+  it("with no records, lists exactly the 46 launch-table handles available and every off-table seat closed", async () => {
     const store = { transaction: async (step: (read: (paths: readonly string[]) => Promise<Map<string, null>>) => Promise<{ result: unknown }>) =>
       (await step(async paths => new Map(paths.map(path => [path, null])))).result } as unknown as Store;
     const steps = createChallengeSteps(store, {} as Identities, { now: () => Date.UTC(2026, 10, 4) } as ChallengeLobbyRules);
     const opponents = (await steps.listOpponents()).opponents;
     const onTable = new Set(LAUNCHABLE_HANDLES.map(handle => `antwars/${handle}`));
-    expect(LAUNCHABLE_HANDLES).toHaveLength(43);
-    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(43);
+    expect(LAUNCHABLE_HANDLES).toHaveLength(46);
+    expect(new Set(LAUNCHABLE_HANDLES).size).toBe(46);
     // The five indexed handles that can launch are listed available.
     for (const handle of ["abliterated-large-v2", "mistral-large-4", "gpt-6-1-sol-high", "gpt-6-1-sol-xhigh", "claude-haiku-5-5"]) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
@@ -848,6 +848,10 @@ describe("the house handle list", () => {
     // The five Claude Fable 5.2 and three Gemini 4 Carbon handles are listed available.
     for (const handle of FABLE_5_2_AND_GEMINI_4_CARBON) {
       expect(opponents.find(o => o.handle === `antwars/${handle}`), handle).toMatchObject({ available: true, reason: null });
+    }
+    for (const level of ["low", "high", "max"]) {
+      const handle = `antwars/glm-5-4-${level}`;
+      expect(opponents.find(o => o.handle === handle)).toEqual({ handle, displayName: "GLM-5.4", level, tier: null, available: true, reason: null });
     }
     // The three Muse handles are listed available.
     for (const handle of ["muse-spark-1-3", "muse-wonder-1-0", "muse-wonder-full-1-0"]) {
