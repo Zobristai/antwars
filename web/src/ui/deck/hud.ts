@@ -307,41 +307,45 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
         const value = range.getBoundingClientRect(), swatch = f.querySelector(".sb-swatch")!.getBoundingClientRect();
         return { left: Math.min(value.left, swatch.left), right: Math.max(value.right, swatch.right) };
       });
-      // Only the last pair has two numbers beside one another without a swatch in between.
-      const numberSpace = gauge.querySelector(".sb-number-space")!.getBoundingClientRect().width;
-      const clearanceAfter = (i: number) => i === spans.length - 2 ? numberSpace : 1;
+      const space = gauge.querySelector(".sb-number-space")!.getBoundingClientRect().width;
       const bar = gauge.querySelector(".sb-bar")!.getBoundingClientRect();
-      // Split only when the ink and the minimum gaps themselves exceed the bar width.
-      let split = spans.length;
-      if (narrowGauges?.matches && win.getComputedStyle(doc.documentElement).fontSize === "32px") {
-        let used = 0;
-        for (const [i, span] of spans.entries()) {
-          used += span.right - span.left + (i ? clearanceAfter(i - 1) : 0);
-          if (used > bar.width && i > 0) { split = i; break; }
-        }
-      }
-      // Keep the same grid columns on both lines. Place the longest fitting prefix on the first.
-      for (let i = split; i < figures.length; i++) figures[i]!.style.gridArea = `2 / ${i + 1}`;
       const fitLine = (from: number, to: number) => {
-        const shifts: number[] = [];
-        let edge = bar.right;
-        // Reserve space for each right neighbour, working back from the pinned last swatch.
-        for (let i = to - 1; i >= from; i--) {
-          const span = spans[i]!;
-          shifts[i] = Math.min(0, edge - span.right);
-          edge = span.left + shifts[i]! - clearanceAfter(i - 1);
-        }
-        // A wide left neighbour can push an interior right, but no farther than necessary.
-        edge = bar.left;
-        for (let i = from; i < to; i++) {
-          const span = spans[i]!;
-          const shift = Math.max(shifts[i]!, edge - span.left);
-          if (shift && i !== spans.length - 1) figures[i]!.style.translate = `${shift}px`;
-          edge = span.right + shift + clearanceAfter(i);
+        const line = spans.slice(from, to);
+        // Bare numbers always need a space. A swatch-separated pair needs one only if it collides.
+        const gaps = line.slice(1).map((s, i) => from + i + 2 === spans.length || s.left <= line[i]!.right ? space : 0);
+        // Shifting an interior can bring it into contact with its other neighbour. Each retry
+        // reserves a space at a newly touched boundary; there are at most three boundaries.
+        for (;;) {
+          const shifts = line.map(() => 0);
+          let edge = bar.right;
+          for (let i = line.length - 1; i >= 0; i--) {
+            const s = line[i]!;
+            shifts[i] = Math.min(0, edge - s.right);
+            edge = s.left + shifts[i]! - (gaps[i - 1] ?? 0);
+          }
+          edge = bar.left;
+          for (const [i, s] of line.entries()) {
+            shifts[i] = Math.max(shifts[i]!, edge - s.left);
+            edge = s.right + shifts[i]! + (gaps[i] ?? 0);
+          }
+          const touch = gaps.findIndex((gap, i) => gap === 0 && line[i + 1]!.left + shifts[i + 1]! <= line[i]!.right + shifts[i]!);
+          if (touch < 0 || space <= 0) return { shifts, fits: edge <= bar.right };
+          gaps[touch] = space;
         }
       };
-      fitLine(0, split);
-      if (split < spans.length) fitLine(split, spans.length);
+      const apply = (from: number, shifts: number[]) => shifts.forEach((shift, j) => {
+        const i = from + j;
+        if (from) figures[i]!.style.gridArea = `2 / ${i + 1}`;
+        if (shift && i > 0 && i < figures.length - 1) figures[i]!.style.translate = `${shift}px`;
+      });
+      const whole = fitLine(0, spans.length);
+      if (!whole.fits && narrowGauges?.matches && win.getComputedStyle(doc.documentElement).fontSize === "32px") {
+        // Keep the longest fitting prefix on line one, without separating a number from its swatch.
+        for (let split = spans.length - 1; split > 0; split--) {
+          const first = fitLine(0, split), second = fitLine(split, spans.length);
+          if (first.fits && second.fits) { apply(0, first.shifts); apply(split, second.shifts); break; }
+        }
+      } else apply(0, whole.shifts);
     }
   };
   let fitQueued = 0;

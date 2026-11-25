@@ -185,7 +185,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     const bar = gauge.querySelector(".sb-bar")?.getBoundingClientRect();
     const figures = [...gauge.querySelectorAll(".sb-figure")].filter(shown);
     if (!bar || !figures.length) continue; // Historical totals may be unavailable.
-    // Measure a real space independently of the fitter. Only adjacent bare numbers need it.
+    // Measure the clearance in the painted font, independently of the fitter.
     const probe = figures.at(-1)!.querySelector(".sb-value")?.cloneNode(false) as HTMLElement | undefined;
     let space = 0;
     if (probe) {
@@ -195,7 +195,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       space = probe.getBoundingClientRect().width;
       probe.remove();
     }
-    let required = 0, previousRight = -Infinity, lines = 0;
+    let required = 0, previousRight = -Infinity, previousGridRight = -Infinity, lines = 0;
     let row: DOMRect | undefined;
     for (const [i, figure] of figures.entries()) {
       const value = figure.querySelector(".sb-value"), chip = figure.querySelector(".sb-swatch");
@@ -206,8 +206,10 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       if (runs.length !== 1 || !n || !s || !chip || !shown(chip)) reason = "missing or wrapped value or swatch";
       else {
         const left = Math.min(n.left, s.left), right = Math.max(n.right, s.right);
-        const clearance = last ? space : 1;
-        required += right - left + (i > 0 ? clearance : 0);
+        // Undo only the figure's horizontal translation to locate its normal grid position.
+        const shift = parseFloat(style(figure).translate) || 0, gridLeft = left - shift;
+        const gridCollision = gridLeft <= previousGridRight;
+        required += right - left + (i > 0 && (last || gridCollision) ? space : 0);
         const nextLine = !row || n.top >= row.bottom;
         if (nextLine) { row = n; lines++; }
         if (last ? s.left <= n.right : n.left <= s.right) reason = "swatch on the wrong side or touching its value";
@@ -215,10 +217,14 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
         else if (vw >= 320 && !nextLine) {
           if (n.bottom <= row!.top) reason = "figures out of reading order";
           else if (left <= previousRight) reason = "figures touching or overlapping";
-          else if (left - previousRight < clearance - 0.01) reason = last ? "adjacent numbers less than one space apart" : "adjacent figures less than one pixel apart";
+          else if (left - previousRight < space - 0.01) {
+            if (last) reason = "adjacent numbers less than one space apart";
+            else if (gridCollision || gridLeft <= previousRight || left <= previousGridRight) reason = "shifted figures less than one space apart";
+          }
         }
         if (!reason && (left < bar.left - 0.1 || right > bar.right + 0.1)) reason = "figure outside the bar ends";
         else if (!reason && (i === 0 && Math.abs(left - bar.left) > 0.1 || last && Math.abs(right - bar.right) > 0.1)) reason = "outer swatch not aligned to the bar end";
+        previousGridRight = right - shift;
         previousRight = right;
       }
       if (reason) fail({ rule: "comparison-figures", element: name(figure), text: gauge.querySelector("h3")?.textContent ?? "",

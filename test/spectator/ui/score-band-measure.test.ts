@@ -225,13 +225,19 @@ describe("scrolling HUD fit evidence", () => {
           lines: new Set(parts.map(p => p.top)).size,
           left: parts[0]!.left, right: parts[3]!.right,
           thirdStart: parts[2]!.left,
-          clears: gaps[0]! >= 0.99 && gaps[1]! >= 0.99 && gaps[2]! >= space - 0.01,
-          fits: parts.reduce((sum, p) => sum + p.right - p.left, 2 + space) <= bar[1]! - bar[0]!,
+          clears: gaps[0]! >= space - 0.01 && gaps[1]! > 0 && gaps[2]! >= space - 0.01,
+          fits: parts.reduce((sum, p) => sum + p.right - p.left, 2 * space) <= bar[1]! - bar[0]!,
         };
       }).toEqual({ lines: 1, left: ordinary.bar[0], right: ordinary.bar[1], thirdStart: ordinary.parts[2]!.left, clears: true, fits: true });
       expect(await gauge.locator(".sb-value:visible").allTextContents()).toEqual(["1,000", "0", "0", "0"]);
       const leading = await bounds();
-      expect(leading.gaps[0]).toBeCloseTo(1, 2); // Minimum right shift; the other interior stays put.
+      expect(leading.gaps[0]).toBeCloseTo(space, 2);
+      const shortShift = leading.parts[0]!.right + 1 - ordinary.parts[1]!.left;
+      const tooClose = await page.addStyleTag({ content: `.sb-figure.c1 { translate: ${shortShift}px !important }` });
+      expect((await page.evaluate(judgePage, RULE_LIMITS)).failures).toContainEqual(expect.objectContaining({
+        rule: "comparison-figures", text: "Kills", measure: expect.stringContaining("shifted figures less than one space"),
+      }));
+      await tooClose.evaluate(e => e.parentNode!.removeChild(e));
       await update([1000, 1000, 1000, 1000]);
       const lineCount = async () => new Set((await bounds()).parts.map(p => p.top)).size;
       await expect.poll(lineCount).toBe(2);
