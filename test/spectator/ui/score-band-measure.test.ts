@@ -708,8 +708,20 @@ describe("scrolling HUD fit evidence", () => {
               if (scrolled) { expect(initial!.scroll, cell).toBeGreaterThan(0); expect(Math.abs(initial!.offset), cell).toBeLessThan(1); }
               const fit = { reachable: true, whole: true, words: true, text: 'Nest lost · Lake Hodges Colony · 7:30', ...(wide ? { above: true } : {}) };
               await page.locator('.aw-replay-controls input').evaluate(el => (el as HTMLElement).focus({ preventScroll: true }));
+              // A visible button can still belong to the previous rail layout. Let resize observation and the
+              // next controls update run; retry if they replaced this button or the layer no longer fits the rail.
+              await expect.poll(() => mark.evaluate(async button => {
+                const layer = button.parentElement!, rail = layer.parentElement!.querySelector('input')!;
+                await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+                return button.isConnected && layer.offsetWidth === rail.offsetWidth && layer.offsetLeft === rail.offsetLeft
+                  && layer.offsetHeight === rail.offsetHeight && layer.offsetTop === rail.offsetTop;
+              }), { message: `${cell}, mark settled on rail` }).toBe(true);
               await page.keyboard.press('Tab');
-              expect(await mark.evaluate(el => el === document.activeElement), cell).toBe(true);
+              const focus = await mark.evaluate(el => {
+                const active = document.activeElement;
+                return { onMark: active === el, target: active ? (active.cloneNode(false) as Element).outerHTML : 'no element' };
+              });
+              expect(focus.onMark, `${cell}, Tab focused ${focus.target}`).toBe(true);
               expect(await measured(), `${cell}, focus`).toMatchObject(fit);
               if (!wide && !scrolled) {
                 await positionPanel(true);
