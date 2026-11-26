@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { applyTextSize, TEXT_SIZES } from "../../../web/render-check/fonts.ts";
 import { ORIGIN, readFixtures, readSnapshot, serveSite } from "../../../web/render-check/serve.ts";
 import { userHref } from "../../../web/src/ui/user-link.ts";
 
@@ -12,6 +13,36 @@ afterAll(async () => { await browser?.close(); });
 it("links a numbered seat or agent to its username, never an unclaimed identity or house seat", () => {
   expect(userHref("sample-reed/wing #2")).toBe("/?page=users&user=sample-reed");
   for (const name of [null, "account:sample/wing", "antwars", "antwars/sample-model"]) expect(userHref(name)).toBeNull();
+});
+
+it.each(TEXT_SIZES)("scales the roster name and its disclosure at a %i px browser default", async size => {
+  const context = await browser.newContext();
+  try {
+    const fixtures = await readFixtures([resolve(dir, "render-check/users-loaded-fixture.json")]);
+    await serveSite(context, { dist: resolve(dir, "dist"), snapshot: await readSnapshot(), fixtures, rulesPage: () => "" });
+    const page = await context.newPage();
+    await applyTextSize(page, size);
+    await page.goto(ORIGIN + "/?page=users");
+    const name = page.locator(".users-entry").first();
+    for (const open of [false, true]) {
+      if (open) await name.click();
+      const fit = await name.evaluate(el => {
+        const style = getComputedStyle(el), arrow = getComputedStyle(el, "::before");
+        const text = document.createRange(); text.selectNodeContents(el);
+        const width = parseFloat(arrow.borderLeftWidth) + parseFloat(arrow.borderRightWidth);
+        const height = parseFloat(arrow.borderTopWidth) + parseFloat(arrow.borderBottomWidth);
+        return { size: parseFloat(style.fontSize), weight: style.fontWeight, width, height,
+          gap: text.getBoundingClientRect().left - el.getBoundingClientRect().left - width,
+          centered: arrow.verticalAlign === "middle", pointsDown: arrow.borderTopColor === style.color,
+          pointsRight: arrow.borderLeftColor === style.color };
+      });
+      const scale = size / 16;
+      expect(fit).toMatchObject({ size: 14 * scale, weight: "700", gap: 8, centered: true, pointsDown: open, pointsRight: !open });
+      // Borders snap to device pixels. The open triangle has the same dimensions turned sideways.
+      expect(Math.abs(fit.width / scale - (open ? 7 : 5))).toBeLessThanOrEqual(1);
+      expect(Math.abs(fit.height / scale - (open ? 5 : 7))).toBeLessThanOrEqual(1);
+    }
+  } finally { await context.close(); }
 });
 
 it("opens the requested row, sorts or closes it without reading again, and recovers with Refresh", async () => {
