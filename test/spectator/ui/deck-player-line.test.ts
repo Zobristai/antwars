@@ -34,7 +34,7 @@ function mounted() {
   const economy = [port.doc.createElement("div"), port.doc.createElement("div")] as unknown as [HTMLElement, HTMLElement];
   const teams = mountTeams(port.doc, actions, { search: () => "", economy });
   for (const team of teams.teams) port.body.append(team as unknown as ElementPort);
-  const update = (frame: Frame, rosterHandles: ReadonlyMap<string, string> | undefined = new Map([["kite", "kite"]])) => teams.update({ frame, rosterHandles, connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView, false);
+  const update = (frame: Frame, rosterHandles: ReadonlyMap<string, string> | undefined = new Map([["kite", "kite"]])) => teams.update({ frame, rosterHandles, connection: "live", board: "3d", selected: null, selectedAgent: picked.at(-1) ?? -1, mode: null, stalled: false } as HudView, false);
   const team = (colony: 0 | 1) => teams.teams[colony] as unknown as ElementPort;
   /** A part's visible words: hidden parts and screen-reader-only text left out. */
   const parts = (node: ElementPort): string => node.hidden ? "" : node.tag === "#text" ? node.textContent
@@ -87,9 +87,10 @@ describe("a colony panel's player line", () => {
     expect([0, 1].map(colony => m.team(colony as 0 | 1).byClass("d1-team-player")[0]!.hidden)).toEqual([true, true]);
   });
 
-  it("shows the rating's ± RD in the tip on a pointer, a tap that opens no card, and the row's keyboard focus", () => {
+  it("shows the rating's ± RD in the tip on hover and keyboard focus, and also opens its card on tap", () => {
     const m = mounted();
-    m.update(frameOf([agent(0, house, "openai/gpt-6-luna"), agent(1, kite, "openai/gpt-6.1-terra")]));
+    const frame = frameOf([agent(0, house, "openai/gpt-6-luna"), agent(1, kite, "openai/gpt-6.1-terra")]);
+    m.update(frame);
     const rowElo = (colony: 0 | 1) => m.team(colony).byClass("d1-who")[0]!.byClass("d1-elo")[0]!;
     const elo = rowElo(1);
     expect(elo.getAttribute("data-rd")).toBe("");
@@ -97,12 +98,8 @@ describe("a colony panel's player line", () => {
     expect([m.tip().hidden, m.tip().textContent]).toEqual([false, "± 87"]);
     elo.fire("pointerleave", { pointerType: "mouse", relatedTarget: null });
     expect(m.tip().hidden).toBe(true);
-    let stopped = false;
-    elo.fire("click", { stopPropagation: () => { stopped = true; } });
-    expect([stopped, m.tip().hidden, m.picked]).toEqual([true, false, []]);
     const row = m.team(1).byClass("d1-agent-pick")[0]! as ElementPort & { matches(selector: string): boolean };
     row.matches = selector => selector === ":focus-visible";
-    row.fire("blur"); expect(m.tip().hidden).toBe(true);
     row.fire("focus");
     expect([m.tip().hidden, m.tip().textContent]).toEqual([false, "± 87"]);
     // A rating without an RD (an older stream) shows the figure with no tip.
@@ -110,6 +107,19 @@ describe("a colony panel's player line", () => {
     expect(plain.getAttribute("data-rd")).toBeNull();
     row.fire("blur");
     plain.fire("pointerenter", { pointerType: "mouse" });
+    expect(m.tip().hidden).toBe(true);
+    expect(m.picked).toEqual([]);
+    elo.fire("click", { stopPropagation() {} });
+    m.update(frame);
+    expect(m.picked).toEqual([1]);
+    expect(row.getAttribute("aria-current")).toBe("true");
+    const card = m.team(1).byClass("d1-selected")[0]!;
+    expect(card.focused).toBe(true);
+    // Focusing the card can scroll the tag out from under the pointer.
+    row.fire("blur");
+    elo.fire("pointerleave", { pointerType: "mouse", relatedTarget: card });
+    expect([m.tip().hidden, m.tip().textContent]).toEqual([false, "± 87"]);
+    m.port.events.fire("pointerdown", { target: card });
     expect(m.tip().hidden).toBe(true);
   });
 
@@ -127,6 +137,9 @@ describe("a colony panel's player line", () => {
     expect([elo.tabIndex, elo.getAttribute("aria-label")]).toEqual([0, "Rating 1540 ± 87"]);
     elo.fire("focus");
     expect([m.tip().hidden, m.tip().textContent]).toEqual([false, "± 87"]);
+    elo.fire("blur");
+    elo.fire("click", { stopPropagation() {} });
+    expect([m.tip().hidden, m.tip().textContent, m.picked]).toEqual([false, "± 87", []]);
   });
 
   it("adds WINNER, DRAW or ABANDONED in the colony's ink once the match has ended, and nothing before", () => {
@@ -152,9 +165,26 @@ describe("a colony panel's player line", () => {
 
   it("keeps the asterisk after a self-reported model and the seat icons' tips", () => {
     const m = mounted();
-    m.update(frameOf([agent(0, null, "anthropic/claude-haiku-5-5", { thinkingLevel: "medium" }), agent(1, kite, "x")]));
+    const frame = frameOf([agent(0, null, "anthropic/claude-haiku-5-5", { thinkingLevel: "medium" }), agent(1, kite, "x")]);
+    m.update(frame);
     const who = m.team(0).byClass("d1-who")[0]!;
     expect(m.shown(who)).toBe("Claude Haiku 5.5 medium *");
+    const ast = who.byClass("d1-ast-mark")[0]!;
+    ast.fire("pointerenter", { pointerType: "mouse" });
+    expect(m.tip().textContent).toContain("Self-reported:");
+    expect(m.picked).toEqual([]);
+    ast.fire("pointerleave", { pointerType: "mouse", relatedTarget: null });
+    expect(m.tip().hidden).toBe(true);
+    ast.fire("click", { stopPropagation() {} });
+    m.update(frame);
+    expect(m.picked).toEqual([0]);
+    const card = m.team(0).byClass("d1-selected")[0]!;
+    expect(card.focused).toBe(true);
+    ast.fire("pointerleave", { pointerType: "mouse", relatedTarget: card });
+    expect(m.tip().hidden).toBe(false);
+    expect(m.tip().textContent).toContain("Self-reported:");
+    m.port.events.fire("keydown", { key: "Escape" });
+    expect(m.tip().hidden).toBe(true);
     const icon = m.team(1).byClass("d1-member")[0]!;
     icon.fire("pointerenter", { pointerType: "mouse" });
     expect(m.tip().textContent).toContain("Rating 1540");
