@@ -408,7 +408,7 @@ function rowParts(doc: Document) {
           tbody.append(line);
 
           // The stacked row: its time, then its type and status, beside the button; then each colony's lines under its name.
-          const item = h(doc, "li");
+          const item = h(doc, "li", ownNames ? "d1p-own-colonies" : undefined);
           inkColonies(item, row);
           const lead = h(doc, "p", "d1p-line is-lead");
           lead.append(...typeNodes(row), stampNode(row));

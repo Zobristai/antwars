@@ -396,6 +396,10 @@ td.c-model > .d1p-colony { display: block; }
    read by screen readers only) in the narrow caps label column the Recordings phone form uses, still in its colony's
    ink, so a seat line keeps 237 px of a 390 px phone, enough for every real player on one line. */
 .d1p-colony-tail { white-space: pre; }
+/* Outside the phone form, a row naming its two colonies keeps the body size of its table cell labels. */
+@container d1p-card (width >= 28rem) {
+  .d1p-own-colonies .d1p-colonies > dt { font-size: var(--aw-text-body); }
+}
 @container d1p-card (width < 28rem) {
   .d1p-match-rows .d1p-colonies { grid-template-columns: var(--d1p-label) minmax(0, 1fr); column-gap: var(--d1p-cell-gap); }
   .d1p-match-rows .d1p-colonies > dt { font-size: var(--aw-text-badge-sm); letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; }

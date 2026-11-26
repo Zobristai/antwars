@@ -244,6 +244,8 @@ describe("Waiting and Live keep their layout while Recordings uses colony slots"
       ["Lake Skinner Colony", "Southern California, under 1 km² (Thomas et al. 2006, Molecular Ecology)"],
       ["Sweetwater Colony", "Southern California (Thomas et al. 2006, Molecular Ecology)"]]);
     expect(colonies(item).map(([name]) => name)).toEqual(["Lake Skinner Colony", "Sweetwater Colony"]);
+    expect(item.classes()).toContain("d1p-own-colonies");
+    expect(rowAt(liveList.card, 0).item.classes()).not.toContain("d1p-own-colonies");
     // Each drawn name in its own colour, through its row's colony inks.
     const ink = (node: ElementPort) => ["--aw-k0", "--aw-k1"].map(key => node.style.getPropertyValue(key));
     const drawnInk = colonyColours(drawnLive.colonyNames!).map(colourCss);
