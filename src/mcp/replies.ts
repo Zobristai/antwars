@@ -26,6 +26,24 @@ export const MAX_OBSERVE_REPLY_BYTES = 102_380;
 export const MAX_RULES_TEXT_CHARS = MAX_OBSERVE_TEXT_CHARS;
 export const MAX_RULES_REPLY_BYTES = MAX_OBSERVE_REPLY_BYTES;
 export const MAX_EVENT_PAGE = 20;
+/** A filtered page may be empty: its continuation still advances over examined entries. */
+export const MAX_FILTER_SCAN = 1024;
+export type EventFilter = { readonly include: readonly string[] } | { readonly exclude: readonly string[] };
+
+// A long run of excluded priorities must not starve later matches on repeated
+// current reads. One hint per live queue, never part of the history cursor.
+const priorityHints = new WeakMap<readonly number[], { key: string; next: number }>();
+function priorityStart(queue: readonly number[], key: string): number {
+  const hint = priorityHints.get(queue);
+  if (hint?.key !== key) return 0;
+  let lo = 0, hi = queue.length;
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (queue[mid]! < hint.next) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 export interface ReplyLimits { readonly textChars: number; readonly bytes: number }
 export const DEFAULT_REPLY_LIMITS: ReplyLimits = { textChars: MAX_TEXT_CHARS, bytes: MAX_REPLY_BYTES };
 export const OBSERVE_REPLY_LIMITS: ReplyLimits = { textChars: MAX_OBSERVE_TEXT_CHARS, bytes: MAX_OBSERVE_REPLY_BYTES };
@@ -87,7 +105,7 @@ function enemyQueensOf(cells: readonly ViewCell[], colony: AgentView["colony"], 
 
 /** Full current view; default events are a live sample, explicit since is lossless replay. */
 export function pagedView(game: Game, config: SimConfig, view: AgentView, withMap: boolean,
-  extra: Record<string, unknown> = {}, since?: number, limits: ReplyLimits = DEFAULT_REPLY_LIMITS, cellsCursor?: string, freshCells = true): CallToolResult {
+  extra: Record<string, unknown> = {}, since?: number, limits: ReplyLimits = DEFAULT_REPLY_LIMITS, cellsCursor?: string, freshCells = true, filter?: EventFilter): CallToolResult {
   // The sim names colonies by id; the match may have drawn its own names (an unrated lobby).
   const publicView = { ...view, colonyName: game.colonyNames(view.agentId)[view.colony], marks: view.marks.map(publicCountCaste), myMarks: view.myMarks.map(publicCountCaste),
     ...(view.flyers === undefined ? {} : { flyers: denseFlyers(view.flyers) }),
@@ -104,6 +122,22 @@ export function pagedView(game: Game, config: SimConfig, view: AgentView, withMa
   let cursor = since ?? game.eventCursor(view.agentId);
   const indices: number[] = [];
   const priorities = game.pendingPriorityEvents(view.agentId);
+  const include = filter !== undefined && "include" in filter;
+  const types = new Set(include ? filter.include : filter?.exclude);
+  const matches = (index: number) => filter === undefined || types.has(history[index]!.type) === include;
+  const filterKey = filter === undefined ? undefined : JSON.stringify([include, ...[...types].sort()]);
+  let priorityPos = filterKey === undefined || since !== undefined ? 0 : priorityStart(priorities, filterKey);
+  let remaining = filter === undefined ? Infinity : MAX_FILTER_SCAN;
+  const positions: number[] = [];
+  if (filter !== undefined && since === undefined) {
+    while (priorityPos < priorities.length && remaining > 0 && positions.length < MAX_EVENT_PAGE) {
+      remaining--;
+      if (matches(priorities[priorityPos]!)) positions.push(priorityPos);
+      priorityPos++;
+    }
+  }
+  const prioritySize = filter === undefined ? priorities.length : positions.length;
+  const unchecked = filter !== undefined && priorityPos < priorities.length;
   let priorityCount = 0;
   let markTables: { marks: ReturnType<typeof packMarks>; myMarks: ReturnType<typeof packMarks> } | undefined;
   // Built inside result() so the page-fit search measures the list with its cells.
@@ -117,7 +151,7 @@ export function pagedView(game: Game, config: SimConfig, view: AgentView, withMa
     events: indices.toSorted((a, b) => a - b).map(i => since === undefined ? currentEvent(history[i]!, i) : publicEvent(history[i]!)),
     eventsMode: since === undefined ? "current" : "history",
     eventCursor: cursor, eventsMore: cursor < history.length,
-    ...(since === undefined ? { priorityEventsMore: priorityCount < priorities.length } : {}),
+    ...(since === undefined ? { priorityEventsMore: unchecked || priorityCount < prioritySize } : {}),
   } }), offset, end - offset);
 
   // Prefer the established object arrays. Compact only when the full view or
@@ -149,32 +183,47 @@ export function pagedView(game: Game, config: SimConfig, view: AgentView, withMa
   if (since !== undefined) {
     // Only explicit replay advances the chronological continuation. No sampled
     // event can cause older, unsent history to be skipped by this cursor.
-    for (; cursor < history.length && indices.length < MAX_EVENT_PAGE;) {
+    let fittedCursor = cursor;
+    for (; cursor < history.length && indices.length < MAX_EVENT_PAGE && remaining > 0; remaining--) {
+      if (!matches(cursor)) { cursor++; continue; }
       indices.push(cursor++);
       if (!fitsCurrent()) { indices.pop(); cursor -= 1; break; }
+      fittedCursor = cursor;
     }
+    // A trailing run of exclusions can grow the cursor field (or turn true to
+    // false). If those bytes no longer fit, scan that run on the next page.
+    if (indices.length > 0 && cursor !== fittedCursor && !fitsCurrent()) cursor = fittedCursor;
     const reply = finish();
     if (reply.isError !== true) game.acknowledgeEvents(view.agentId, cursor);
     return reply;
   } else {
     // Critical events survive indefinitely and drain before any fight traffic.
     // If a burst exceeds either cap, the unsent suffix remains queued.
-    for (const index of priorities) {
-      if (indices.length >= MAX_EVENT_PAGE) break;
-      indices.push(index);
-      priorityCount += 1;
-      if (!fitsCurrent()) { indices.pop(); priorityCount -= 1; break; }
+    while (priorityCount < prioritySize && indices.length < MAX_EVENT_PAGE) {
+      const pos = filter === undefined ? priorityCount : positions[priorityCount]!;
+      indices.push(priorities[pos]!);
+      priorityCount++;
+      if (!fitsCurrent()) { indices.pop(); priorityCount--; break; }
     }
-    const pending = new Set(priorities);
+    // When the filtered priority scan is complete, the only matching pending
+    // indices to avoid repeating in this sample are the ones just selected.
+    const pending = new Set(filter === undefined ? priorities : indices);
     const oldestTick = view.tick - config.commandFloorTicks;
-    for (let i = history.length - 1; i >= game.currentEventCursor(view.agentId) && indices.length < MAX_EVENT_PAGE; i--) {
-      if (pending.has(i) || history[i]!.tick < oldestTick) continue;
+    const canSample = filter === undefined || (!unchecked && priorityCount === prioritySize);
+    for (let i = history.length - 1; canSample && i >= game.currentEventCursor(view.agentId) && indices.length < MAX_EVENT_PAGE && remaining > 0; i--, remaining--) {
+      if (pending.has(i) || history[i]!.tick < oldestTick || !matches(i)) continue;
       indices.push(i);
       if (!fitsCurrent()) { indices.pop(); break; }
     }
     // Build before acknowledgement: priorities is a live reference to the queue.
     const reply = finish();
-    if (reply.isError !== true) game.acknowledgeCurrentEvents(view.agentId, history.length, priorityCount);
+    if (reply.isError !== true) {
+      if (filterKey !== undefined) {
+        const nextPos = positions[priorityCount] ?? priorityPos;
+        priorityHints.set(priorities, { key: filterKey, next: priorities[nextPos] ?? history.length });
+      }
+      game.acknowledgeCurrentEvents(view.agentId, history.length, filter === undefined ? priorityCount : positions.slice(0, priorityCount));
+    }
     return reply;
   }
 }
