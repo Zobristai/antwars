@@ -17,6 +17,8 @@ function duel() {
   });
   frame.commands.push({ id: 1, tick: 6000, agent: 0, colony: 0, call: "order", accepted: false,
     order: { kind: "attack", tileX: 4, tileY: 3, intent: "hold this tile" } });
+  frame.chat.push({ kind: "intent", agent: 0, colony: 0, tick: 5900, text: "@".repeat(80),
+    words: [], markId: -1, tileX: 0, tileY: 0, laidTick: -1 });
   for (const id of [1, 2]) {
     const mark = { id, agent: 0, colony: 0 as const, tileX: 4, tileY: 3, words: [], laidTick: 5900 + id, verb: "FORAGE" as const, count: 6, answered: 0 };
     frame.chat.push({ ...mark, kind: "mark", tick: mark.laidTick, markId: id, text: "" });
@@ -43,10 +45,11 @@ function inspectRow(row: Element) {
     if (!n.parentElement!.checkVisibility()) continue;
     for (const m of n.textContent!.matchAll(/\S+/g)) {
       const r = new Range(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
-      if (r.getClientRects().length !== 1) problems.push(`split ${m[0]}`);
+      const fragments = [...r.getClientRects()];
+      if (fragments.length !== 1 && !n.parentElement!.matches(".d1-said.is-thought")) problems.push(`split ${m[0]}`);
       const ink = r.getBoundingClientRect();
       if (ink.width <= 0 || ink.left < Math.max(team.left, rect.left) - 0.5 || ink.right > Math.min(team.right, rect.right) + 0.5) problems.push(`outside: ${m[0]} (${ink.width} px in ${rect.width})`);
-      boxes.push(ink); words.push(m[0]);
+      boxes.push(...fragments); words.push(m[0]);
     }
   }
   for (const icon of row.querySelectorAll("svg")) if (icon.checkVisibility()) {
@@ -91,7 +94,10 @@ it.each(TYPEFACES)("reflows individual badges, refused orders and selected-seat 
           expect(await row.locator("svg").count(), at).toBe(2); expect(fit.problems, at).toEqual([]);
         } else {
           const recent = page.locator(".d1-history-line:visible");
-          expect(await recent.count(), at).toBe(2);
+          expect(await recent.count(), at).toBe(3);
+          const thought = recent.locator(".d1-said.is-thought");
+          expect(await thought.textContent()).toBe(`“${"@".repeat(80)}”`);
+          expect(await thought.evaluate(el => parseFloat(getComputedStyle(el).fontSize)), at).toBe(size * 12 / 16);
           expect(await recent.locator(".d1-chip").innerText()).toBe("Show on board");
           expect(await recent.locator(".d1-gone").innerText()).toBe("no longer on the board");
           for (const row of await recent.all()) expect((await row.evaluate(inspectRow)).problems, at).toEqual([]);

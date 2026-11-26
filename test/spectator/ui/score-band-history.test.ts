@@ -125,7 +125,7 @@ function desktopPageHtml(
   `;
 }
 
-function narrowHistoryHtml(font: string, repeatRows = 0): string {
+function narrowHistoryHtml(font: string, repeatRows = 0, arrivalMark = "GATHER · any · 4 requested · 4 answered"): string {
   const longIntent = "“clean up nearby enemy clusters at 24,25 and 26,26 instead of overextending west”";
   const unspaced = `“${"@".repeat(80)}”`;
   const filler = Array.from({ length: repeatRows }, (_, k) =>
@@ -155,7 +155,7 @@ function narrowHistoryHtml(font: string, repeatRows = 0): string {
                 <li class="d1-tl-entry d1-log" data-kind="defend"><span class="d1-when">10:05</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-text">DEFEND · soldier · 30 requested · 30 answered</span></span></li>
                 <li class="d1-tl-entry d1-log" data-kind="intent"><span class="d1-when">10:04</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-text">attack Lake Hodges Colony's Queen 10</span> <span class="d1-log-intent">${longIntent}</span></span></li>
                 <li class="d1-tl-entry d1-log is-refused" data-kind="refused"><span class="d1-when">10:03</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon"></span><span class="d1-tl-what"><span class="d1-log-text">count mark</span></span><span class="d1-log-refused">refused</span></li>
-                <li class="d1-tl-entry d1-log is-arrival" data-kind="arrival"><span class="d1-when"></span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-lead">On arrival</span><span class="d1-log-text">attack</span> <span class="d1-log-intent">“rally at the nest without overextending”</span> <span class="d1-log-mark"><span class="d1-log-mark-word">mark</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-log-text">GATHER · any · 4 requested · 4 answered</span></span></span></li>
+                <li class="d1-tl-entry d1-log is-arrival" data-kind="arrival"><span class="d1-when"></span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-lead">On arrival</span><span class="d1-log-text">attack</span> <span class="d1-log-intent">“rally at the nest without overextending”</span> <span class="d1-log-mark"><span class="d1-log-mark-word">mark</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-log-text">${arrivalMark}</span></span></span></li>
                 <li class="d1-tl-entry d1-log" data-kind="unspaced"><span class="d1-when">9:58</span><span class="d1-log-who" style="color:#ffb000">${BADGE_SVG}</span><span class="d1-log-icon">${ORDER_SVG}</span><span class="d1-tl-what"><span class="d1-log-text">attack</span> <span class="d1-log-intent">${unspaced}</span></span></li>
                 ${filler}
               </ol>
@@ -443,6 +443,33 @@ describe("Score Band side-by-side History ledger", () => {
       } finally { await browser.close(); }
     }
   }, 60_000);
+
+  it.each([40, 64])("keeps unspaced History prose inside its row at %i px text", async size => {
+    const browser = await chromium.launch({ executablePath: CHROME, args: ["--no-sandbox", `--blink-settings=defaultFontSize=${size}`] });
+    try {
+      for (const width of [320, 390]) for (const font of ["Roboto", "Liberation Sans"]) {
+        const page = await browser.newPage({ viewport: { width, height: 844 } });
+        try {
+          await page.setContent(narrowHistoryHtml(font, 0, "@".repeat(80)));
+          await page.evaluate(() => document.fonts.ready);
+          for (const selector of ['[data-kind="unspaced"] .d1-log-intent', ".d1-log-mark > .d1-log-text"]) {
+            const text = page.locator(selector);
+            const ink = await text.evaluate(el => {
+              const row = el.closest(".d1-log")!.getBoundingClientRect();
+              const range = new Range(); range.selectNodeContents(el);
+              const fragments = [...range.getClientRects()];
+              return { lines: new Set(fragments.map(r => r.top)).size, size: parseFloat(getComputedStyle(el).fontSize),
+                fits: fragments.every(r => r.width > 0 && r.left >= row.left - 0.5 && r.right <= row.right + 0.5) };
+            });
+            const at = `${width}px, ${size}px text, ${font}, ${selector}`;
+            expect(ink.lines, at).toBeGreaterThan(1);
+            expect(ink.fits, at).toBe(true);
+            expect(ink.size, at).toBe(size * 12 / 16);
+          }
+        } finally { await page.close(); }
+      }
+    } finally { await browser.close(); }
+  });
 
   it("renders First contact without an agent badge, resets desktop strip scroll on open, recovers narrow deep-scroll collapse, and anchors playback prepends", () => {
     const port = dom({ search: "", wide: false });
