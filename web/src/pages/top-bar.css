@@ -31,3 +31,7 @@
   .d1p .site-pages .d2-nav { display: none; position: absolute; inset: 100% 0 auto auto; width: max-content; min-width: 100%; max-width: 90vw; margin: 0; padding: var(--aw-space-1); border: 1px solid var(--aw-line); border-radius: var(--aw-radius-card); background: var(--aw-surface); }
   .d1p .site-pages-toggle[aria-expanded=true] + nav { display: flex; align-items: stretch; flex-flow: column; }
 }
+
+@media (width < 10em) {
+  .d1p .d1-brand > .d1-top-credit { white-space: normal; }
+}

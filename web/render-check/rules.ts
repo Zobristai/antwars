@@ -61,7 +61,7 @@ export interface Finding {
 }
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
-export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; panelOnly?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
+export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; topBar?: "hud" | "pages"; panelOnly?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
   const vw = document.documentElement.clientWidth;
   const failures: Finding[] = [];
   const tight: Finding[] = [];
@@ -184,9 +184,27 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   }
   // For the finished replay the open native modal, not the inert HUD behind it, is the surface.
   const scope = limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
+    : limits.topBar ? document.querySelector<HTMLElement>(limits.topBar === "hud" ? ".d1 .d1-top" : ".d1p .d1-top")
     : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])")
     : limits.comparisonOnly ? document.querySelector<HTMLElement>(".sb-comparison") : document.body;
-  if (!scope) throw new Error("The expected replay surface did not open");
+  if (!scope) throw new Error("The expected surface did not open");
+  if (limits.topBar) {
+    const requirePart = (selector: string) => {
+      const el = scope.querySelector(selector);
+      if (!el || !shown(el) || !(el.matches("img") || textRects(el).length)) throw new Error(`Top bar did not show ${selector}`);
+      return el;
+    };
+    const emblem = requirePart(".d1-emblem"), word = requirePart(".d2-wordmark");
+    const parts = [emblem, word, requirePart(limits.topBar === "hud" ? ".d1-pages" : ".site-pages-toggle")];
+    if (limits.topBar === "pages") parts.push(requirePart(".d1-top-credit"));
+    for (const [i, a] of parts.entries()) for (const b of parts.slice(0, i)) {
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+      const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+      if (x > 0.5 && y > 0.5) fail({ rule: "overlap", element: name(a), text: text(a),
+        measure: `overlaps ${name(b)} by ${x.toFixed(1)} × ${y.toFixed(1)}px`, extent: Math.min(x, y), box: box(ra) }, a);
+    }
+  }
   // The menu is the text-judging scope, but its size comes from the transport's grid.
   // A scrollable ancestor is not permission for these controls to run off the phone.
   if (limits.markList) {
@@ -546,6 +564,9 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       fail({ rule: "sideways", element: name(el), text: text(el), measure: `${el.scrollWidth} px wide in ${el.clientWidth} px`, extent: el.scrollWidth - el.clientWidth, box: box(el.getBoundingClientRect()) }, el);
     }
   }
+  // The dedicated top-bar cases stop at the bar's text and control checks. The
+  // panel or page underneath need not fit on a single screen at this size.
+  if (limits.topBar) return { failures, tight, counted: { items: items.length, grids: 0, tiles: 0 } };
   const pageWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
   if (pageWidth > vw + 0.5) fail({ rule: "page-wider", element: "html", text: "", measure: `${pageWidth} px wide, viewport ${vw} px`, extent: Math.round(pageWidth - vw), box: null }, null);
 

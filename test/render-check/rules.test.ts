@@ -65,6 +65,24 @@ describe("render check rules", () => {
     expect(rules(await judged('<p style="width:100px">A sentence that wraps over lines.</p>'))).not.toContain("wrap");
   });
 
+  it.each(["hud", "pages"] as const)("fails a planted %s wordmark overflow at 320 px and 64 px text", async topBar => {
+    const page = await browser.newPage(viewport(320));
+    try {
+      await applyTextSize(page, 64);
+      const hud = topBar === "hud";
+      await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0} p{margin:0} '
+        + '.d1-emblem{width:16px;height:16px}.d2-wordmark{font:0.9375rem sans-serif} button{display:block}</style>'
+        + `<div class="${hud ? "d1" : "d1p"}"><header class="d1-top"><p><img class="d1-emblem" alt=""><span class="d2-wordmark">Antwars</span>`
+        + (hud ? "" : '<br><span class="d1-top-credit">Built with Zobrist</span>')
+        + `</p><button class="${hud ? "d1-pages" : "site-pages-toggle"}">Site pages</button></header></div>`);
+      expect(await rootFontSize(page)).toBe(64);
+      const check = () => page.evaluate(judgePage, { ...RULE_LIMITS, topBar });
+      expect((await check()).failures).toEqual([]);
+      await page.addStyleTag({ content: ".d2-wordmark { position:relative; left:50vw }" });
+      expect((await check()).failures).toContainEqual(expect.objectContaining({ rule: "offscreen", text: "Antwars" }));
+    } finally { await page.close(); }
+  });
+
   it.each([40, 64] as const)("fails a planted replay-panel overflow at 320 px and %i px browser text", async size => {
     const page = await browser.newPage(viewport(320));
     try {
@@ -612,8 +630,8 @@ describe("render check widths and doubled text", () => {
       ["comparison-leading-total-fixture.json", [320], [32], ["1,000", "0", "0", "0"]],
       ["comparison-thousands-fixture.json", [320], [32], Array(4).fill("1,000")],
     ]);
-    expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.panelOnly, s.widths, s.textSizes]))
-      .toEqual([[true, [320], [40, 64]]]);
+    expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.topBar ?? s.panelOnly, s.widths, s.textSizes]))
+      .toEqual([[true, [320], [40, 64]], ["hud", [320], [64]], ["pages", [320], [64]]]);
     const markLists = SURFACES.filter(surface => surface.markList);
     expect(markLists.map(({ markList, widths, textSizes, url }) => [markList, widths, textSizes, new URL(url, "http://localhost").searchParams.get("board")]))
       .toEqual([["3d", [320, 390], [32], null], ["2d", [320, 390], [32], "2d"]]);
@@ -924,5 +942,7 @@ describe("render check replay readiness", () => {
 
 it("judges Watch's top matches both as a visitor first sees them, results hidden, and in a browser that chose to show them", () => {
   const watch = SURFACES.filter(s => s.url === "/?watch=1");
-  expect(watch.map(s => [s.id, s.storage ?? null])).toEqual([["watch", null], ["watch-results-shown", { [RESULTS_KEY]: "true" }]]);
+  expect(watch.map(s => [s.id, s.storage ?? null])).toEqual([
+    ["watch", null], ["watch-results-shown", { [RESULTS_KEY]: "true" }], ["watch-top-bar-large-text", null],
+  ]);
 });

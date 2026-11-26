@@ -1029,6 +1029,17 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
   .d1 .d1-top > .d1-pages { margin-left: calc(-1 * var(--aw-space-2)); }
 }
 
+/* Keep the wordmark at its intrinsic width. Only the emblem gives up space;
+   the second track can use any room left once the emblem reaches its usual size. */
+@media (width < 10em) {
+  .d1-top > .d1-brand { width: 100%; min-width: 0; grid-template-columns: minmax(0, max-content) minmax(min-content, 1fr); }
+  .d1-top .d1-emblem { width: calc(1.75rem * 143 / 112); max-width: 100%; height: auto; }
+  /* The button starts at the viewport edge. If its preferred width exceeds the
+     screen, take space from the gap, not from the label, arrow or tap padding. */
+  .d1 .d1-top > .d1-pages { display: inline-grid; width: max-content; max-width: 100vw; flex: none; grid-template-columns: max-content minmax(0, .5em) max-content; }
+  .d1 .d1-pages-chevron { grid-column: 3; margin-inline-start: 0; }
+}
+
 /* Give the no-agent offer the full row before shortening its label; leave room on either side. */
 @media (width < 13.5em) {
   .score-band .d1-foot:has(> .d1-offer:not([hidden])) { padding-inline: 2px; }
