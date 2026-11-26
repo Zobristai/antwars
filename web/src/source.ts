@@ -4,6 +4,7 @@ import { TICK_MS } from "../../src/live/snapshot.ts";
 import { openPreparedFeed, type PreparedFeed } from "./feed.ts";
 import type { Arrival } from "./inbox.ts";
 import type { PreparedTick } from "./buffer.ts";
+import { wallClockNow } from "./clock.ts";
 import { openRecording, type Recording } from "./recording.ts";
 import { newestStoredReplay, noStoredReplays, recordingError, replayDate, replayPath, replayWaiting, setFallback, type Fallback } from "./replay.ts";
 import { LOCAL_STREAM_PATH, loadRecording, streamPath, type LinkState } from "./stream.ts";
@@ -40,7 +41,7 @@ function consumeRendererHandover(view: Window | null, params: URLSearchParams): 
       !("lobbyId" in value) || typeof value.lobbyId !== "string" || !value.lobbyId || value.lobbyId.length > 256 ||
       !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
       !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
-      Date.now() < value.at || Date.now() - value.at > FALLBACK_HANDOVER_MS ||
+      wallClockNow() < value.at || wallClockNow() - value.at > FALLBACK_HANDOVER_MS ||
       (params.has("lobby") && params.get("lobby") !== value.lobbyId)) return null;
     const delaySeconds = "delaySeconds" in value && typeof value.delaySeconds === "number" && Number.isFinite(value.delaySeconds) && value.delaySeconds >= 0 ? value.delaySeconds : undefined;
     return { lobbyId: value.lobbyId, route: value.route, at: value.at, delaySeconds };
@@ -54,7 +55,7 @@ function rememberReplayPosition(view: Window | null, params: URLSearchParams, po
   if (!view || !(positionMs > 0)) return;
   try {
     view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({
-      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), positionMs, at: Date.now(),
+      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), positionMs, at: wallClockNow(),
     } satisfies ReplayPosition));
   } catch { /* Storage is optional: without it the other board starts the replay from its beginning. */ }
 }
@@ -66,7 +67,7 @@ function pendingReplayPosition(raw: string | null | undefined, view: Window | nu
     !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
     !("board" in value) || (value.board !== "2d" && value.board !== "3d") || value.board === boardMode(params) ||
     !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
-    Date.now() < value.at || Date.now() - value.at > FALLBACK_HANDOVER_MS ||
+    wallClockNow() < value.at || wallClockNow() - value.at > FALLBACK_HANDOVER_MS ||
     !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs <= 0) return null;
   return { route: value.route, board: value.board, positionMs: value.positionMs, at: value.at };
 }
@@ -561,7 +562,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
         if (replay || legacy || fallback || !liveLobbyId || abort.signal.aborted) return;
         try {
           view?.sessionStorage.setItem(FALLBACK_HANDOVER_KEY, JSON.stringify({
-            lobbyId: liveLobbyId, route: fallbackRoute(params, view.location.pathname), at: Date.now(), delaySeconds,
+            lobbyId: liveLobbyId, route: fallbackRoute(params, view.location.pathname), at: wallClockNow(), delaySeconds,
           } satisfies RendererHandover));
         } catch { /* Storage is optional; retain ordinary navigation if unavailable. */ }
       },
