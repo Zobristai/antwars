@@ -60,6 +60,8 @@ export interface Surface {
   comparisonColonies?: 2 | 4;
   /** The dedicated comparison cases judge just this band rather than the rest of the HUD. */
   comparisonOnly?: boolean;
+  /** Judge reflow inside the replay panel at above-double text. */
+  panelOnly?: boolean;
   expectedKills?: readonly string[];
   /** Open and judge the grouped marks at the late clock and again at the finish. */
   markList?: "2d" | "3d";
@@ -135,6 +137,8 @@ export const SURFACES: readonly Surface[] = [
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
+  { id: "replay-panel-large-text", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
+    panelOnly: true, widths: [320], textSizes: [40, 64], what: "The replay panel on a phone at above-double text" },
   { id: "replay-comparison-sample", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true, comparisonColonies: 4,
     comparisonOnly: true, fixtures: "comparison-sample-fixture.json", what: "The comparison band with recorded figures for all four colonies" },
   { id: "replay-comparison-crowded", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
@@ -654,9 +658,7 @@ async function renderAll(o: Options): Promise<Render[]> {
   const fontRoot = join(o.out, ".fontconfig");
   await mkdir(join(o.out, "renders"), { recursive: true });
   const jobs: { width: number; textSize: TextSize; surface: Surface }[] = [];
-  for (const width of WIDTHS) for (const textSize of TEXT_SIZES) for (const surface of o.surfaces) {
-    if (!(surface.widths ?? WIDTHS).includes(width)) continue;
-    if (!(surface.textSizes ?? TEXT_SIZES).includes(textSize)) continue;
+  for (const surface of o.surfaces) for (const width of surface.widths ?? WIDTHS) for (const textSize of surface.textSizes ?? TEXT_SIZES) {
     jobs.push({ width, textSize, surface });
   }
   const perBrowser = o.record ? 1 : Math.max(1, Math.min(2, Math.floor(availableParallelism() / TYPEFACES.length)));
@@ -773,7 +775,7 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
-            const limits = { ...RULE_LIMITS, resultDialog: surface.resultDialog, markList: !!surface.markList,
+            const limits = { ...RULE_LIMITS, panelOnly: surface.panelOnly, resultDialog: surface.resultDialog, markList: !!surface.markList,
               comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.comparisonOnly, expectedKills: surface.expectedKills };
             judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);

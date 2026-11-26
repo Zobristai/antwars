@@ -941,6 +941,104 @@ describe("scrolling HUD fit evidence", () => {
       }
     } finally { await browser.close(); await server.close(); }
   }, 30_000);
+  it("keeps empty History at full size and joins the counted marks whose outlines collide", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/phone-panel") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end('<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main class="aw-hud"></main>');
+    });
+    await server.listen();
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome", args: ["--no-sandbox"] });
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 }, deviceScaleFactor: 2, isMobile: true });
+      await applyTextSize(page, 64);
+      await page.goto(`http://127.0.0.1:${addr.port}/phone-panel`);
+      await page.addScriptTag({ type: "module", content: `
+        import '/web/src/ui/ui.css'; import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+        import { mountReplayControls } from '/web/src/replay-controls.ts'; import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+        const events = [0, 100, 40500, 40600, 99900, 100000].map(ms => ({ kind:'nest', colony:0, ms, tick:ms/100 }));
+        const controls = mountReplayControls(document, { events, duration:100000, position:70000, rate:1, error:null, seek() {} });
+        const hud = mountDeckHud({ doc:document, host:document.querySelector('.aw-hud'), tips:[], replay:controls.el, teamView:null, actions:{ select() {}, selectAgent() {}, pointOrder() {}, hover() {} } });
+        hud.update({ frame:scoreFrame(), board:'2d', mode:null, connection:'', stalled:false, selected:null, selectedAgent:-1 });
+        function step() { controls.update(); requestAnimationFrame(step); } step();
+      ` });
+      const counts = page.locator(".aw-mark-count");
+      await counts.first().waitFor({ state: "attached" });
+      await expect.poll(() => counts.allTextContents()).toEqual(["4", "2"]);
+      const [a, b] = await counts.evaluateAll(ns => ns.map(n => { const r = n.getBoundingClientRect(); return [r.left, r.right]; }));
+      expect(b![0]! - a![1]!).toBeGreaterThanOrEqual(8); // Both 2px outlines with 2px offsets.
+      await page.locator(".aw-mark.group").first().press("Enter");
+      const menu = page.locator(".aw-mark-list:visible");
+      await menu.waitFor();
+      const rows = menu.locator(".aw-mark-row");
+      expect(await rows.count()).toBe(4);
+      const times = await rows.evaluateAll(nodes => nodes.map(row => {
+        const text = (node: Element) => { const r = new Range(); r.selectNodeContents(node); return [...r.getClientRects()]; };
+        const event = text(row.querySelector(".aw-mark-kind")!)[0]!, clock = text(row.querySelector("b")!);
+        const list = row.parentElement!.getBoundingClientRect();
+        return { whole: clock.length === 1, below: clock[0]!.top >= event.bottom,
+          inside: clock[0]!.left >= list.left && clock[0]!.right <= list.right };
+      }));
+      expect(times).toEqual(Array(4).fill({ whole: true, below: true, inside: true }));
+      await page.keyboard.press("Escape");
+      await page.locator(".sb-history:visible").first().click();
+      const empty = page.locator(".d1-tl-none:visible").first();
+      await empty.waitFor();
+      expect(await empty.evaluate(line => {
+        const node = line.firstChild!, area = line.getBoundingClientRect(), r = new Range(); r.selectNodeContents(node);
+        const lines = r.getClientRects().length;
+        const whole = [...node.textContent!.matchAll(/\S+/g)].every(m => {
+          r.setStart(node, m.index); r.setEnd(node, m.index + m[0].length);
+          return r.getClientRects().length === 1 && r.getBoundingClientRect().left >= area.left && r.getBoundingClientRect().right <= area.right;
+        });
+        return { size: getComputedStyle(line).fontSize, wrapped: lines > 1, whole };
+      })).toEqual({ size: "48px", wrapped: true, whole: true });
+    } finally { await browser.close(); await server.close(); }
+  });
+  it("caps only the attribution handle, and only where it would outgrow the panel", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/footer-test") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end('<meta name="viewport" content="width=device-width, initial-scale=1"><main class="aw-hud" hidden></main>');
+    });
+    await server.listen();
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor("Liberation Sans") } });
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 }, deviceScaleFactor: 2, isMobile: true });
+      await applyTextSize(page, 64);
+      await page.goto(`http://127.0.0.1:${addr.port}/footer-test`);
+      await page.addScriptTag({ type: "module", content: `
+        import '/web/src/ui/ui.css'; import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+        mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, actions: {} });
+      ` });
+      const credit = page.getByRole("link", { name: "Inspired by @LambethEthan" });
+      // The board can mount its overlays hidden. Fit only after the footer has a width.
+      const foot = page.locator(".d1-foot");
+      await foot.waitFor({ state: "attached" });
+      expect(await foot.evaluate(e => e.clientWidth)).toBe(0);
+      expect(await foot.locator(".d1-credit-handle").count()).toBe(0);
+      await page.locator(".aw-hud").evaluate(e => e.removeAttribute("hidden"));
+      await credit.locator(".d1-credit-handle").waitFor();
+      for (const width of [320, 390, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await expect.poll(() => credit.evaluate((a, width) => {
+          const foot = a.closest("footer")!, span = a.querySelector<HTMLElement>(".d1-credit-handle")!;
+          const css = getComputedStyle(foot), room = foot.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+          const range = new Range(); range.selectNodeContents(span);
+          const run = range.getBoundingClientRect(), px = parseFloat(getComputedStyle(span).fontSize);
+          return { word: span.textContent, lines: range.getClientRects().length, prefixSize: getComputedStyle(a).fontSize,
+            fits: run.width <= room, fitted: width === 390 ? px === 48 : px < 48 && run.width > room - 3 };
+        }, width), { message: `credit at ${width}px` }).toEqual({ word: "@LambethEthan", lines: 1, prefixSize: "48px", fits: true, fitted: true });
+      }
+    } finally { await browser.close(); await server.close(); }
+  });
   it("keeps the enlarged footer attribution on one line on a high-density 320 px phone", async () => {
     const css = ["design-system/tokens.css", "ui/ui.css", "ui/deck/deck.css"].map(path =>
       readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");

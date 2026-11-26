@@ -52,6 +52,30 @@ export function groupMarks(events: readonly ReplayEvent[], duration: number, wid
   return groups.map(g => ({ x: Math.min(width - THUMB_INSET, Math.max(THUMB_INSET, g.xs.reduce((s, x) => s + x, 0) / g.xs.length)), events: g.events }));
 }
 
+const FOCUS_RING = 4; // 2px outline and 2px offset on the painted mark.
+const countX = (x: number, width: number, radius: number) => {
+  const inset = Math.min(radius, width / 2);
+  return Math.max(inset, Math.min(width - inset, x));
+};
+
+/** On very narrow tracks, moving a count inward can put it over its neighbour. Combine only
+ * groups whose outlines actually intersect. Keep the original times and weighted centre. */
+export function joinOverlappingMarks(groups: ReturnType<typeof groupMarks>, width: number, radius: (count: number) => number) {
+  const kept: typeof groups = [];
+  const drawnX = (g: typeof groups[number]) => g.events.length === 1 ? g.x : countX(g.x, width, radius(g.events.length));
+  for (let next of groups) {
+    while (kept.length) {
+      const prev = kept.at(-1)!;
+      if (drawnX(prev) + radius(prev.events.length) <= drawnX(next) - radius(next.events.length)) break;
+      kept.pop();
+      const events = prev.events.concat(next.events);
+      next = { x: (prev.x * prev.events.length + next.x * next.events.length) / events.length, events };
+    }
+    kept.push(next);
+  }
+  return kept;
+}
+
 /** Native range/select controls provide keyboard, pointer and touch behavior without a custom drag handler.
  * The caller mounts only for explicit replays, never the live page's stand-in recording; the HUD places `el` (HudHost.replay).
  * Once the recording's marks are read (Recording.events), they stand on the slider's track as buttons: a click or tap
@@ -300,7 +324,9 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     if (!events || !duration) return;
     if (!dirty && laidOut === events && laidDuration === duration) return;
     dirty = false;
-    const box = `${seek.offsetLeft},${seek.offsetTop},${seek.offsetWidth},${seek.offsetHeight}`;
+    const fitOutlines = px("--aw-fit-mark-outlines", 0) === 1;
+    const textSize = fitOutlines ? doc.defaultView!.getComputedStyle(el).fontSize : "";
+    const box = `${seek.offsetLeft},${seek.offsetTop},${seek.offsetWidth},${seek.offsetHeight},${textSize}`;
     if (box === laidBox && laidOut === events && laidDuration === duration) return;
     laidBox = box;
     laidOut = events;
@@ -318,7 +344,26 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     // The marks being replaced say nothing as they go: losing focus by removal is not a person moving it.
     for (const item of items) item.button.onfocus = item.button.onblur = null;
     layer.replaceChildren();
-    items = groupMarks(events, duration, width, px("--aw-mark-gap", 18)).map(group => {
+    let groups = groupMarks(events, duration, width, px("--aw-mark-gap", 18));
+    if (fitOutlines && groups.length > 1) {
+      // Measure the same badge the reader sees, including padding and extra digits, before
+      // binding the final buttons and their menus. Counts use tabular digits.
+      const probe = doc.createElement("button"), count = doc.createElement("span");
+      probe.className = "aw-mark group"; count.className = "aw-mark-count";
+      probe.append(count); layer.append(probe); el.append(layer);
+      const radii = new Map<number, number>();
+      groups = joinOverlappingMarks(groups, width, n => {
+        if (n === 1) return px("--aw-mark-size", 16) / 2 + FOCUS_RING;
+        const digits = String(n).length;
+        if (!radii.has(digits)) {
+          count.textContent = String(n);
+          radii.set(digits, count.getBoundingClientRect().width / 2 + FOCUS_RING);
+        }
+        return radii.get(digits)!;
+      });
+      probe.remove();
+    }
+    items = groups.map(group => {
       const button = doc.createElement("button");
       button.type = "button";
       button.style.left = `${group.x}px`;
@@ -368,18 +413,16 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     // Read the laid-out badges together, after insertion: their em size and digit count both affect the reach.
     const counts = items.filter(item => item.events.length > 1).map(item => {
       const badge = item.button.children[0] as HTMLElement;
-      return { item, half: badge.offsetWidth / 2, height: badge.offsetHeight };
+      return { item, half: (fitOutlines ? badge.getBoundingClientRect().width : badge.offsetWidth) / 2, height: badge.offsetHeight };
     });
     // Keep the painted pill (including its 2px outline and 2px offset) in the masked layer.
     // Only its visual centre moves: list entries still seek to the recorded event times.
-    const ring = 4;
     let height = seek.offsetHeight;
     for (const { item, half, height: badgeHeight } of counts) {
-      const inset = Math.min(half + ring, width / 2);
-      item.x = Math.max(inset, Math.min(width - inset, item.x));
+      item.x = countX(item.x, width, half + FOCUS_RING);
       item.button.style.left = `${item.x}px`;
       item.reach = THUMB_INSET + half;
-      height = Math.max(height, badgeHeight + 2 * ring);
+      height = Math.max(height, badgeHeight + 2 * FOCUS_RING);
     }
     layer.style.top = `${seek.offsetTop + (seek.offsetHeight - height) / 2}px`;
     layer.style.height = `${height}px`;

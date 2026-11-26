@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage } from "../../src/live/format.ts";
 import { packMessages, TICK_MS } from "../../src/live/snapshot.ts";
 import { openRecording, PLAYBACK_RATES, RESUME_RETRY_MS, SCAN_RETRY_MS, serveMarks, type MarksPort, type MarksWorker, type Recording } from "../../web/src/recording.ts";
-import { groupMarks, markWords, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
+import { groupMarks, joinOverlappingMarks, markWords, mountReplayControls, replayTime } from "../../web/src/replay-controls.ts";
 import { colonyNameNote, type ColonyNamePair } from "../../src/sim/colonyNames.ts";
 import type { ReplayEvent } from "../../web/src/replay-events.ts";
 import { scale2Packets } from "../../web/capture/scale2-recording.ts";
@@ -206,6 +206,19 @@ describe("marks on the scrubber", () => {
     const at = groupMarks([DRAWN[0]!, DRAWN[7]!], DRAWN_MS, 230.4, 18);
     expect(at[0]!.x).toBeCloseTo(8 + (133_800 / DRAWN_MS) * 214.4, 5);
     expect(at[1]!.x).toBeCloseTo(222.4, 5);
+  });
+
+  it.each(["start", "end"])("joins only outlines that overlap after a count moves inward at the track %s", edge => {
+    const width = 304, radius = (n: number) => n === 1 ? 14 : 56; // 104px count plus its focus ring.
+    const groups = (centres: number[]) => centres.map((x, i) => ({ x: edge === "start" ? x : width - x,
+      events: [{ ...DRAWN[0]!, ms: i * 1000 }, { ...DRAWN[1]!, ms: i * 1000 + 100 }] })).sort((a, b) => a.x - b.x);
+    const near = groups([8.5, 122.5, 296]);
+    const fitted = joinOverlappingMarks(near, width, radius);
+    expect(fitted.map(g => g.events.length)).toEqual(edge === "start" ? [4, 2] : [2, 4]);
+    expect(fitted.flatMap(g => g.events)).toEqual(near.flatMap(g => g.events));
+    // At 168px the near count just clears the one clamped to 56px. Neither should move or merge.
+    const clear = groups([8.5, 168]);
+    expect(joinOverlappingMarks(clear, width, radius)).toEqual(clear);
   });
 
   it("fits the endpoint count and its focus outline on the rail without changing either seek time", () => {

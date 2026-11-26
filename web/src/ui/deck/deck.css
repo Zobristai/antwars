@@ -1176,3 +1176,39 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 @media (min-width: 320px) and (max-width: 11.99em) {
   .score-band .d1-econ > :is(.sb-next, .sb-queen-kills), .score-band .d1-econ.has-flyers > :is(.sb-next, .sb-queen-kills) { grid-column: 1 / -1; }
 }
+
+/* At 320px with doubled text there are still 10em. Below that, give whole words
+   and controls their own lines rather than squeezing them into that layout. */
+@media (320px <= width < 10em) {
+  .score-band :is(.d1-team-members, .d1-tags, .d1-model-box, .d1-player-rating, .sb-detail-stat, .sb-hold-value, .d1-next, .sb-rules-key) { max-width: 100%; flex-wrap: wrap; }
+  .score-band .sb-hold-words { white-space: normal; }
+  .score-band :is(.d1-sel-title, .d1-who) > .d1-ast-mark { margin-inline: 0; }
+  /* Commands and recent marks carry a clock, glyphs, text and sometimes a status or action.
+     Keep the fixed items intact and give the description the full line before breaking an overlong word. */
+  .score-band :is(.d1-tl-entry.d1-log, .d1-history-line) { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 3px; }
+  .score-band :is(.d1-tl-entry.d1-log, .d1-history-line) > * { flex: none; }
+  .score-band .d1-log > .d1-tl-what { flex-basis: 100%; order: 1; }
+  /* Count emergency breaks when the Recent grid sizes its column for an unspaced message. */
+  .score-band .d1-history-line > .d1-said { flex-basis: 100%; overflow-wrap: anywhere; }
+  .score-band .d1-log > :is(.d1-when, .d1-log-who, .d1-log-icon):empty { display: none; }
+  .score-band .d1-log-mark > .d1-log-text { max-width: 100%; }
+  .score-band .d1-selected :is(.d1-chip, .d1-gone) { max-width: 100%; white-space: normal; }
+  .score-band .d1-member { flex: none; margin: 0; } /* Include the whole hit target when wrapping seats. */
+  .score-band .d1-team > .d1-timeline .sb-history-head { flex-wrap: wrap; }
+  .score-band .d1-tl-none { font-size: var(--aw-text-meta); white-space: normal; overflow-wrap: normal; }
+  /* Without a match the legend is a phrase, not the single LIVE or RECORDING mode. */
+  .score-band .d1-dot[hidden] + .d1-mode { max-width: 100%; white-space: normal; }
+  .score-band .d1-econ > .d1-cell, .score-band .d1-econ.has-flyers > .d1-cell { grid-column: 1 / -1; }
+  .score-band .sb-queens, .score-band .d1-lamps { flex-wrap: wrap; }
+  .score-band .sb-queen-value { flex-basis: 100%; }
+  .score-band :is(.d1-ml, .sb-meta-item, .sb-holder, .sb-rule, .sb-unavailable, .d1-foot-credit, .d1-offer) { white-space: normal; }
+  .score-band .d1-offer { text-align: center; }
+  .score-band .d1-foot > .d2-link { display: block; align-content: center; max-width: 100%; }
+  .score-band .d1-credit-handle { display: inline-block; white-space: nowrap; }
+  .d1 .aw-replay-controls {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(calc(1.125rem + 8px), var(--d1-tap));
+    row-gap: var(--aw-space-1); padding-block: var(--aw-space-1);
+  }
+  .d1 .aw-replay-controls > .aw-replay-time { grid-area: 2 / 1; white-space: normal; }
+  .d1 .aw-replay-controls > input[type="range"] { grid-row: 3; }
+}
