@@ -120,3 +120,8 @@
   .d1 .aw-mark-row .aw-mark-separator { display: none; }
   .d1 .aw-mark-row .aw-mark-colony { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Keep the rail still under the pointer. In the scrolling panel its label opens below
+   the controls, unless only the space above them fits (replay-controls.ts). */
+.d1-below .aw-replay-controls > .aw-mark-label { position: absolute; grid-area: auto; bottom: auto; top: calc(100% + 4px); }
+.d1-below .aw-replay-controls > .aw-mark-label.is-above { top: auto; bottom: calc(100% + 4px); }
