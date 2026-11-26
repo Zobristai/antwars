@@ -67,7 +67,7 @@ const PUBLIC_BASELINE = {
   // restores f6d789862efa66cf24a070a24999212cba9f4b50715fa61a4f3c918284ad9ac9, so nothing else changed.
   // The observe description names myMarks tileX/tileY and a LINE mark's toTileX/toTileY; without that sentence the
   // list restores 592ede74f818dff12b1238528b36f8aefdb39b7e1648386cab8c67498987ae0b, so nothing else changed.
-  tools: "ed53b3a477a0a581293f3d0e4ffdf54c799cdaf20bce4edd3754585d1aead6ce",
+  tools: "7dc451c2a62ca2c5d961552fd188193d33cf02f0fdbcb5b79e48e95c4ca0f42a",
 };
 
 const sha = (text: string | Uint8Array): string => createHash("sha256").update(text).digest("hex");

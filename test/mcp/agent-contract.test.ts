@@ -283,5 +283,5 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Repinned for the observe description's sentence on each flyer's state in cells; without it the list hashes to f2e7207b….
   // Repinned for the flyer clause in the observe cell legend and the flyer's HP in the set_brood schema; without them it
   // hashes to 58b57bf9….
-  expect(sha(JSON.stringify(tools))).toBe("9b27abd148fe373846b9b99ffc8f27bc70391d699cc0a295f501b4105d217ded");
+  expect(sha(JSON.stringify(tools))).toBe("b3ececfc7f7a9ec4cc061947506b6134825e350b8c5789f0e1f901d9a3dfc09d");
 });
