@@ -43,6 +43,15 @@
   --aw-text-mast: 1.125rem;                                   /* 18: the front page's wordmark */
   --aw-text-display: 1.875rem;   /* 30: compact winner */
   --aw-text-display-lg: 3rem;    /* 48: compact outcome */
+  --aw-lh-kicker: 0.875rem;                                   /* 14: compact 11 px label */
+  --aw-text-prose-sm: 1rem;     --aw-lh-prose-sm: 1.5rem;     /* 16 / 24 */
+  --aw-text-prose: 1.0625rem;   --aw-lh-prose: 1.625rem;      /* 17 / 26 */
+  --aw-text-intro: 1.375rem;    --aw-lh-intro: 2rem;          /* 22 / 32 */
+  --aw-text-section-sm: 1.75rem; --aw-lh-section-sm: 2rem;    /* 28 / 32 */
+  --aw-text-section: 2.5rem;    --aw-lh-section: 2.75rem;     /* 40 / 44 */
+  --aw-text-hero-sm: 2rem;      --aw-lh-hero-sm: 2.25rem;     /* 32 / 36 */
+  --aw-text-hero-md: 3.5rem;    --aw-lh-hero-md: 3.75rem;     /* 56 / 60 */
+  --aw-text-hero: 4.5rem;       --aw-lh-hero: 4.75rem;        /* 72 / 76 */
   /* Type: weights and tracking */
   --aw-regular: 400; --aw-strong: 600; --aw-bold: 700;
   --aw-track-title: 0.04em; --aw-track-label: 0.09em; --aw-track-badge: 0.08em;
