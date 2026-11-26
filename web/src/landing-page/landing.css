@@ -67,7 +67,7 @@
 .fg-agent { margin-top: var(--fg-gap); }
 .fg-section-title { margin-bottom: 24px; font-size: var(--aw-text-section); font-weight: 700; line-height: var(--aw-lh-section); letter-spacing: -0.02em; color: var(--aw-ink-bright); }
 .fg-agent-field { padding: 20px var(--d1p-inset); }
-.fg-agent-label { margin-bottom: 6px; font-size: var(--aw-text-meta); font-weight: 600; line-height: var(--aw-lh-meta); color: var(--aw-ink-2); }
+.fg-agent-label { margin-bottom: 6px; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--aw-ink-2); }
 /* Today's address row (agent.ts), restyled from the HUD's one-line form (ui.css .d2 .aw-byoa-*): it wraps, and Copy is the
    pages' grey pill. */
 .fg .fg-agent .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 560px; margin: 0; }
