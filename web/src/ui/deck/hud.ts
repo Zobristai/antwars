@@ -276,10 +276,12 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   // focus order follow what is seen.
   const deckFirst = mq(DECK_FIRST);
   const short = mq(WINDOW_IN_SCROLLER);
-  let placed = false;
+  let placement: "wide" | "joined" | "stacked" | undefined;
   const placeDeck = () => {
+    const wideDeck = mq(DECK_FIRST)?.matches ?? true;
+    const next = wideDeck ? "wide" : mq(WINDOW_IN_SCROLLER)?.matches ? "joined" : "stacked";
+    if (next === placement) return;
     const focused = doc.activeElement as HTMLElement | null;
-    const wideDeck = deckFirst === null || deckFirst.matches;
     if (wideDeck) {
       root.classList.remove("d1-joined");
       frameEl.insertBefore(metadata, hole);
@@ -291,7 +293,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
       below.append(foot);
       below.prepend(lane);
       below.prepend(metadata);
-      if (short?.matches) {
+      if (next === "joined") {
         below.prepend(frameEl);
         root.classList.add("d1-joined");
         top.after(below);
@@ -304,8 +306,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     // A moved node loses the focus: a viewer who zooms across the width keeps their place.
     if (focused && focused !== doc.activeElement && root.contains(focused)) focused.focus({ preventScroll: true });
     // The board's window moved: fit the board to it again, as after a resize.
-    if (placed) scheduleRefit();
-    placed = true;
+    if (placement !== undefined) scheduleRefit();
+    placement = next;
   };
   placeDeck();
   if (deckFirst) listen(deckFirst, "change", placeDeck);
@@ -516,7 +518,12 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let metadataH = -1;
   let footerH = -1;
   let laneH = -1;
+  // Changing the browser's default font size can change an em media query without firing its change event.
+  // One em at the initial font size tracks that preference without taking up any space in the deck.
+  const fontSizeProbe = h(doc, "span");
+  fontSizeProbe.style.cssText = "position:absolute;top:0;left:0;font-size:medium;width:1em;height:0;visibility:hidden";
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(entries => {
+    if (entries.some(e => e.target === fontSizeProbe)) placeDeck();
     if (entries.some(e => e.target === foot)) fitCredit();
     if (entries.some(e => e.target === frameEl || e.target === mode)) fitLegend?.();
     const next = legendEl.offsetHeight;
@@ -524,6 +531,10 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
     if (legendH >= 0 && (next !== legendH || nextDeck !== deckH || nextMetadata !== metadataH || nextFooter !== footerH || nextLane !== laneH)) scheduleRefit();
     legendH = next; deckH = nextDeck; metadataH = nextMetadata; footerH = nextFooter; laneH = nextLane;
   });
+  if (watch) {
+    root.append(fontSizeProbe);
+    watch.observe(fontSizeProbe);
+  }
   watch?.observe(frameEl);
   watch?.observe(mode);
   watch?.observe(legendEl);
