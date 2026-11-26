@@ -7,10 +7,10 @@ import type { ColonyNames } from "../sim/colonyNames.js";
 import { colonyCountOf } from "../sim/mapBoard.js";
 import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { BROODS, COUNT_CASTES, COUNT_VERBS, WORDS, type Brood, type ColonyId, type MatchResult, type Order, type SimInput } from "../sim/types.js";
-import type { AgentView } from "../sim/view.js";
+import { VISIBLE_EVENT_KINDS, type AgentView } from "../sim/view.js";
 import { EMPTY_SQUAD_COUNT_MARK, FOUNDING_CHECKS, LINE_FROM_END_NOT_VISIBLE, LINE_TO_END_NOT_VISIBLE, type FoundingCheck } from "../sim/agents.js";
 import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, foodRadixText, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText, broodChoices, countCasteChoices } from "./briefing.js";
-import { OBSERVE_REPLY_LIMITS, fitsReply, payload, pagedView, publicCountCaste, publicQueen, servedText, storedCall, type ServedText } from "./replies.js";
+import { OBSERVE_REPLY_LIMITS, fitsReply, payload, pagedView, publicCountCaste, publicQueen, servedText, storedCall, type EventFilter, type ServedText } from "./replies.js";
 import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
 import { agentLimitText, agentsPerColony, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, type McpConfig } from "./config.js";
@@ -96,6 +96,10 @@ export function unknownFields(schema: z.ZodObject, args: Record<string, unknown>
   return Object.keys(args).filter((name) => !Object.hasOwn(schema.shape, name));
 }
 
+const eventNames = [...Object.keys(VISIBLE_EVENT_KINDS), "squad_replaced"];
+const eventTypes = z.array(z.enum(eventNames)).max(eventNames.length);
+const eventFilterSchema = z.union([z.strictObject({ include: eventTypes }), z.strictObject({ exclude: eventTypes })]);
+
 const EXPECTED: Readonly<Record<string, string>> = {
   kind: `one of ${ORDER_KINDS.join(", ")}`,
   tileX: "a number: a whole tile column",
@@ -107,6 +111,7 @@ const EXPECTED: Readonly<Record<string, string>> = {
   words: 'an array of word strings, for example ["ENEMY","QUEEN"]',
   map: "a boolean: true to include the territory map",
   waitSeconds: "a number: seconds to hold the reply, 0-10",
+  eventFilter: `an object with exactly one include or exclude list of event types: ${eventNames.join(", ")}`,
   since: "a non-negative integer event cursor from this seat (0 replays all retained events)",
   brood: `one of ${BROODS.join(", ")}`,
   verb: `one of ${COUNT_VERBS.join(", ")}`,
@@ -308,7 +313,7 @@ export function observeWaitMs(waitSeconds: number | undefined): number {
   return Math.round(Math.min(Math.max(waitSeconds, 0), MAX_OBSERVE_WAIT_SECONDS) * 1000);
 }
 
-function observeResult(game: Game, config: SimConfig, outcome: Outcome, withMap: boolean, since?: number, queuedExtra: Record<string, unknown> = {}, cellsCursor?: string): CallToolResult {
+function observeResult(game: Game, config: SimConfig, outcome: Outcome, withMap: boolean, since?: number, queuedExtra: Record<string, unknown> = {}, cellsCursor?: string, eventFilter?: EventFilter): CallToolResult {
   // A session whose old seat was retired still gets truthful unavailable timing.
   outcome = { ...outcome, observeInfo: outcome.observeInfo ?? observeInfo(null, "", config) };
   if (outcome.kind !== "view") return viewResult(game, config, outcome, queuedExtra);
@@ -318,7 +323,7 @@ function observeResult(game: Game, config: SimConfig, outcome: Outcome, withMap:
     return errorResult("bad_event_cursor", "Event cursor exceeds this seat's retained event count.",
       `Use a cursor from 0 to ${game.eventHistory(outcome.view.agentId).length}; observe returns eventCursor.${result === null ? "" : ` ${POST_MATCH_OBSERVE_TEXT} ${IDLE_COUNTDOWN_TEXT}`}`, outcome.view, { ...outcome.observeInfo, ...final });
   }
-  return pagedView(game, config, outcome.view, withMap, { ...outcome.observeInfo, ...final }, since, OBSERVE_REPLY_LIMITS, cellsCursor);
+  return pagedView(game, config, outcome.view, withMap, { ...outcome.observeInfo, ...final }, since, OBSERVE_REPLY_LIMITS, cellsCursor, true, eventFilter);
 }
 
 /** Rules 27: an accepted SPAWN or REMOVE names what it changed; no mark, event or view field carries it. */
@@ -1012,7 +1017,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
 
   // The observe text a match is served: a four-colony lobby gets the four-colony status and cell decoder its replies use.
   const observeText = (config: SimConfig): string =>
-    `${observeDetailText(config, game.mcpConfig, { house: game.isHouseMatch(session.agentId) })} ${colonyVisibilityText(config)} ${foodRadixText(config)} ${CELL_PAGING_TEXT}${usesCompactAgentText(config) ? ` ${ENEMY_QUEENS_TEXT}` : ""} ${SEAT_NOTICE_TEXT} Full current view with lossless dense cells, squad, marks and territory counts. ${MY_MARKS_TEXT} Without since, eventsMode:current samples newest unseen events from the last command cycle, prioritizing pending own-queen and own mark/count-mark events; priorityEventsMore means priorities remain queued. Current count-mark acceptance notices omit message and availability; command replies and explicit history retain full details. Default sampling never advances eventCursor. For complete chronological history use since:0, then since:view.eventCursor while eventsMore; eventsMode:history may repeat sampled events. History and pending priorities survive reconnects. ${TERRITORY_TEXT} ${MARK_TABLE_TEXT}${config.flyers === undefined ? "" : " view.flyers {encoding,data}: your colony's flyers, each with its tile and state; decode data by view.flyers.encoding. In cells, each flyer in sight, yours or the enemy's, adds its state, grounded, flying or hovering, per cells.encoding."} waitSeconds holds up to 10 s.`;
+    `${observeDetailText(config, game.mcpConfig, { house: game.isHouseMatch(session.agentId) })} ${colonyVisibilityText(config)} ${foodRadixText(config)} ${CELL_PAGING_TEXT}${usesCompactAgentText(config) ? ` ${ENEMY_QUEENS_TEXT}` : ""} ${SEAT_NOTICE_TEXT} Full current view with lossless dense cells, squad, marks and territory counts. ${MY_MARKS_TEXT} freeAntsByCaste counts your colony's available workers, soldiers and flyers at view.tick; each count mark in view.myMarks shows count requested and claimed now. Without since, eventsMode:current samples newest unseen events from the last command cycle, prioritizing pending own-queen and own mark/count-mark events; priorityEventsMore means priorities remain queued. Current count-mark acceptance notices omit message and availability; command replies and explicit history retain full details. Default sampling never advances eventCursor. For complete chronological history use since:0, then since:view.eventCursor while eventsMore; eventsMode:history may repeat sampled events. Use eventFilter with an include or exclude list of event types (e.g. {exclude:["fight","death"]}); a filtered history page can be empty, so continue while eventsMore. History and pending priorities survive reconnects. ${TERRITORY_TEXT} ${MARK_TABLE_TEXT}${config.flyers === undefined ? "" : " view.flyers {encoding,data}: your colony's flyers, each with its tile and state; decode data by view.flyers.encoding. In cells, each flyer in sight, yours or the enemy's, adds its state, grounded, flying or hovering, per cells.encoding."} waitSeconds holds up to 10 s.`;
   // Every other match keeps the text fixed when this session opened.
   const baseObserveText = observeText(game.simConfig);
   const observeTool = server.registerTool(
@@ -1020,6 +1025,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
     {
       description: baseObserveText,
       inputSchema: {
+        eventFilter: orNull(eventFilterSchema.optional()),
         cellsCursor: orNull(z.string().min(1).max(128).optional().describe("Omit to capture current colony sight, squad cells first. While view.cellsMore, pass view.cellsCursor to fetch the next frozen cellsTick page. A fresh observe replaces this cell snapshot; event since is independent.")),
         since: orNull(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional().describe("Omit for current-event sampling with own-queen/own-mark priority. Set 0 to replay every seat event from join, then continue with view.eventCursor while eventsMore. Explicit replay alone advances that cursor; it may repeat sampled events. History survives commands, refusals and reconnects for this match.")),
         map: orNull(z.boolean().optional().describe("true to include territory, your colony's lossless base64-bitset-lsb0 ownership map; leave it out unless you need the map.")),
@@ -1038,12 +1044,12 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
       if (agentId === null) return notJoined(game, { ...observeInfo(null, "", game.simConfig) });
       const caught = caughtPaths(args);
       if (caught.length > 0) return typeError(game, session, "observe", caught);
-      const { map, waitSeconds, since, cellsCursor } = args as { map?: boolean; waitSeconds?: number; since?: number; cellsCursor?: string };
+      const { map, waitSeconds, since, cellsCursor, eventFilter } = args;
       const holdMs = observeWaitMs(waitSeconds);
       if (holdMs > 0) await sleep(holdMs);
       const eligible = (since === undefined || since <= game.eventHistory(agentId).length) && game.validCellsCursor(agentId, cellsCursor);
       const outcome = await sessionObserve(game, agentId, finalResult, eligible);
-      return observeResult(game, game.configForAgent(agentId), outcome, map === true, since, nestFields(game, agentId, true), cellsCursor);
+      return observeResult(game, game.configForAgent(agentId), outcome, map === true, since, nestFields(game, agentId, true), cellsCursor, eventFilter);
     },
   );
   // Read at each tools/list from the config observe encodes this session's cells with: its seat's own match once it has

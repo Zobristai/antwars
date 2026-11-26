@@ -172,6 +172,20 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     list.style.maxHeight = `${Math.floor(Math.max(least, room))}px`;
     place(list, x);
   };
+  // The panel can move under an open label (scrolling or the facts row collapsing during a seek).
+  // Refit on clipping rather than reading layout on every playback frame.
+  const fitChipSide = () => {
+    const panel = el.closest?.(".d1-below");
+    if (!panel || chip.hidden) return;
+    const bounds = panel.getBoundingClientRect(), row = el.getBoundingClientRect();
+    const below = Math.min(bounds.bottom, doc.defaultView!.innerHeight) - row.bottom;
+    const above = row.top - Math.max(bounds.top, 0);
+    chip.classList.toggle("is-above", below < chip.getBoundingClientRect().height + 4 && above > below);
+  };
+  const Intersection = doc.defaultView?.IntersectionObserver;
+  const chipVisibility = Intersection ? new Intersection(entries => {
+    if (entries.some(e => e.intersectionRatio < 1)) fitChipSide();
+  }, { threshold: [0, 1] }) : null;
   const words = (node: HTMLElement, e: ReplayEvent) => {
     node.replaceChildren();
     const glyph = doc.createElement("span");
@@ -211,11 +225,14 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     chipEvent = e;
     chip.hidden = false;
     place(chip, x);
+    fitChipSide();
+    chipVisibility?.observe(chip);
     if (forMs !== null) chipTimer = setTimeout(hideChip, forMs);
   };
   const hideChip = () => {
     if (chipTimer) clearTimeout(chipTimer);
     if (chipLeaveTimer) clearTimeout(chipLeaveTimer);
+    chipVisibility?.unobserve(chip);
     chipTimer = chipLeaveTimer = null; chipEvent = null; chip.hidden = true;
   };
   /** The mouse left a mark: a label naming a drawn colony waits for it (laterClose's wait), any other hides now. */
@@ -419,6 +436,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     if (chipLeaveTimer) clearTimeout(chipLeaveTimer);
     if (closeTimer) clearTimeout(closeTimer);
     doc.removeEventListener?.("pointerdown", outside);
+    chipVisibility?.disconnect();
     resized?.disconnect();
     el.remove();
   } };
