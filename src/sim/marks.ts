@@ -185,6 +185,26 @@ function centreDistance(ant: Ant, mark: Mark): number {
   return distance(ant.x, ant.y, tileCentre(mark.tileX), tileCentre(mark.tileY));
 }
 
+/** The colony's pool before a count mark claims any ants. An optional request restricts
+ * the free counts to castes it can recruit; claimedAnts remains the whole colony's. */
+export function countMarkPool(state: SimState, colony: ColonyId, tick: number, request?: Pick<Mark, "verb" | "caste">) {
+  const liveMarks = new Set(state.marks.filter(mark => mark.colony === colony && mark.count !== undefined &&
+    tick - mark.laidTick < state.config.markLifetimeTicks).map(mark => mark.id));
+  const guardsExcluded = !localRulesSide(state, colony);
+  const freeAntsByCaste = { worker: 0, soldier: 0, flyer: 0 };
+  let claimedAnts = 0;
+  for (const ant of state.ants) {
+    if (ant.colony !== colony || ant.hp <= 0 || ant.squad !== null) continue;
+    if (ant.claim !== undefined && liveMarks.has(ant.claim)) { claimedAnts++; continue; }
+    // A flyer whose mark ended in the air finishes its flight before it can answer a new mark.
+    if (ant.air !== undefined || (guardsExcluded && ant.role === "guard")) continue;
+    if (request === undefined || countMarkCasteEligible(state.config, ant, request)) {
+      freeAntsByCaste[ant.flyer ? "flyer" : ant.caste ?? "worker"]++;
+    }
+  }
+  return { claimedAnts, freeAntsByCaste };
+}
+
 /** Caste eligibility shared by recruitment, retained claims and acceptance counts. */
 export function countMarkCasteEligible(config: SimConfig, ant: Ant, mark: Pick<Mark, "verb" | "caste">): boolean {
   // Only flyer marks order flyers, and flyer marks claim only flyers.

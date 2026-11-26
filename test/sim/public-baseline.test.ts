@@ -67,7 +67,8 @@ const PUBLIC_BASELINE = {
   // restores f6d789862efa66cf24a070a24999212cba9f4b50715fa61a4f3c918284ad9ac9, so nothing else changed.
   // The observe description names myMarks tileX/tileY and a LINE mark's toTileX/toTileY; without that sentence the
   // list restores 592ede74f818dff12b1238528b36f8aefdb39b7e1648386cab8c67498987ae0b, so nothing else changed.
-  tools: "ed53b3a477a0a581293f3d0e4ffdf54c799cdaf20bce4edd3754585d1aead6ce",
+  // Observe now names the free pool by caste and each own count mark's requested and claimed counts.
+  tools: "da347386616f20ed81159054ebf2a8ea38bd499ffb09885a34d9c82974fae1aa",
 };
 
 const sha = (text: string | Uint8Array): string => createHash("sha256").update(text).digest("hex");
@@ -165,5 +166,7 @@ describe("historical public simulation pins and current live guidance", () => {
     for (const phrase of scaled) expect(listed.split(phrase)).toHaveLength(2);
     const reference = listed.replace(scaled[0]!, "").replace(scaled[1]!, "(6 tiles around each colony ant)");
     expect(sha(reference)).toBe(PUBLIC_BASELINE.tools);
+    const pool = " freeAntsByCaste counts your colony's available workers, soldiers and flyers at view.tick; each count mark in view.myMarks shows count requested and claimed now.";
+    expect(sha(reference.replace(pool, ""))).toBe("ed53b3a477a0a581293f3d0e4ffdf54c799cdaf20bce4edd3754585d1aead6ce");
   });
 });
