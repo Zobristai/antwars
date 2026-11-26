@@ -11,8 +11,8 @@ const config: SimConfig = { ...rulesConfig("redesign"), startAnts: 0, squadSize:
   terrain: undefined, foodLayout: undefined, foodPatches: [], commandFloorTicks: 0, earlyWin: undefined };
 const START = 700;
 
-function scene(): SimState {
-  const state = emptyMatch(START, config);
+function scene(rules = config): SimState {
+  const state = emptyMatch(START, rules);
   const agent: Agent = { id: "a", colony: 0, joinSeq: 0, modelLabel: null, parentAgentId: null,
     squad: [], order: { kind: "hold" }, lastCallTick: START, lastCommandTick: START, idle: false, pendingEvents: [] };
   state.agents.push(agent);
@@ -29,11 +29,8 @@ function patrol(state: SimState, tileX: number, tileY: number, caste: MarkCasteN
   state.marks.push(mark as Mark);
   return mark.id;
 }
-/** Re-cast a scripted mark in place, as a re-lay does: caste and revision change; id, tile and laid tick do not. */
-function recast(state: SimState, id: number, caste: MarkCasteName): void {
-  const mark = state.marks.find(item => item.id === id)! as ScriptedMark;
-  mark.caste = caste;
-  mark.revision = (mark.revision ?? 0) + 1;
+function relay(tileX: number, tileY: number, caste: MarkCasteName): SimInput {
+  return { type: "count_mark", agentId: "a", verb: "PATROL", tileX, tileY, count: 2, caste };
 }
 /** The ids of the chain holding mark id, in the chain's laid order, as the next movement phase derives it. */
 function chainOf(state: SimState, id: number): number[] {
@@ -103,7 +100,7 @@ describe("check 8, Patrol, line and hover: flyer and ground patrol chains", () =
 
 describe("check 8, Re-lay, caste and chains: chains follow re-cast and expiry on the next tick", () => {
   it("drops a mark re-cast from flyer to soldier out of the flyer chain into the ground chain, and splits the chain on the oldest flyer mark's expiry", () => {
-    let state = scene();
+    let state = scene({ ...config, markLifetimeTicks: 20 });
     const lifetime = state.config.markLifetimeTicks;
     // A flyer chain of 3 whose middle mark is the oldest; the ground mark is within 12 tiles of the middle and last only.
     const middle = patrol(state, 32, 40, "flyer", START - lifetime + 5);
@@ -116,7 +113,7 @@ describe("check 8, Re-lay, caste and chains: chains follow re-cast and expiry on
     expect(chainOf(state, ground)).toEqual([ground]);
 
     // Re-lay the middle mark as caste soldier: from the next tick it links with the ground mark, and the flyer chain splits.
-    state = tick(state, [{ type: "count_mark", agentId: "a", verb: "PATROL", tileX: 32, tileY: 40, count: 2, caste: "soldier" }]);
+    state = tick(state, [relay(32, 40, "soldier")]);
     const relaid = state.marks.find(mark => mark.id === middle)!;
     expect(relaid).toMatchObject({ caste: "soldier", revision: 1, laidTick: START - lifetime + 5 });
     expect(chainOf(state, middle)).toEqual([middle, ground]);
@@ -124,20 +121,21 @@ describe("check 8, Re-lay, caste and chains: chains follow re-cast and expiry on
     expect(chainOf(state, last)).toEqual([last]);
 
     // Back to flyer, then the ground mark re-cast as flyer: one flyer chain of 4 in laid order.
-    recast(state, middle, "flyer");
-    state = tick(state);
+    const middleRenewal = state.tick;
+    state = tick(state, [relay(32, 40, "flyer")]);
     expect(chainOf(state, middle)).toEqual([middle, first, last]);
     expect(chainOf(state, ground)).toEqual([ground]);
-    recast(state, ground, "flyer");
-    state = tick(state);
+    state = tick(state, [relay(38, 46, "flyer")]);
     expect(chainOf(state, middle)).toEqual([middle, first, last, ground]);
 
-    // The oldest flyer mark expires at the end of the tick before START + 5: the chain splits from tick START + 5.
-    state = tick(state);
-    expect(state.tick).toBe(START + 4);
+    // Keep both ends alive past the renewed bridge so its expiry alone splits the chain.
+    addAnt(state, 0, 20, 40);
+    addAnt(state, 0, 44, 40);
+    state = tick(state, [relay(20, 40, "flyer"), relay(44, 40, "flyer")]);
+    while (state.tick < middleRenewal + lifetime - 1) state = tick(state);
     expect(chainOf(state, middle)).toEqual([middle, first, last, ground]);
     state = tick(state);
-    expect(state.tick).toBe(START + 5);
+    expect(state.tick).toBe(middleRenewal + lifetime);
     expect(state.marks.some(mark => mark.id === middle)).toBe(false);
     expect(chainOf(state, first)).toEqual([first]);
     expect(chainOf(state, last)).toEqual([last, ground]);

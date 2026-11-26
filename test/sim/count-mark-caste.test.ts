@@ -63,6 +63,7 @@ it.each(["worker", "soldier"] as const)("a re-lay selecting %s releases only exc
   const original = { ...state.marks[0]! };
   const other = addAnt(state, 0, 8, 24, { caste: excluded.caste, claim: 99 });
   state.marks.push({ ...original, id: 99, agentId: "mate", caste: excluded.caste, count: 1 });
+  const renewal = state.tick;
   const beforeMatching = JSON.stringify(matching);
   expect(lay(state, caste).result.error).toBeNull();
   claimCountMarks(state, state.tick);
@@ -70,7 +71,7 @@ it.each(["worker", "soldier"] as const)("a re-lay selecting %s releases only exc
   expect(matching.claim).toBe(original.id);
   expect(excluded.claim).toBeUndefined();
   expect(other.claim).toBe(99);
-  expect(state.marks[0]).toEqual({ ...original, caste, revision: 1 });
+  expect(state.marks[0]).toEqual({ ...original, caste, revision: 1, renewedTick: renewal });
 });
 
 it("changing back to any retains matching claims, recruits both castes and stores no any property", () => {

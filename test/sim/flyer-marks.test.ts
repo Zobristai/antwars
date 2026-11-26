@@ -281,8 +281,9 @@ describe("re-lays change count and caste in place (check 8: re-lay, caste and ch
     claimCountMarks(state, state.tick);
     expect(flyers.map((a) => a.claim)).toEqual([mark.id, mark.id]);
     const before = { ...mark };
+    state.tick++;
     expect(send(state, { verb: "LINE", caste: "soldier", count: 2, tileX: 40, tileY: 40, toTileX: 44, toTileY: 40 }).error).toBeNull();
-    expect(state.marks).toEqual([{ ...before, caste: "soldier", revision: 1 }]);
+    expect(state.marks).toEqual([{ ...before, caste: "soldier", revision: 1, renewedTick: state.tick }]);
     claimCountMarks(state, state.tick);
     for (const ant of flyers) expect(ant.claim).toBeUndefined();
     expect(send(state, { verb: "LINE", caste: "flyer", count: 2, tileX: 40, tileY: 40, toTileX: 44, toTileY: 42 }).error).toBeNull();
@@ -353,7 +354,7 @@ describe("re-lays change count and caste in place (check 8: re-lay, caste and ch
     expect(claimed(state, c)).toEqual([nearC[0]!.id]);
     expect(nearC[1]!.claim).toBeUndefined();
 
-    // Lifetimes run from first laying, whatever the re-lays: the oldest flyer mark expires first, at its laid tick + 1800.
+    // Only the first flyer mark was never re-laid. The others expire from their last re-lay.
     const life = state.config.markLifetimeTicks;
     expect(life).toBe(1800);
     expireMarks(state, a.laidTick + life - 1);
@@ -363,9 +364,11 @@ describe("re-lays change count and caste in place (check 8: re-lay, caste and ch
     claimCountMarks(state, a.laidTick + life);
     for (const ant of nearA) expect(ant.claim).toBeUndefined();
     expect(claimed(state, b)).toEqual(nearB.map((f) => f.id));
-    expireMarks(state, b.laidTick + life);
-    expect(state.marks.map((m) => m.id)).toEqual(order.slice(2));
-    expireMarks(state, ground.laidTick + life);
+    expireMarks(state, 700 + life);
+    expect(state.marks.map((m) => m.id)).toEqual([c.id, ground.id]);
+    expireMarks(state, 1000 + life);
+    expect(state.marks.map((m) => m.id)).toEqual([c.id]);
+    expireMarks(state, 1200 + life);
     expect(state.marks).toEqual([]);
   });
 });

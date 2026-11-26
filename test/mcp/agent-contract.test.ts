@@ -242,14 +242,17 @@ it("pins the current configured briefing, join briefing and tool list", async ()
     expect(substitutions.reduce((value, [before, after]) => value.replace(before, after), original)).toBe(text);
     return original;
   };
-  const historical = { ...current, queenKillsFirst: undefined };
+  const historical = { ...current, queenKillsFirst: undefined, countMarks: { ...current.countMarks!, renewOnRelay: undefined } };
   const historicalText = briefing(historical).replace(omissionSentence, "").replace(antCap, "");
   expect(sha(beforeVocabulary(historicalText))).toBe("7e2e4a0c3ce52b8c3c2e7b5f89408ecab76e4ee3c1958807b23b29cc6b37ea06");
   expect(sha(historicalText)).toBe("eeef3caecbde9d10f083347a8e703555fe4621c2e8e5bd98a5d516ba73bba0ed");
   expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("e92e6333baf22fe680a6b6ee14433dba48561547562e3db838c5e4c0680c806e");
   expect(briefing(current)).toContain("queen kills>kills>territory>ants alive>food delivered>draw");
   expect(joinBriefing(current)).toContain("queen kills, kills, territory, ants alive, food delivered, draw");
-  const currentText = briefing(current).replace(omissionSentence, "").replace(antCap, "");
+  // Restore only the previous lifetime sentence to compare all other text with its pinned contract.
+  const renewal = "one command restarts the 180 s lifetime";
+  expect(briefing(current).split(renewal)).toHaveLength(2);
+  const currentText = briefing(current).replace(renewal, "the mark keeps its original 180 s lifetime").replace(omissionSentence, "").replace(antCap, "");
   expect(currentText).not.toMatch(/steer/i);
   expect(sha(beforeVocabulary(currentText))).toBe("776213220619df983ca7b2e3a66933acb74d930c5ec54386d149ccd383599ed9");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
@@ -283,6 +286,10 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Repinned for the observe description's sentence on each flyer's state in cells; without it the list hashes to f2e7207b….
   // Repinned for the flyer clause in the observe cell legend and the flyer's HP in the set_brood schema; without them it
   // hashes to 58b57bf9….
+  const countMark = tools.find(tool => tool.name === "count_mark")!;
+  const relay = "A re-lay costs one command and restarts the mark's lifetime";
+  expect(countMark.description!.split(relay)).toHaveLength(2);
+  countMark.description = countMark.description!.replace(relay, "A re-lay keeps the lifetime from when the mark was first laid");
   expect(sha(JSON.stringify(tools))).toBe("71ff27d47f90cf4cbe1233094f19c0796b7072665eaacff5de353b37124a9456");
   // Remove only the free-ant sentence to compare the rest of the tool list byte for byte.
   const observe = tools.find(tool => tool.name === "observe")!;

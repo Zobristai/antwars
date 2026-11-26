@@ -424,6 +424,8 @@ export type RulesName = (typeof RULES_NAMES)[number];
 
 /** Count-mark numbers. Experimental defaults. */
 export interface CountMarkRules {
+  /** An accepted re-lay renews the mark; absent in recordings with fixed lifetimes. */
+  readonly renewOnRelay?: true;
   /** Count-mark combat accounting only; absent preserves recorded state and MCP contracts. */
   readonly combatTotals?: true;
   /** New contract marker; absent preserves recorded tool, event and rules identities. */
@@ -649,7 +651,7 @@ export function rulesConfig(value: string | undefined): SimConfig {
         // Its nearest edge is row 15, so collecting food takes workers outside the lane, not just to row 19.
         foodPatches: LIVE_REDESIGN_FOOD_PATCHES,
         foodLayout: foodLayoutRules(LIVE_REDESIGN_FOOD_PATCHES, 452, 1026),
-        countMarks: { ...COUNT_MARK_RULES, recruitColonyWide: true, placement: "colony_sight", reportClaimAvailability: true },
+        countMarks: { ...COUNT_MARK_RULES, renewOnRelay: true, recruitColonyWide: true, placement: "colony_sight", reportClaimAvailability: true },
         patrolLinkTiles: 6,
         localAnts: { ...BALANCED_LOCAL_ANT_RULES, workerGuardSettle: true, everyColony: true }, queenHp: { hp: 100_000, damagePerSecond: 10_000, regenHp: 1_000, regenIntervalTicks: 100, regenClearTiles: 3, shieldTicks: 3000 },
         earlyWin: EARLY_WIN_RULES, commandIdleTicks: 180 * PUBLIC_CONFIG.ticksPerSecond };

@@ -31,12 +31,16 @@ describe("the rules generations", () => {
     expect(parseLog([headerLine(6006, playable(config))]).header).toMatchObject({ rulesVersion: name === "redesign" ? 28 : 27, config: { adjudication: "kills-first", queenKillsFirst: true } });
   });
 
-  it("the served redesign differs from the rules-27 redesign only in the unit figures, the hatch rate, the flyers and the rules-28 marker", () => {
+  it("the served redesign differs from the rules-27 redesign only in unit figures, hatch rate, flyers, scoring, count-mark renewal and the rules-28 marker", () => {
     const now = rulesConfig("redesign") as unknown as Record<string, unknown>, before = rules27Redesign() as unknown as Record<string, unknown>;
     const changed = [...new Set([...Object.keys(now), ...Object.keys(before)])].filter(key => JSON.stringify(now[key]) !== JSON.stringify(before[key])).sort();
-    expect(changed).toEqual(["antHp", "castes", "flyers", "hatchCost", "hatchRate", "hatchTiming", "queenHp", "queenKillsFirst", "rules28"]);
+    expect(changed).toEqual(["antHp", "castes", "countMarks", "flyers", "hatchCost", "hatchRate", "hatchTiming", "queenHp", "queenKillsFirst", "rules28"]);
     expect(now).toMatchObject({ rules28: true, antHp: 2000, hatchCost: 2, hatchRate: { foodPerSecond: 2 }, flyers: FLYER_RULES,
       castes: { soldierCost: 6, soldierHpPermille: 5000, soldierDamagePermille: 3000 } });
+    expect(before.countMarks).not.toHaveProperty("renewOnRelay");
+    const { renewOnRelay, ...previousCountMarks } = now.countMarks as NonNullable<SimConfig["countMarks"]>;
+    expect(renewOnRelay).toBe(true);
+    expect(JSON.stringify(previousCountMarks)).toBe(JSON.stringify(before.countMarks));
     expect(now.hatchTiming).toBeUndefined();
     const { biteDamage: _bite, biteIntervalTicks: _interval, ...kept } = (before.queenHp as Record<string, number>);
     expect(now.queenHp).toEqual({ ...kept, hp: 100_000, damagePerSecond: 10_000 });
