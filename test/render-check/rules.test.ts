@@ -76,12 +76,20 @@ describe("render check rules", () => {
     expect(rules(await judged(matchRow(lead("LIVE", "<br>"), 280), 320, 32))).toContain("wrap");
   });
 
+  it("rejects a full-width LIVE stamp forced below a type that it fits beside at 390 px with doubled text", async () => {
+    const lead = (display: string) => `<p class="d1p-line is-lead" style="font-size:.6875rem;line-height:1rem"><span class="d1p-type" style="margin-right:8px">Ranked · 1v1</span><span class="d1p-stamp" style="display:${display};padding:0 5px;border:1px solid">LIVE</span></p>`;
+    expect(rules(await judged(matchRow(lead("inline-block"), 340), 390, 32))).not.toContain("wrap");
+    expect(rules(await judged(matchRow(lead("block"), 340), 390, 32))).toContain("wrap");
+  });
+
   it("puts all player badges on one line below the whole name in an enlarged phone card", async () => {
     const player = (basis: string, level: string) => `<dl><dd><span class="d1p-model" style="display:flex;flex-wrap:wrap"><span class="d1p-name" style="flex-basis:${basis}">Model</span><span class="d1p-tags">${level}</span><button>1500</button></span></dd></dl>`;
     expect(rules(await judged(matchRow(player("100%", "HIGH"), 300), 320, 32))).not.toContain("wrap");
     expect(rules(await judged(matchRow(player("auto", "HIGH"), 300), 320, 32))).toContain("wrap");
     expect(rules(await judged(matchRow(player("100%", "HIGH<br>FAST"), 300), 320, 32))).toContain("wrap");
     expect(rules(await judged(matchRow(player("auto", "HIGH"), 300), 320, 16))).not.toContain("wrap");
+    const openTip = player("100%", "HIGH").replace("<button>1500", '<button style="position:relative">1500<span class="d1p-elo-rd" style="position:absolute;bottom:100%;white-space:nowrap">± 80</span>');
+    expect(rules(await judged(matchRow(openTip, 300), 320, 32))).not.toContain("wrap");
   });
 
   it("fails a one-line item that wraps, but not prose", async () => {
