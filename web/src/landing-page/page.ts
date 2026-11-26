@@ -138,11 +138,11 @@ export function mountLandingPage(doc: Document, win: Window, options: { request?
   const addressText = mcpAddress(win.location.origin);
   const address = buildAgentPanel(doc, addressText, win.navigator?.clipboard).querySelector<HTMLElement>(".aw-byoa-address")!;
   address.setAttribute("role", "group"); address.setAttribute("aria-labelledby", addressLabel.id);
-  // Keep the copy value intact; layout can break only between whole address parts.
-  const addressLine = h(doc, "span");
+  // Break opportunities belong to the visible address, not the value used by Copy.
+  const addressLine = h(doc, "span", "fg-address-line");
   for (const [i, part] of addressText.split(/(?<=:\/\/)|(?<![:/])(?=[/.])/).entries()) {
     if (i) addressLine.append(doc.createElement("wbr"));
-    addressLine.append(h(doc, "span", "fg-keep", part));
+    addressLine.append(h(doc, "span", "fg-address-part", part));
   }
   address.querySelector(".aw-byoa-url")!.replaceChildren(addressLine);
   address.querySelector(".aw-byoa-note")?.setAttribute("role", "status");

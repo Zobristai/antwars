@@ -74,7 +74,7 @@
 .fg-agent { margin-top: var(--fg-gap); }
 .fg-section-title { margin-bottom: 24px; font-size: var(--aw-text-section); font-weight: 700; line-height: var(--aw-lh-section); letter-spacing: -0.02em; color: var(--aw-ink-bright); }
 .fg-agent-field { padding: 20px var(--d1p-inset); }
-.fg-agent-label { margin-bottom: 6px; font-size: var(--aw-text-meta); font-weight: 600; line-height: var(--aw-lh-meta); color: var(--aw-ink-2); }
+.fg-agent-label { white-space: nowrap; margin-bottom: 6px; font-size: var(--aw-text-meta); font-weight: 600; line-height: var(--aw-lh-meta); color: var(--aw-ink-2); }
 /* Today's address row (agent.ts), restyled from the HUD's one-line form (ui.css .d2 .aw-byoa-*): it wraps, and Copy is the
    pages' grey pill. */
 .fg .fg-agent .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 35rem; margin: 0; }
@@ -86,8 +86,12 @@
 .fg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; margin-top: var(--fg-gap); padding-top: 12px; border-top: 1px solid var(--aw-line); font-size: var(--aw-text-meta); color: var(--aw-ink-3); }
 
 .fg-foot > .d2-credit { font-size: inherit; }
-@media (width < 20em) {
-  .fg .fg-agent .aw-byoa-url { white-space: normal; }
+@media (320px <= width < 20em) {
+  .fg-agent-label, .fg .fg-agent .aw-byoa-url { white-space: normal; }
+  .fg-address-line { width: 100%; min-width: 0; }
+  /* Size each segment against the whole line, not the space left by the previous segment.
+     Only one that cannot fit on a fresh line needs to wrap inside itself. */
+  .fg-address-part { display: inline-block; vertical-align: top; width: max-content; max-width: 100%; overflow-wrap: anywhere; }
 }
 @media (width < 19em) {
   .fg .fg-foot { margin-inline: calc(var(--aw-space-2) - var(--fg-gutter)); }

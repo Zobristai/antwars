@@ -357,7 +357,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     isItem.add(el);
     items.push(el);
   }
-  const narrowStandings = matchMedia("(320px <= width < 20em)").matches;
+  const enlargedPhone = matchMedia("(320px <= width < 20em)").matches;
   // Exclude overlays such as an open rating tooltip, even when its text is nested inside the badge.
   const inLine = (n: Element, line: Element) => {
     for (let e: Element | null = n; e && e !== line; e = e.parentElement) if (outOfFlow(e)) return false;
@@ -365,7 +365,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   };
   // Judge the printed parts, not the markup offering the breaks. A planted break can be
   // inside one text node (CSS) or between two nodes (a span or a forced <br>).
-  const partsStayWhole = (el: Element, parts: RegExp) => {
+  const partsStayWhole = (el: Element, parts: RegExp, maxUnbrokenWidth = Infinity) => {
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     const nodes: { node: Text; start: number; end: number }[] = [];
     let end = 0;
@@ -381,14 +381,20 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
         r.setEnd(node, Math.min(index + part.length, end) - start);
         rects.push(...[...r.getClientRects()].filter(box => box.width > 0));
       }
-      return lineCount(rects) === 1;
+      // Text ranges measure the glyph fragments of this part alone. If their combined
+      // width exceeds even a fresh address line, no separator-only layout can fit it.
+      return lineCount(rects) === 1 || rects.reduce((sum, r) => sum + r.width, 0) > maxUnbrokenWidth;
     });
   };
-  const doubledPhone = matchMedia("(320px <= width <= 390px)").matches && parseFloat(style(document.documentElement).fontSize) === 32;
+  const contentWidth = (el: Element) => {
+    const cs = style(el);
+    return el.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+  };
   // A slash joins words at ordinary sizes. Only on doubled phones can a line end after it.
   for (const p of scope.querySelectorAll(".d1p-rule p")) {
     if (!shown(p) || !p.textContent?.includes("/")) continue;
-    const parts = doubledPhone ? /[\p{L}\p{N}]+\/?/gu : /[\p{L}\p{N}]+(?:\/[\p{L}\p{N}]+)*/gu;
+    const parts = enlargedPhone ? /[\p{L}\p{N}]+\/?/gu : /[\p{L}\p{N}]+(?:\/[\p{L}\p{N}]+)*/gu;
     if (!partsStayWhole(p, parts)) fail({ rule: "wrap", element: name(p), text: text(p),
       measure: "break inside a Rules word", extent: lineCount(textRects(p).map(t => t.r)), box: box(p.getBoundingClientRect()) }, p);
   }
@@ -403,12 +409,13 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     // or an item cut by its row is still a failure.
     const group = el.matches(".d1-result-dialog .rd-player") ? el.querySelector(":scope > .rd-badges") : null;
     const player = el.querySelector(":scope > .d1-rating-name");
-    const stacked = narrowStandings && lines === 2 && group && player
+    const stacked = enlargedPhone && lines === 2 && group && player
       && group.getBoundingClientRect().top >= player.getBoundingClientRect().bottom - 0.5
       && [player, group].every(part => lineCount(textRects(part).map(t => t.r)) === 1);
-    const allowedAddressBreak = lines > 1 && doubledPhone && (
+
+    const allowedAddressBreak = lines > 1 && enlargedPhone && (
       el.matches(labelSelector) && lines === 2 && partsStayWhole(el, /^[^(]+?(?=\s*\()|\(.*\)$/g)
-      || el.matches(urlSelector) && partsStayWhole(el, /^[a-z]+:\/\/|[./]?[^./]+|[./]/gi));
+      || el.matches(urlSelector) && partsStayWhole(el, /^[a-z]+:\/\/|[./]?[^./]+|[./]/gi, contentWidth(el) + 1 / 64));
     if (lines > 1 && !prose && !stacked && !allowedAddressBreak) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
@@ -446,7 +453,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       let valid = rects.length > 0 && sameMatchLine(rects);
       if (rest.length && first.length) {
         let below = player && cardWidth < 15 * rootPx;
-        if (!player && narrowStandings && lines === 2 && groups.every(sameMatchLine)) {
+        if (!player && enlargedPhone && lines === 2 && groups.every(sameMatchLine)) {
           // Use the unbroken text runs, not the laid-out box: a block stamp can stretch across the row.
           const needed = parts.reduce((sum, part, i) => {
             const rs = groups[i]!;
@@ -506,7 +513,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     const label = row.querySelector(".aw-mark-kind"), when = row.querySelector("b"), colony = row.querySelector<HTMLElement>(".aw-mark-colony");
     const fixed = [label, when].flatMap(el => el ? textRects(el).map(t => t.r) : []);
     const names = colony ? textRects(colony).map(t => t.r) : [];
-    const below = narrowStandings && row.closest(".d1") && colony;
+    const below = enlargedPhone && row.closest(".d1") && colony;
     if (!label || !when || !shown(label) || !shown(when) || lineCount(fixed) !== 1 || (colony && lineCount(names) !== 1)
       || (below ? Math.min(...names.map(r => r.top)) < Math.max(...fixed.map(r => r.bottom)) - .5 : lineCount([...fixed, ...names]) !== 1)) {
       fail({ rule: "wrap", element: name(row), text: text(row), measure: "event, time or colony not on its expected line",
@@ -527,7 +534,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     if (!words || run.children.length || run.title !== words || run.getAttribute("aria-label") !== words
       || !run.matches('a[href], span[role="group"]') || run.closest('[aria-hidden="true"], [inert]') || run.hasAttribute("aria-labelledby")) continue;
     if (cs.whiteSpace === "nowrap" && cs.textOverflow === "ellipsis" && cs.overflowX === "hidden" && cs.display === "block"
-      && (!narrowStandings || run.scrollWidth <= run.clientWidth || run.clientWidth >= run.parentElement!.clientWidth - 1)
+      && (!enlargedPhone || run.scrollWidth <= run.clientWidth || run.clientWidth >= run.parentElement!.clientWidth - 1)
       && run.clientWidth >= 1.5 * parseFloat(cs.fontSize)) designedEnds.add(run);
   }
 
