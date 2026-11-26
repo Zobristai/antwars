@@ -9,7 +9,7 @@ import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { BROODS, COUNT_CASTES, COUNT_VERBS, WORDS, type Brood, type ColonyId, type MatchResult, type Order, type SimInput } from "../sim/types.js";
 import { VISIBLE_EVENT_KINDS, type AgentView } from "../sim/view.js";
 import { EMPTY_SQUAD_COUNT_MARK, FOUNDING_CHECKS, LINE_FROM_END_NOT_VISIBLE, LINE_TO_END_NOT_VISIBLE, type FoundingCheck } from "../sim/agents.js";
-import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, foodRadixText, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText, broodChoices, countCasteChoices } from "./briefing.js";
+import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, foodRadixText, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText, relayLifetimeText, broodChoices, countCasteChoices } from "./briefing.js";
 import { OBSERVE_REPLY_LIMITS, fitsReply, payload, pagedView, publicCountCaste, publicQueen, servedText, storedCall, type EventFilter, type ServedText } from "./replies.js";
 import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
@@ -120,13 +120,6 @@ const EXPECTED: Readonly<Record<string, string>> = {
   queenId: "a number: the queenId of one of your colony's live queens",
   markId: "a number: the markId of your own count mark",
 };
-
-/** Rules 27: a re-lay keeps the original lifetime; anything else is a new mark. Same words as web/rules.ts. */
-function relayLifetimeText(config: SimConfig): string {
-  return lineMarksEnabled(config)
-    ? " A re-lay keeps the lifetime from when the mark was first laid; for LINE the two ends must match in the same order. A different verb, tile or ends makes a new mark with its own lifetime."
-    : " A re-lay keeps the lifetime from when the mark was first laid. A different verb or tile makes a new mark with its own lifetime.";
-}
 
 /** Rules 27 count_mark verbs that are commands, not mark jobs. */
 const SPAWN_REMOVE_VERBS: readonly string[] = ["SPAWN", "REMOVE"];

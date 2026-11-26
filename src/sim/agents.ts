@@ -441,7 +441,7 @@ function layMark(
 /**
  * A count mark: a verb and a positive whole requested count. It shares the command floor, the own-ant tile rule and the per-agent mark limit
  * with word marks. Re-laying one with the same agent, verb and tile keeps its
- * claimed ants and changes only its count and caste;
+ * claimed ants and updates its count and caste, renewing its lifetime when enabled;
  * claims are filled and released in the claim pass (marks.ts).
  * With flyers in the rules, caste flyer lays a flyer mark, which needs an explicit tile, and markId on a mark verb
  * moves one of the agent's own flyer marks: its tile (LINE: both ends) and count change in place, under the same
@@ -535,6 +535,7 @@ function applyCountMark(
     moved.count = input.count;
     moved.revision = (moved.revision ?? 0) + 1;
   } else if (same !== undefined) {
+    if (rules.renewOnRelay) same.renewedTick = tick;
     same.count = input.count;
     if (caste === undefined) delete same.caste;
     else same.caste = caste;

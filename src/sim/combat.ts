@@ -1,3 +1,4 @@
+import { markTicksLeft } from "./marks.js";
 import { damagePerTick, SUB } from "./config.js";
 import { withinTiles } from "./geometry.js";
 import { gridScaleOf } from "./gridScale.js";
@@ -112,7 +113,7 @@ export function resolveCombat(state: SimState, grid: Grid, tick: number, events:
   const queenBiters = new Map<QueenState, number[]>();
   // Do not track damage sources in historical rules or when there is no live count mark.
   const marks = config.countMarks?.combatTotals ? new Map(state.marks
-    .filter(mark => mark.verb !== undefined && mark.count !== undefined && mark.laidTick <= tick && tick - mark.laidTick < config.markLifetimeTicks)
+    .filter(mark => mark.verb !== undefined && mark.count !== undefined && mark.laidTick <= tick && markTicksLeft(config, mark, tick) > 0)
     .map(mark => [mark.id, mark])) : undefined;
   const sources = marks !== undefined && marks.size > 0 ? new Map<number, DamageSource>() : undefined;
   // Two-colony queen-first matches need last-hit credit too, but keep their total kills as opposing ant deaths.

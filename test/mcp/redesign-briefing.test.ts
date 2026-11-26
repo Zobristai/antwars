@@ -83,7 +83,7 @@ describe("redesign briefing teaches decisions, not just command syntax", () => {
     expect(text).toContain("including workers already foraging");
     expect(text).toContain("with no caste preference");
     expect(text).toContain("Marks recruit in laid order");
-    expect(text).toContain("the mark keeps its original");
+    expect(text).toContain(`one command restarts the ${redesign.markLifetimeTicks / redesign.ticksPerSecond} s lifetime`);
     expect(text).toContain(`Whole land tile within ${redesign.sightTiles} tiles of any living ant of your colony`);
     expect(text).not.toContain("Word marks");
     expect(text).toContain("omit both coordinates for a current squad ant, never a future destination");

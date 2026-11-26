@@ -132,6 +132,8 @@ export interface Mark {
   tileY: number;
   readonly words: readonly Word[];
   readonly laidTick: number;
+  /** Last count-mark renewal, separate from the first laying used for recruitment and patrol order. */
+  renewedTick?: number;
   /** Squad ants following this mark under follow_trail now (marks steer no non-squad ants). */
   steering: number;
   /** A count mark's verb and count; absent on word marks. A count mark has no words. */

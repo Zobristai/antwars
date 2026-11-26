@@ -3,7 +3,7 @@ import { applyInput, defaultAllocator } from "../../src/sim/agents.js";
 import { resolveCombat } from "../../src/sim/combat.js";
 import { rulesConfig, SUB, type SimConfig } from "../../src/sim/config.js";
 import { buildGrid, cloneState } from "../../src/sim/map.js";
-import { claimCountMarks, expireMarks } from "../../src/sim/marks.js";
+import { claimCountMarks, countMarkPool, expireMarks } from "../../src/sim/marks.js";
 import type { Agent, Ant, ColonyId, Mark, SimEvent, SimState } from "../../src/sim/types.js";
 import { takeView } from "../../src/sim/view.js";
 import { addAnt, emptyMatch } from "./fixtures.js";
@@ -170,6 +170,51 @@ describe("count-mark combat totals", () => {
 });
 
 describe("count-mark lifetime and observe", () => {
+  it("renews a point mark in place for one command and expires it from the last accepted re-lay", () => {
+    const state = scene({ ...RULES, commandFloorTicks: 10 });
+    // The claimed worker has the lower id, so its hit wins equal-damage kill credit.
+    const worker = fighter(state, 0), agent = seat(state), own = lay(state, agent, 1);
+    claimCountMarks(state, state.tick);
+    expect(worker.claim).toBe(own.id);
+    const life = state.config.markLifetimeTicks, floor = state.config.commandFloorTicks;
+    const renewal = own.laidTick + life - 1;
+    state.tick = renewal;
+    lay(state, agent, 1);
+    expect(state.marks).toEqual([own]);
+    expect(agent.lastCommandTick).toBe(renewal);
+    expect(takeView(state, buildGrid(state), agent).marks[0]?.ticksLeft).toBe(life);
+    state.tick += floor - 1;
+    const refused = applyInput(state, { type: "count_mark", verb: "GATHER", agentId: agent.id, count: 1 }, state.tick, defaultAllocator, []);
+    expect(refused.error).toMatchObject({ code: "rate_limited", nextAllowedTick: renewal + floor });
+    expect(takeView(state, buildGrid(state), agent).marks[0]?.ticksLeft).toBe(life - floor + 1);
+    expireMarks(state, state.tick);
+    claimCountMarks(state, state.tick);
+    expect(worker.claim).toBe(own.id);
+    expect(countMarkPool(state, agent.colony, state.tick).claimedAnts).toBe(1);
+    state.tick++;
+    lay(state, agent, 1);
+    const deadline = state.tick + life;
+    state.tick = deadline - 1;
+    expireMarks(state, state.tick);
+    expect(takeView(state, buildGrid(state), agent).marks[0]?.ticksLeft).toBe(1);
+    fighter(state, 1, undefined, { hp: 1 });
+    fight(state);
+    expect(own.enemiesKilled).toBe(1);
+    expireMarks(state, deadline);
+    claimCountMarks(state, deadline);
+    expect(state.marks).toHaveLength(0);
+    expect(worker.claim).toBeUndefined();
+  });
+
+  it("keeps fixed expiry for recorded rules without renewals", () => {
+    const state = scene(RULES_27), agent = seat(state), own = lay(state, agent, 1);
+    state.tick++;
+    lay(state, agent, 1);
+    expect(own).not.toHaveProperty("renewedTick");
+    expireMarks(state, own.laidTick + state.config.markLifetimeTicks);
+    expect(state.marks).toHaveLength(0);
+  });
+
   it("initializes at laying and retains totals across count/caste adjustments while releasing excluded ants", () => {
     const state = scene(), agent = seat(state);
     const worker = addAnt(state, 0, 30, 21, { caste: "worker" });
