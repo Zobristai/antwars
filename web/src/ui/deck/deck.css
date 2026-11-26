@@ -1180,6 +1180,9 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 /* At 320px with doubled text there are still 10em. Below that, give whole words
    and controls their own lines rather than squeezing them into that layout. */
 @media (320px <= width < 10em) {
+  .score-band .d1-team-members, .score-band .d1-team-player > .d1-tags, .score-band .sb-detail-stat { max-width: 100%; flex-wrap: wrap; }
+  .score-band .d1-member { flex: none; margin: 0; } /* Include the whole hit target when wrapping seats. */
+  .score-band .d1-team > .d1-timeline .sb-history-head { flex-wrap: wrap; }
   .score-band .d1-tl-none { font-size: var(--aw-text-meta); white-space: normal; overflow-wrap: normal; }
   /* Without a match the legend is a phrase, not the single LIVE or RECORDING mode. */
   .score-band .d1-dot[hidden] + .d1-mode { max-width: 100%; white-space: normal; }
