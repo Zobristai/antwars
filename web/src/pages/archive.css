@@ -314,11 +314,8 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
 .d1p-date { display: block; color: var(--aw-ink); white-space: nowrap; }
 .d1p-time { display: block; font-size: 12px; line-height: 17px; color: var(--aw-ink-3); white-space: nowrap; }
 .d1p-result { font-weight: 600; color: var(--aw-ink-bright); }
-/* A seat a line: its name, its badges and, for alike seats, how many, held on one line. The badges and the count are never
-   cut, shrunk or wrapped away from the name; a name too long for its column ends in an ellipsis on that line, its whole
-   text kept as its title and for screen readers (matches.ts seatBlock). 18 px
-   lines put a cell's second seat on the baseline of the start's time. */
-.d1p-model { display: flex; align-items: baseline; font-size: 12px; line-height: 18px; color: var(--aw-ink); }
+/* Keep the name whole on one line; an enlarged phone card puts the badges on the line below. */
+.d1p-model { display: flex; align-items: baseline; font-size: var(--aw-text-line); line-height: var(--aw-lh-line); color: var(--aw-ink); }
 .d1p-model > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A player line's name: the builder's username, bold, then its model; one unit, so the ellipsis cuts the model first. */
 .d1p-user { font-weight: 600; color: var(--aw-ink-bright); }
@@ -334,12 +331,10 @@ button.d1p-elo-badge { position: relative; margin: 0; background: none; font-fam
    wider one is clipped, its whole text its title and read in full (matches.ts seatBlock). */
 .d1p-model > .d1p-tags { max-width: 12em; overflow: hidden; }
 .d1p-count { margin-left: 6px; color: var(--aw-ink-3); white-space: nowrap; }
-/* The Matches tables' one badge style, so each colony's player stays on one line: level, rating and result badges alike
-   in 10 px caps, tight tracking and 2 px padding, which keeps the widest real line (a retired model's name, level, Fast,
-   RETIRED and rating) on one line in a Live now or Waiting cell; Fast is a bolt inside the level's badge (matches.ts
-   badgeGroup), drawn here so it does not depend on a typeface. The Leaderboard keeps its own badges. */
-.d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }
-.d1p-model .d1p-tag { line-height: 14px; }
+/* Match player badges share a compact size. Fast's bolt scales with its badge. */
+.d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: var(--aw-text-badge-sm); letter-spacing: 0.02em; }
+.d1p-model .d1p-tag { line-height: var(--aw-lh-badge-sm); }
+.d1p-model .d1p-bolt { width: 0.6em; height: 0.9em; }
 .d1p-model .d1p-tag + .d1p-tag { margin-left: var(--d1p-cell-gap); }
 .d1p-tag.is-fast { padding-right: 2px; }
 .d1p-bolt { display: inline-block; width: 6px; height: 9px; margin-left: 2px; background: currentColor; vertical-align: -1px; clip-path: polygon(70% 0, 0 58%, 42% 58%, 30% 100%, 100% 40%, 58% 40%); }
@@ -396,15 +391,28 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-match-rows > li > .d1p-row-pill { grid-row: 1 / span 2; align-self: center; margin-top: 0; }
 .d1p-match-rows .d1p-kicker { margin-right: 3px; }
 .d1p-match-rows .d1p-colonies { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; align-items: baseline; margin: 4px 0 0; }
-.d1p-colonies > :is(dt, dd) { min-width: 0; margin: 0; padding: 0; font-size: 12px; line-height: 18px; }
+.d1p-colonies > :is(dt, dd) { min-width: 0; margin: 0; padding: 0; font-size: var(--aw-text-line); line-height: var(--aw-lh-line); }
 /* In a card under 28rem, a phone's, each colony's name keeps its seats' line: the short name ("Very Large", its " Colony"
    read by screen readers only) in the narrow caps label column the Recordings phone form uses, still in its colony's
    ink, so a seat line keeps 237 px of a 390 px phone, enough for every real player on one line. */
 .d1p-colony-tail { white-space: pre; }
 @container d1p-card (width < 28rem) {
   .d1p-match-rows .d1p-colonies { grid-template-columns: var(--d1p-label) minmax(0, 1fr); column-gap: var(--d1p-cell-gap); }
-  .d1p-match-rows .d1p-colonies > dt { font-size: 10px; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; }
+  .d1p-match-rows .d1p-colonies > dt { font-size: var(--aw-text-badge-sm); letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; }
   .d1p-match-rows .d1p-colonies .d1p-colony-tail { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
+}
+/* Use the row's full width for seats on small phones, as in Recordings. */
+@container d1p-card (width < 22rem) {
+  .d1p-match-rows .d1p-colonies { grid-template-columns: minmax(0, 1fr); }
+  .d1p-match-rows .d1p-colonies > dt { line-height: var(--aw-lh-meta); }
+  .d1p-match-rows .d1p-colonies > dd + dt { margin-top: var(--aw-space-1); }
+}
+/* With enlarged phone text the badges follow the name on a new line; Watch comes last. */
+@container d1p-card (width < 15rem) {
+  .d1p-match-rows > li { grid-template-columns: minmax(0, 1fr); }
+  .d1p-match-rows > li > .d1p-row-pill { grid-column: 1; grid-row: auto; justify-self: end; margin-top: var(--aw-space-2); }
+  .d1p-match-rows .d1p-model { flex-wrap: wrap; }
+  .d1p-match-rows .d1p-model > .d1p-name { flex-basis: 100%; }
 }
 .d1p-rows-head { display: flex; align-items: center; min-height: 36px; padding: 0 var(--d1p-inset); border-top: 1px solid var(--aw-line); }
 .d1p-line { grid-column: 1; font-size: 13px; line-height: 19px; color: var(--aw-ink-2); }
@@ -416,6 +424,13 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-line.is-model { font-size: 12px; color: var(--aw-ink); }
 .d1p-line > .d1p-stamp { margin-top: 4px; }
 .d1p-match-rows .is-lead > .d1p-stamp { margin-top: 0; vertical-align: 1px; }
+.d1p-match :is(th, td) { font-size: var(--aw-text-body); line-height: var(--aw-lh-body); }
+.d1p-match thead th { font-size: var(--aw-text-label); line-height: var(--aw-lh-badge-sm); }
+.d1p-match .d1p-time { font-size: var(--aw-text-meta); line-height: var(--aw-lh-meta); }
+:is(.d1p-match, .d1p-match-rows) .d1p-type { font-size: var(--aw-text-badge); line-height: var(--aw-lh-badge); }
+:is(.d1p-match, .d1p-match-rows) .d1p-stamp { font-size: var(--aw-text-badge); line-height: var(--aw-lh-badge-sm); }
+.d1p-match-rows .d1p-line { font-size: var(--aw-text-body); line-height: var(--aw-lh-body); }
+.d1p-match-rows .d1p-line.is-lead { font-size: var(--aw-text-lead); }
 /* The Leaderboard's stacked rows: rank, name and rating on the first line, under a head that names them once; rated matches,
    Record and Last 5 labelled under the name, wrapping as the width needs. */
 .d1p-rows-head.d1p-lb-head, .d1p-rows.d1p-lb-rows > li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 8px; }
@@ -565,7 +580,7 @@ td.c-model > .d1p-colony { display: block; }
    cell is a 28 px band. */
 /* The phone forms' colony label column (the stacked match rows') and the one cell gap of Live now and Waiting: every
    colony cell's inner padding on each side there, and the space between the parts of its player lines. */
-.d1p-card { --d1p-label: 80px; --d1p-cell-gap: 7px; }
+.d1p-card { --d1p-label: 5rem; --d1p-cell-gap: 7px; }
 .d1p-rec-table {
   --rec-inset: var(--d1p-inset); --rec-gap: var(--aw-space-2); --rec-pad: var(--aw-space-2);
   display: grid; grid-template-columns: max-content max-content repeat(4, minmax(0, 1fr)) max-content; column-gap: var(--rec-gap);

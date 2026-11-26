@@ -724,7 +724,7 @@ describe("a model label with nothing after its provider prefix", () => {
     expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-user \{ font-weight: var\(--aw-bold\); color: inherit; \}/);
     expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-mname \{ color: inherit; \}/);
     // Live now and Waiting keep their own badges.
-    expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
+    expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: var(--aw-text-badge-sm); letter-spacing: 0.02em; }");
   });
 
   it("orders a Recordings line name, level, seat count, rating, and shows a parked handle's retirement in its name only", () => {

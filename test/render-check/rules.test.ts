@@ -59,6 +59,31 @@ describe("render check rules", () => {
     expect(rules(await judged(gauge(160), 640, 32))).toContain("comparison-figures"); // exclusive 20em boundary
   });
 
+  const matchRow = (line: string, width: number) => `<div class="d1p-card" style="width:${width}px">
+    <ul class="d1p-match-rows" style="padding:0;list-style:none"><li>${line}</li></ul></div>`;
+
+  it("only breaks a narrow match start between its whole date and time", async () => {
+    const start = (time: string) => `<p class="d1p-line"><span>18 Nov 2026 ·</span> <span style="white-space:nowrap">${time}</span></p>`;
+    expect(rules(await judged(matchRow(start("09:50 UTC"), 150), 320, 32))).not.toContain("wrap");
+    expect(rules(await judged(matchRow(start("09:50<br>UTC"), 150), 320, 32))).toContain("wrap");
+    expect(rules(await judged(matchRow(start("09:50 UTC"), 150), 320, 16))).toContain("wrap");
+  });
+
+  it("only moves a whole status stamp under the match type when the pair needs the space", async () => {
+    const lead = (stamp: string, forceBreak = "") => `<p class="d1p-line is-lead"><span class="d1p-type" style="display:inline-block">Ranked · 1v1</span>${forceBreak}<span class="d1p-stamp" style="display:inline-block">${stamp}</span></p>`;
+    expect(rules(await judged(matchRow(lead("2 OF 4 SEATS"), 180), 320, 32))).not.toContain("wrap");
+    expect(rules(await judged(matchRow(lead("2 OF<br>4 SEATS"), 180), 320, 32))).toContain("wrap");
+    expect(rules(await judged(matchRow(lead("LIVE", "<br>"), 280), 320, 32))).toContain("wrap");
+  });
+
+  it("puts all player badges on one line below the whole name in an enlarged phone card", async () => {
+    const player = (basis: string, level: string) => `<dl><dd><span class="d1p-model" style="display:flex;flex-wrap:wrap"><span class="d1p-name" style="flex-basis:${basis}">Model</span><span class="d1p-tags">${level}</span><button>1500</button></span></dd></dl>`;
+    expect(rules(await judged(matchRow(player("100%", "HIGH"), 300), 320, 32))).not.toContain("wrap");
+    expect(rules(await judged(matchRow(player("auto", "HIGH"), 300), 320, 32))).toContain("wrap");
+    expect(rules(await judged(matchRow(player("100%", "HIGH<br>FAST"), 300), 320, 32))).toContain("wrap");
+    expect(rules(await judged(matchRow(player("auto", "HIGH"), 300), 320, 16))).not.toContain("wrap");
+  });
+
   it("fails a one-line item that wraps, but not prose", async () => {
     expect(rules(await judged('<div style="width:100px"><span>Riverbank GPT-6.1 Sol</span></div>'))).toContain("wrap");
     expect(rules(await judged('<div style="width:300px"><span>Riverbank GPT-6.1 Sol</span></div>'))).not.toContain("wrap");
