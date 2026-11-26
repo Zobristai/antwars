@@ -283,5 +283,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   // Repinned for the observe description's sentence on each flyer's state in cells; without it the list hashes to f2e7207b….
   // Repinned for the flyer clause in the observe cell legend and the flyer's HP in the set_brood schema; without them it
   // hashes to 58b57bf9….
+  expect(sha(JSON.stringify(tools))).toBe("71ff27d47f90cf4cbe1233094f19c0796b7072665eaacff5de353b37124a9456");
+  // Remove only the free-ant sentence to compare the rest of the tool list byte for byte.
+  const observe = tools.find(tool => tool.name === "observe")!;
+  const pool = " freeAntsByCaste counts your colony's available workers, soldiers and flyers at view.tick; each count mark in view.myMarks shows count requested and claimed now.";
+  expect(observe.description!.split(pool)).toHaveLength(2);
+  observe.description = observe.description!.replace(pool, "");
   expect(sha(JSON.stringify(tools))).toBe("b3ececfc7f7a9ec4cc061947506b6134825e350b8c5789f0e1f901d9a3dfc09d");
 });
