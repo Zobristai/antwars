@@ -44,6 +44,7 @@
   --aw-text-display: 1.875rem;   /* 30: compact winner */
   --aw-text-display-lg: 3rem;    /* 48: compact outcome */
   --aw-lh-kicker: 0.875rem;                                   /* 14: compact 11 px label */
+  --aw-text-prose-xs: 0.9375rem; --aw-lh-prose-xs: 1.5rem;    /* 15 / 24 */
   --aw-text-prose-sm: 1rem;     --aw-lh-prose-sm: 1.5rem;     /* 16 / 24 */
   --aw-text-prose: 1.0625rem;   --aw-lh-prose: 1.625rem;      /* 17 / 26 */
   --aw-text-intro: 1.375rem;    --aw-lh-intro: 2rem;          /* 22 / 32 */

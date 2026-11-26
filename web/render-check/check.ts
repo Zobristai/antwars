@@ -24,7 +24,7 @@ import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { renderRules, ruleSections, rulesAssets } from "../rules.ts";
 import { RENDER_DELAY_MS, RESULT_BEAT_MS } from "../src/buffer.ts";
-import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
+import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, landingUrlFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
 import { HUD_SAMPLE_CYCLES, measureHudProbe, type HudMeasurement, type HudOnScreen, type HudProbe, type HudTriplet } from "./hud-pixels.ts";
 import { heldFrom, judge, publish, readHeld, type Render } from "./report.ts";
 import { RULE_LIMITS, judgePage, type Box, type Finding, type PageJudgement } from "./rules.ts";
@@ -702,6 +702,7 @@ async function renderAll(o: Options): Promise<Render[]> {
           const evidence: RenderEvidence = { comparisons: [] };
           let judged: PageJudgement = { failures: [], tight: [], counted: { items: 0, grids: 0, tiles: 0 } };
           let fonts: Record<string, number> = {};
+          let urlFonts: Record<string, number> | undefined;
           let images: string[] = [];
           let failureImages: string[] = [];
           let failureInView: boolean[] = [];
@@ -781,6 +782,11 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
+            if (surface.id === "landing") {
+              const address = await landingUrlFonts(page);
+              urlFonts = address.fonts;
+              if (address.problem) invalid.push(address.problem);
+            }
             const limits = { ...RULE_LIMITS, panelOnly: surface.panelOnly, topBar: surface.topBar, resultDialog: surface.resultDialog, markList: !!surface.markList,
               comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.comparisonOnly, expectedKills: surface.expectedKills };
             judged = await page.evaluate(judgePage, limits);
@@ -821,7 +827,7 @@ async function renderAll(o: Options): Promise<Render[]> {
             invalidEvidence = await saveInvalidEvidence(o.out, `${surface.id}-${width}-${textSize}px-${typefaceSlug(typeface)}`, invalid, evidence);
           }
           console.log(`${surface.id} ${width} ${textSize}px ${typeface}: ${judged.failures.length} failures, ${judged.tight.length} tight, ${judged.counted.items} items, ${judged.counted.grids} grids${invalid.length ? `; INVALID: ${invalid.join("; ")}` : ""}`);
-          return { surface: surface.id, url: surface.url, width, textSize, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, invalid, ...(invalidEvidence ? { invalidEvidence } : {}), pageErrors, fixtures: [...served.fixturesUsed] };
+          return { surface: surface.id, url: surface.url, width, textSize, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, urlFonts, invalid, ...(invalidEvidence ? { invalidEvidence } : {}), pageErrors, fixtures: [...served.fixturesUsed] };
         } finally {
           await textSession?.detach().catch(() => undefined);
           await context.close();

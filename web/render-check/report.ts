@@ -24,6 +24,8 @@ export interface Render {
   /** For each failure, whether it is in view on its render: false only where no scrolling brings it into view. */
   failureInView?: boolean[];
   fonts: Record<string, number>;
+  /** Glyphs drawn for the landing MCP address only. */
+  urlFonts?: Record<string, number>;
   /** Problems that make this render itself invalid: wrong typeface, unanswered requests, a page that did not load. */
   invalid: string[];
   /** JSON metadata and comparison-image references, retained for an invalid render. */

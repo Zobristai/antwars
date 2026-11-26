@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
-import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
+import { TYPEFACES, applyTextSize, drawnFonts, landingUrlFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
 import { heldFrom, judge, markdown, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
@@ -32,6 +32,45 @@ async function judged(body: string, width = 400, textSize: TextSize = 16): Promi
 const rules = (j: PageJudgement): RuleId[] => j.failures.map(f => f.rule);
 
 describe("render check rules", () => {
+  it("keeps the agent label and each address part whole except at the enlarged phone breaks", async () => {
+    const row = (label: string, url: string) => `<section class="fg-agent"><p class="fg-agent-label">${label}</p>`
+      + `<code class="aw-byoa-url" style="display:block">${url}</code></section>`;
+    const label = "MCP address (Streamable HTTP)", url = "https://antwars.ai/mcp";
+    const legal = row("MCP address <br>(Streamable HTTP)", "https://<br>antwars<br>.ai<br>/mcp");
+    expect(rules(await judged(legal, 320, 32))).not.toContain("wrap");
+    expect(rules(await judged(legal, 390, 32))).not.toContain("wrap");
+    for (const bad of [row("MCP <br>address (Streamable HTTP)", url), row("MCP address (Streamable <br>HTTP)", url),
+      row(label, "https:/<br>/antwars.ai/mcp"), row(label, "https://ant<br>wars.ai/mcp"),
+      row(label, "https://antwars.<br>ai/mcp"), row(label, "https://antwars.ai/<br>mcp")]) {
+      expect(rules(await judged(bad, 320, 32))).toContain("wrap");
+    }
+    for (const [width, size] of [[320, 16], [1280, 32]] as const) {
+      const wraps = (await judged(legal, width, size)).failures.filter(f => f.rule === "wrap");
+      expect(wraps.some(f => f.element.endsWith("p.fg-agent-label"))).toBe(true);
+      expect(wraps.some(f => f.element.endsWith("code.aw-byoa-url"))).toBe(true);
+    }
+  });
+
+  it("allows Rules prose to break after an inter-word slash only on phones at doubled text", async () => {
+    const para = (words: string) => `<section class="d1p-rule"><p>Contact: ${words} tiles.</p></section>`;
+    const good = para("push/<br>reserved/<br>blocked");
+    expect(rules(await judged(good, 390, 32))).not.toContain("wrap");
+    expect(rules(await judged(good, 390, 16))).toContain("wrap");
+    expect(rules(await judged(good, 1280, 32))).toContain("wrap");
+    expect(rules(await judged(para("push/res<br>erved/blocked"), 320, 32))).toContain("wrap");
+    expect(rules(await judged(para("push<br>/reserved/blocked"), 320, 32))).toContain("wrap");
+  });
+
+  it("rejects a fallback that actually drew the address despite its declared mono font", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<div class="fg-agent"><code class="aw-byoa-url" style="font-family: &quot;IBM Plex Mono&quot;, monospace">https://antwars.ai/mcp</code></div>');
+      const { fonts, problem } = await landingUrlFonts(page);
+      expect(Object.values(fonts).some(n => n > 0)).toBe(true);
+      expect(problem).toContain("expected IBM Plex Mono");
+    } finally { await page.close(); }
+  });
+
   it.each(["Kills", "Territory", "Ants"])("rejects a misplaced outer swatch on %s", async title => {
     const figure = (last: boolean, misplaced: boolean) => `<span class="sb-figure" style="display:flex;align-items:center;gap:4px;${last ? "justify-content:flex-end" : ""}">`
       + (last && !misplaced ? '<span class="sb-value">61</span><i class="sb-swatch"></i>' : '<i class="sb-swatch"></i><span class="sb-value">96</span>') + "</span>";

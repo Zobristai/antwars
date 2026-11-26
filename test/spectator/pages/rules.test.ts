@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PUBLIC_CONFIG as TEMPLATE_PUBLIC_CONFIG } from "../../../src/sim/config.ts";
+import { PUBLIC_CONFIG as TEMPLATE_PUBLIC_CONFIG, rulesConfig } from "../../../src/sim/config.ts";
 import { playable } from "../../playable.ts";
 import { readRulesAssets } from "../../../src/spectator.ts";
 import { RULES_DATA_ID, RULES_ENTRY, renderRules, ruleSections, rulesAssets } from "../../../web/rules.ts";
@@ -50,12 +50,12 @@ describe("the Rules page's build assets", () => {
 });
 
 describe("the Rules browser entry", () => {
-  function served(withData: boolean) {
+  function served(withData: boolean, sections = ruleSections(PUBLIC_CONFIG)) {
     const port = dom();
     const page = port.doc.createElement("main") as unknown as ElementPort; port.body.append(page);
     if (withData) {
       const data = port.doc.createElement("script") as unknown as ElementPort;
-      data.id = RULES_DATA_ID; data.textContent = JSON.stringify({ sections: ruleSections(PUBLIC_CONFIG) });
+      data.id = RULES_DATA_ID; data.textContent = JSON.stringify({ sections });
       port.body.append(data);
     }
     mountRulesPage(port.doc);
@@ -77,6 +77,15 @@ describe("the Rules browser entry", () => {
     const split = host!.byClass("d1p-split")[0]!;
     expect(split.children.map(node => node.classes()[0])).toEqual(["d1p-index", "d1p-reading"]);
     expect(split.byClass("d1p-reading")[0]!.byClass("d1p-rules-card")).toHaveLength(2);
+  });
+  it("keeps the Contact paragraph verbatim and offers breaks after its inter-word slashes", () => {
+    const sections = ruleSections(playable(rulesConfig("redesign")));
+    const { host } = served(true, sections);
+    const battle = sections.find(section => section.title === "Battle balance")!;
+    const line = battle.lines.find(line => line.startsWith("Contact:"))!;
+    const contact = host!.querySelectorAll("p").find(p => p.textContent === line)!;
+    expect(contact.children.map(c => c.tag === "wbr" ? "|" : c.textContent).join(""))
+      .toBe(line.replaceAll("/", "/|"));
   });
   it("shows Accounts and keys under Reference, before Lobbies, in the index and the reading card", () => {
     const { host } = served(true);

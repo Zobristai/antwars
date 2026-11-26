@@ -1164,7 +1164,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 8023,
+   "extent": 28623,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -1219,7 +1219,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 8239,
+   "extent": 28095,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -1384,7 +1384,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 17383,
+   "extent": 68335,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -1439,7 +1439,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 17359,
+   "extent": 68143,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -1604,7 +1604,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 13927,
+   "extent": 53647,
    "why": "Already on main when this coverage was added to the render check."
   },
   {
@@ -1659,7 +1659,7 @@
    "rule": "grid-uneven",
    "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
    "text": "",
-   "extent": 13735,
+   "extent": 52927,
    "why": "Already on main when this coverage was added to the render check."
   },
   {

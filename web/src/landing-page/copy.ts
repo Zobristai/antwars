@@ -18,6 +18,7 @@ export const LANDING_COPY = {
   rankings: "Rankings",
   /** The hero's way in: the generic /?watch=1 entry. */
   watchAny: "Watch any match",
+  addressKeep: "(Streamable HTTP)",
   replay: PAGE_WORDS.replay,
   rules: "Rules",
   inspired: "Inspired by @LambethEthan",

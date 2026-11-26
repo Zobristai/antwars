@@ -308,7 +308,8 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   // Section titles on Rules and the Watch title (docs/design-system.md, Layout rules) stay on one line even if
   // a badge or a block inside the heading moves to a second line. Other headings may be running text.
   const ONE_LINE_TITLE = 'h3.d1p-rule-title, [data-page="watch"] h1.d1p-title';
-  const ONE_LINE = `label, th, button, [role=button], p.d1p-state, ${ONE_LINE_TITLE}`;
+  const labelSelector = ".fg-agent .fg-agent-label", urlSelector = ".fg-agent .aw-byoa-url";
+  const ONE_LINE = `${labelSelector}, ${urlSelector}, label, th, button, [role=button], p.d1p-state, ${ONE_LINE_TITLE}`;
   const painted = (c: string) => c !== "" && c !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(c);
   /**
    * A badge (a tag, chip or pill): an inline box drawn as a unit of its own, with its own background or border. It is
@@ -362,6 +363,35 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     for (let e: Element | null = n; e && e !== line; e = e.parentElement) if (outOfFlow(e)) return false;
     return true;
   };
+  // Judge the printed parts, not the markup offering the breaks. A planted break can be
+  // inside one text node (CSS) or between two nodes (a span or a forced <br>).
+  const partsStayWhole = (el: Element, parts: RegExp) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const nodes: { node: Text; start: number; end: number }[] = [];
+    let end = 0;
+    for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+      nodes.push({ node: n, start: end, end: end += n.length });
+    }
+    return [...(el.textContent ?? "").matchAll(parts)].every(({ 0: part, index }) => {
+      const rects: DOMRect[] = [];
+      for (const { node, start, end } of nodes) {
+        if (end <= index || start >= index + part.length) continue;
+        const r = document.createRange();
+        r.setStart(node, Math.max(index - start, 0));
+        r.setEnd(node, Math.min(index + part.length, end) - start);
+        rects.push(...[...r.getClientRects()].filter(box => box.width > 0));
+      }
+      return lineCount(rects) === 1;
+    });
+  };
+  const doubledPhone = matchMedia("(320px <= width <= 390px)").matches && parseFloat(style(document.documentElement).fontSize) === 32;
+  // A slash joins words at ordinary sizes. Only on doubled phones can a line end after it.
+  for (const p of scope.querySelectorAll(".d1p-rule p")) {
+    if (!shown(p) || !p.textContent?.includes("/")) continue;
+    const parts = doubledPhone ? /[\p{L}\p{N}]+\/?/gu : /[\p{L}\p{N}]+(?:\/[\p{L}\p{N}]+)*/gu;
+    if (!partsStayWhole(p, parts)) fail({ rule: "wrap", element: name(p), text: text(p),
+      measure: "break inside a Rules word", extent: lineCount(textRects(p).map(t => t.r)), box: box(p.getBoundingClientRect()) }, p);
+  }
   for (const el of items) {
     const rects = textRects(el).filter(t => inLine(t.el, el)).map(t => t.r);
     for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && inLine(m, el)) rects.push(r); }
@@ -376,7 +406,10 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     const stacked = narrowStandings && lines === 2 && group && player
       && group.getBoundingClientRect().top >= player.getBoundingClientRect().bottom - 0.5
       && [player, group].every(part => lineCount(textRects(part).map(t => t.r)) === 1);
-    if (lines > 1 && !prose && !stacked) {
+    const allowedAddressBreak = lines > 1 && doubledPhone && (
+      el.matches(labelSelector) && lines === 2 && partsStayWhole(el, /^[^(]+?(?=\s*\()|\(.*\)$/g)
+      || el.matches(urlSelector) && partsStayWhole(el, /^[a-z]+:\/\/|[./]?[^./]+|[./]/gi));
+    if (lines > 1 && !prose && !stacked && !allowedAddressBreak) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
       const cs = style(el);
