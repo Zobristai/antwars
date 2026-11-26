@@ -9,7 +9,7 @@ import { rules27Redesign } from "../rules27.ts";
 
 // Under rules 27, observe's status[1] names mark only where the mark tool
 // exists and names set_brood on the house-activity timer; count_mark's description and /rules state
-// that a re-lay keeps the original lifetime.
+// the lifetime rule for the match's config.
 const RULES_27: SimConfig = playable(rulesConfig("redesign"));
 const { wordMarksDisabled: _words, ...RULES_27_WORDS } = RULES_27;
 // A config without castes plays rules 27: a rules-28 config always has castes.
@@ -56,12 +56,15 @@ describe("rules-27 observe status names", () => {
 });
 
 describe("rules-27 re-lay lifetime text", () => {
-  it("count_mark's description and /rules state that a re-lay keeps the original lifetime", async () => {
-    expect(lineMarksEnabled(RULES_27)).toBe(true);
-    expect(relayLine(RULES_27)).toContain(`lowering it releases the farthest ants first. ${RELAY_LINE}`);
-    const { description } = await seated(RULES_27);
-    expect(description).toContain(`to change the count; claimed ants stay. ${RELAY_LINE}`);
-    for (const text of [description, relayLine(RULES_27)]) expect(text).not.toMatch(/\breplaces?\b/i);
+  it.each([
+    [RULES_27, RELAY_LINE.replace("keeps the lifetime from when the mark was first laid", "costs one command and restarts the mark's lifetime")],
+    [playable(rules27Redesign()), RELAY_LINE],
+  ] as const)("describes the configured re-lay lifetime in count_mark and /rules", async (config, text) => {
+    expect(lineMarksEnabled(config)).toBe(true);
+    expect(relayLine(config)).toContain(`lowering it releases the farthest ants first. ${text}`);
+    const { description } = await seated(config);
+    expect(description).toContain(`to change the count; claimed ants stay. ${text}`);
+    for (const text of [description, relayLine(config)]) expect(text).not.toMatch(/\breplaces?\b/i);
   });
 
 

@@ -392,10 +392,22 @@ export function markReachText(config: SimConfig): string {
     ? "Mark reach is the same as sight, measured from your colony's living ants when the mark is placed, so a tile or queen seen earlier may no longer be in reach." : "";
 }
 
+/** Shared by count_mark and the rules page, using the match's recorded rules. */
+export function relayLifetimeText(config: SimConfig): string {
+  const lifetime = config.countMarks?.renewOnRelay ? "costs one command and restarts the mark's lifetime" : "keeps the lifetime from when the mark was first laid";
+  return lineMarksEnabled(config)
+    ? ` A re-lay ${lifetime}; for LINE the two ends must match in the same order. A different verb, tile or ends makes a new mark with its own lifetime.`
+    : ` A re-lay ${lifetime}. A different verb or tile makes a new mark with its own lifetime.`;
+}
+
 function countMarkLines(config: SimConfig, s: (ticks: number) => number): string[] {
   const compact = usesCompactAgentText(config);
   const rules = config.countMarks;
   if (rules === undefined) return [];
+  const lifetime = `${s(config.markLifetimeTicks)} s`;
+  const relay = rules.renewOnRelay
+    ? `Re-laying costs one command and restarts the ${lifetime} lifetime.`
+    : `This does not renew the mark's lifetime of ${lifetime} from its original laying.`;
   const reach = markReachText(config) === "" ? "" : ` ${markReachText(config)}`;
   const placement = config.patrolLinkTiles !== undefined && rules.placement === "colony_sight"
     ? `Whole land tile within ${config.sightTiles} tiles of any living ant of your colony; omit both coordinates for a current squad ant, never a future destination.${config.wordMarksDisabled ? "" : " Word marks still require your own squad ant on the tile."}${reach}`
@@ -414,7 +426,7 @@ function countMarkLines(config: SimConfig, s: (ticks: number) => number): string
     ...(rules.casteSelection ? [`  ${countMarkCasteText(config, true)}`] : []),
     `  Jobs: ${countMarkJobText(config)}`,
     ...(config.patrolLinkTiles === undefined ? [] : [`  Patrol example: count_mark {"verb":"PATROL","count":6,"tileX":20,"tileY":20}; ${lineMarksEnabled(config) ? `${s(config.commandFloorTicks)} s later repeat at (${20 + config.patrolLinkTiles},20) if in sight.` : `after ${s(config.commandFloorTicks)} s repeat at (${20 + config.patrolLinkTiles},20) if in colony sight.`}`]),
-    compact ? `  ${lineMarksEnabled(config) ? `Same-verb/same-tile (LINE: same ends) re-lay changes count; claims stay, lowering releases farthest first; the mark keeps its original ${s(config.markLifetimeTicks)} s lifetime.` : `Same-verb/same-tile re-lay changes count; claims stay, lowering releases farthest first. This does not renew the mark's lifetime of ${s(config.markLifetimeTicks)} s from its original laying.`} Expiry frees ants; vacancies recruit eligible free ants again.${lineMarksEnabled(config) ? "" : ` ${config.wordMarksDisabled ? "Count marks" : "Count/word marks"} share the command allowance.`}` : `  Re-lay your same verb on the same tile${lineMarksEnabled(config) ? " (LINE: the same two ends)" : ""} to change the count: claimed ants stay; lowering it releases the farthest first. This does not renew the mark's lifetime of ${s(config.markLifetimeTicks)} s from its original laying. Expiry releases its ants; vacancies recruit eligible free ants again. ${config.wordMarksDisabled ? "Count marks" : "Count marks and word marks"} share the command allowance.`,
+    compact ? `  ${lineMarksEnabled(config) ? `Same-verb/same-tile (LINE: same ends) re-lay changes count; claims stay, lowering releases farthest first; ${rules.renewOnRelay ? `one command restarts the ${lifetime} lifetime` : `the mark keeps its original ${lifetime} lifetime`}.` : `Same-verb/same-tile re-lay changes count; claims stay, lowering releases farthest first. ${relay}`} Expiry frees ants; vacancies recruit eligible free ants again.${lineMarksEnabled(config) ? "" : ` ${config.wordMarksDisabled ? "Count marks" : "Count/word marks"} share the command allowance.`}` : `  Re-lay your same verb on the same tile${lineMarksEnabled(config) ? " (LINE: the same two ends)" : ""} to change the count: claimed ants stay; lowering it releases the farthest first. ${relay} Expiry releases its ants; vacancies recruit eligible free ants again. ${config.wordMarksDisabled ? "Count marks" : "Count marks and word marks"} share the command allowance.`,
     ...(rules.reportClaimAvailability ? [`  With no free ants an accepted count_mark says exactly "0 free ants now; this mark recruits as ants hatch or free up" and keeps recruiting until expiry.`] : []),
     `  ${spawnRemoveText(config)}`,
   ];
@@ -643,7 +655,7 @@ export function briefing(config: SimConfig, mcpConfig: McpConfig = DEFAULT_MCP_C
     ]) : [
       compact ? "1. observe food, marks and colony needs." : "1. observe -> your squad is near useful food; check your existing marks and the colony's needs before requesting ants.",
       concise ? `2. count_mark {"verb":"FORAGE","count":${config.squadSize}} -> eligible free ants answer, not your squad.` : compact ? `2. count_mark {"verb":"FORAGE","count":${config.squadSize}} -> no coordinates: current squad ant, never future destination. Eligible free ants answer, not your squad.` : `2. count_mark {"verb":"FORAGE","count":${config.squadSize}} -> omitted coordinates put the mark under a current squad ant, not at a future order destination; eligible free ants, not your squad, start answering it.`,
-      concise ? `3. observe myMarks: claimed (answered now) vs count (requested). After ${s(config.commandFloorTicks)} s adjust count/order.` : compact ? `3. observe myMarks: claimed (answered now) vs count (requested); short: no eligible free ants or prior teammate claims. After ${s(config.commandFloorTicks)} s adjust count/order; same-verb/same-tile re-lays keep expiry.` : `3. observe -> find the mark in myMarks; compare claimed (answered now) with count (requested). A shortage may mean no eligible free ants or an earlier teammate's claim. After ${s(config.commandFloorTicks)} s you may adjust the count or order your squad elsewhere; re-laying the same verb at the same tile does not reset expiry.`,
+      concise ? `3. observe myMarks: claimed (answered now) vs count (requested). After ${s(config.commandFloorTicks)} s adjust count/order.` : compact ? `3. observe myMarks: claimed (answered now) vs count (requested); short: no eligible free ants or prior teammate claims. After ${s(config.commandFloorTicks)} s adjust count/order; same-verb/same-tile re-lays ${config.countMarks.renewOnRelay ? "restart the lifetime" : "keep expiry"}.` : `3. observe -> find the mark in myMarks; compare claimed (answered now) with count (requested). A shortage may mean no eligible free ants or an earlier teammate's claim. After ${s(config.commandFloorTicks)} s you may adjust the count or order your squad elsewhere; re-laying the same verb at the same tile ${config.countMarks.renewOnRelay ? "restarts the lifetime" : "does not reset expiry"}.`,
       config.wordMarksDisabled
         ? concise ? `4. After the command interval, order {"kind":"hold","intent":"guard this position"} -> hold${lineMarksEnabled(config) ? "" : "; spectators-only intent"}.` : `4. After the command interval, order {"kind":"hold","intent":"guard this position"} -> your squad holds; only spectators see the intent.`
         : `4. After the command interval, order {"kind":"hold","mark":{"words":["ENEMY","QUEEN"]}} -> words is a JSON array; omitted tileX and tileY put the word mark under a current squad ant.`,

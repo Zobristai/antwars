@@ -3,7 +3,7 @@ import { tileCentre, withinTiles } from "./geometry.js";
 import { ARRIVE } from "./forage.js";
 import { gridScaleOf, physicalTileArea } from "./gridScale.js";
 import { activeQueens, hasAdjacentEnemy, nextQueenFoundingTick, queenFoundingCost, queensOf, tileIndex, type Grid } from "./map.js";
-import { trailMark } from "./marks.js";
+import { markTicksLeft, trailMark } from "./marks.js";
 import { patrolChains, type PatrolChains } from "./patrol.js";
 import { terrainView } from "./terrain.js";
 import { flyerState, type FlyerStateName } from "./flyers.js";
@@ -358,7 +358,7 @@ export function takeView(state: SimState, grid: Grid, agent: Agent, visibility =
       words: m.words,
       tileX: m.tileX,
       tileY: m.tileY,
-      ticksLeft: config.markLifetimeTicks - (state.tick - m.laidTick),
+      ticksLeft: markTicksLeft(config, m, state.tick),
       mine: m.agentId === agent.id,
       ...countOf(state, m, patrol),
     }));

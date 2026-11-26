@@ -45,6 +45,11 @@ export function parseWords(config: SimConfig, words: readonly string[]): Word[] 
   return words.slice() as Word[];
 }
 
+/** Ticks until expiry; ordering always uses the original laidTick. */
+export function markTicksLeft(config: SimConfig, mark: Mark, tick: number): number {
+  return config.markLifetimeTicks - (tick - (mark.renewedTick ?? mark.laidTick));
+}
+
 /**
  * Strength (permille) of a mark at an ant's tile: markStrengthPermille at the
  * mark, falling linearly to zero at markReachTiles and over the mark's life.
@@ -53,7 +58,7 @@ export function markStrength(config: SimConfig, mark: Mark, antTileX: number, an
   const reach = config.markReachTiles * SUB;
   const d = distance(tileCentre(antTileX), tileCentre(antTileY), tileCentre(mark.tileX), tileCentre(mark.tileY));
   const near = reach - d;
-  const life = config.markLifetimeTicks - (tick - mark.laidTick);
+  const life = markTicksLeft(config, mark, tick);
   if (near <= 0 || life <= 0) return 0;
   return idiv(config.markStrengthPermille * near * life, reach * config.markLifetimeTicks);
 }
@@ -102,7 +107,7 @@ export function trailMark(state: SimState, squad: readonly Ant[], tick: number):
 
 /** Remove marks whose lifetime is over by the next tick. */
 export function expireMarks(state: SimState, nextTick: number): void {
-  state.marks = state.marks.filter((mark) => nextTick - mark.laidTick < state.config.markLifetimeTicks);
+  state.marks = state.marks.filter((mark) => markTicksLeft(state.config, mark, nextTick) > 0);
 }
 
 /**
@@ -189,7 +194,7 @@ function centreDistance(ant: Ant, mark: Mark): number {
  * the free counts to castes it can recruit; claimedAnts remains the whole colony's. */
 export function countMarkPool(state: SimState, colony: ColonyId, tick: number, request?: Pick<Mark, "verb" | "caste">) {
   const liveMarks = new Set(state.marks.filter(mark => mark.colony === colony && mark.count !== undefined &&
-    tick - mark.laidTick < state.config.markLifetimeTicks).map(mark => mark.id));
+    markTicksLeft(state.config, mark, tick) > 0).map(mark => mark.id));
   const guardsExcluded = !localRulesSide(state, colony);
   const freeAntsByCaste = { worker: 0, soldier: 0, flyer: 0 };
   let claimedAnts = 0;

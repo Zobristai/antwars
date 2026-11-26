@@ -3,6 +3,7 @@ import { SUB, rulesConfig, speedPerTick, type SimConfig } from "../../src/sim/co
 import { newMatchConfig } from "../../src/sim/gridScale.js";
 import { tileCentre, type Vec } from "../../src/sim/geometry.js";
 import { lineSpots } from "../../src/sim/lineMarks.js";
+import { expireMarks } from "../../src/sim/marks.js";
 import { stateHash } from "../../src/sim/log.js";
 import { createMatch } from "../../src/sim/map.js";
 import { step } from "../../src/sim/step.js";
@@ -80,6 +81,24 @@ describe("rules 26 LINE count marks", () => {
       const ant = later.ants.find(item => item.id === old.id)!;
       expect(Math.hypot(ant.x - old.x, ant.y - old.y)).toBeLessThanOrEqual(SUB / 4);
     }
+  });
+
+  it("renews only the LINE with matching ordered ends and keeps its claimed ants", () => {
+    const initial = lineScene(3).state, first = initial.marks[0]!;
+    const ids = members(initial).map(ant => ant.id);
+    expect(ids).toHaveLength(3);
+    const renewed = lay(initial, { tileX: A.x, tileY: A.y, toTileX: B.x, toTileY: B.y, count: 3 });
+    expect(errorOf(renewed)).toBeNull();
+    expect(renewed.state.marks.map(m => m.id)).toEqual([first.id]);
+    expect(members(renewed.state).map(ant => ant.id)).toEqual(ids);
+    const reversed = lay(renewed.state, { tileX: B.x, tileY: B.y, toTileX: A.x, toTileY: A.y, count: 3 });
+    expect(errorOf(reversed)).toBeNull();
+    const state = reversed.state, second = state.marks[1]!;
+    const life = state.config.markLifetimeTicks;
+    expireMarks(state, first.laidTick + life);
+    expect(state.marks.map(m => m.id)).toEqual([first.id, second.id]);
+    expireMarks(state, initial.tick + life);
+    expect(state.marks.map(m => m.id)).toEqual([second.id]);
   });
 
   it("puts a lone ant at the midpoint", () => {

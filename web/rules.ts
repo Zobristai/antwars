@@ -1,7 +1,7 @@
 import { COUNT_MARK_MAX_COUNT_TEXT, firstHatchTicks, hatchIntervalOf, type QueenHpRules, type QueenRules, type SimConfig } from "../src/sim/config.js";
 import { countMarkVerbs, lineMarksEnabled } from "../src/sim/patrol.js";
 import { WORDS } from "../src/sim/types.js";
-import { frontlineFoodLines, flyerRulesLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, FOUR_COLONY_IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queensStrike, queenBroodText, queenSpawnOwnerText, markReachText } from "../src/mcp/briefing.js";
+import { frontlineFoodLines, flyerRulesLines, balanceRuleLines, commandLimitText, countMarkJobText, countMarkCasteText, WORD_MARK_ACTIONS, IDLE_COUNTDOWN_TEXT, FOUR_COLONY_IDLE_COUNTDOWN_TEXT, POST_MATCH_OBSERVE_TEXT, gridScaleForText, tileAreaUnit, statedBoardSize, boardSizeChoices, statedColonyCap, statedMatchTicks, queensStrike, queenBroodText, queenSpawnOwnerText, markReachText, relayLifetimeText } from "../src/mcp/briefing.js";
 import { DEFAULT_HOUSE_IDLE_SECONDS, DEFAULT_MCP_CONFIG } from "../src/mcp/config.js";
 import { createTerrain } from "../src/sim/terrain.js";
 import { mapLayoutDescription } from "../src/sim/mapShapes.js";
@@ -38,13 +38,6 @@ export const VISUAL_KEY = "Warm or cool = colony · colour and shape = agent · 
  */
 export function count(n: number, unit: string): string {
   return `${n} ${n === 1 ? unit : `${unit}s`}`;
-}
-
-/** Rules 27: a re-lay keeps the original lifetime; anything else is a new mark. Same words as count_mark's description. */
-function relayLifetimeText(config: SimConfig): string {
-  return lineMarksEnabled(config)
-    ? " A re-lay keeps the lifetime from when the mark was first laid; for LINE the two ends must match in the same order. A different verb, tile or ends makes a new mark with its own lifetime."
-    : " A re-lay keeps the lifetime from when the mark was first laid. A different verb or tile makes a new mark with its own lifetime.";
 }
 
 /**
