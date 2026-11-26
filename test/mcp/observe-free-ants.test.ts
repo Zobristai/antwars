@@ -4,7 +4,7 @@ import { applyInput, defaultAllocator } from "../../src/sim/agents.js";
 import { COLONY_NAMES, rulesConfig } from "../../src/sim/config.js";
 import type { SimInput } from "../../src/sim/types.js";
 import { addAnt, emptyMatch } from "../sim/fixtures.js";
-import { startHarness } from "./harness.js";
+import { startHarness, TEST_MCP_CONFIG } from "./harness.js";
 
 const rules = rulesConfig("redesign");
 const site = { tileX: 8, tileY: 24 };
@@ -64,5 +64,29 @@ it("reports only the seated colony's free ants and its own marks on successive o
     const opposite = await other.call("observe");
     expect(opposite.data.freeAntsByCaste).toEqual({ worker: 3, soldier: 0, flyer: 0 });
     expect(opposite.data.view.myMarks).toEqual([]);
+  } finally { await h.close(); }
+});
+
+it("withholds the free pool when rate limited and reports the current pool on the next admitted observe", async () => {
+  const config = { ...rules, squadSize: 0 };
+  const state = emptyMatch(0, config);
+  addAnt(state, 0, 8, 24, { caste: "worker" });
+  const h = await startHarness({ state, simConfig: config, mcpConfig: { ...TEST_MCP_CONFIG, callsPerSecond: 2 } });
+  try {
+    const seat = await h.connect();
+    await seat.call("join", { colony: COLONY_NAMES[0] });
+    const first = await seat.call("observe");
+    expect(first.data.freeAntsByCaste).toEqual({ worker: 1, soldier: 0, flyer: 0 });
+    addAnt(h.game.match!.state, 0, 8, 24, { caste: "soldier" });
+    const refused = await seat.call("observe");
+    expect(refused.isError).toBe(true);
+    expect(refused.data).toMatchObject({ error: { code: "call_rate" }, retryAfterMs: 1000,
+      tick: first.data.view.tick, nextCommandTick: first.data.view.nextCommandTick,
+      status: first.data.status, houseIdleSeconds: first.data.houseIdleSeconds });
+    expect(refused.data).not.toHaveProperty("freeAntsByCaste");
+    h.clock.now += refused.data.retryAfterMs;
+    const next = await seat.call("observe");
+    expect(next.isError, next.text).toBe(false);
+    expect(next.data.freeAntsByCaste).toEqual({ worker: 1, soldier: 1, flyer: 0 });
   } finally { await h.close(); }
 });
