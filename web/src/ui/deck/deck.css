@@ -1180,7 +1180,18 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 /* At 320px with doubled text there are still 10em. Below that, give whole words
    and controls their own lines rather than squeezing them into that layout. */
 @media (320px <= width < 10em) {
-  .score-band .d1-team-members, .score-band .d1-team-player > .d1-tags, .score-band .sb-detail-stat { max-width: 100%; flex-wrap: wrap; }
+  .score-band :is(.d1-team-members, .d1-tags, .d1-model-box, .d1-player-rating, .sb-detail-stat, .sb-hold-value, .d1-next, .sb-rules-key) { max-width: 100%; flex-wrap: wrap; }
+  .score-band .sb-hold-words { white-space: normal; }
+  .score-band :is(.d1-sel-title, .d1-who) > .d1-ast-mark { margin-inline: 0; }
+  /* Commands and recent marks carry a clock, glyphs, text and sometimes a status or action.
+     Keep the fixed items intact and give the description the full line. */
+  .score-band :is(.d1-tl-entry.d1-log, .d1-history-line) { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 3px; }
+  .score-band :is(.d1-tl-entry.d1-log, .d1-history-line) > * { flex: none; }
+  .score-band .d1-log > .d1-tl-what, .score-band .d1-history-line > .d1-said { flex-basis: 100%; overflow-wrap: normal; }
+  .score-band .d1-log > .d1-tl-what { order: 1; }
+  .score-band .d1-log > :is(.d1-when, .d1-log-who, .d1-log-icon):empty { display: none; }
+  .score-band .d1-log-mark > .d1-log-text { max-width: 100%; overflow-wrap: normal; }
+  .score-band .d1-selected :is(.d1-chip, .d1-gone) { max-width: 100%; white-space: normal; }
   .score-band .d1-member { flex: none; margin: 0; } /* Include the whole hit target when wrapping seats. */
   .score-band .d1-team > .d1-timeline .sb-history-head { flex-wrap: wrap; }
   .score-band .d1-tl-none { font-size: var(--aw-text-meta); white-space: normal; overflow-wrap: normal; }
