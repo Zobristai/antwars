@@ -17,7 +17,7 @@ export const typefaceSlug = (t: Typeface): string => t.toLowerCase().replace(/ /
 /** Browser default text sizes (px) judged on every standard surface: default (16 px) and doubled (32 px). */
 export const DEFAULT_TEXT_SIZE = 16 as const;
 export const TEXT_SIZES = [DEFAULT_TEXT_SIZE, 32] as const;
-export type TextSize = (typeof TEXT_SIZES)[number];
+export type TextSize = (typeof TEXT_SIZES)[number] | 40 | 64;
 
 const ROBOTO_DIR = resolve(import.meta.dirname, "../../node_modules/@expo-google-fonts/roboto");
 const LIBERATION_DIRS = ["/usr/share/fonts/truetype/liberation", "/usr/share/fonts/truetype/liberation2", "/usr/share/fonts/liberation"];

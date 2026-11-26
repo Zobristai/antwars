@@ -65,6 +65,22 @@ describe("render check rules", () => {
     expect(rules(await judged('<p style="width:100px">A sentence that wraps over lines.</p>'))).not.toContain("wrap");
   });
 
+  it.each([40, 64] as const)("fails a planted replay-panel overflow at 320 px and %i px browser text", async size => {
+    const page = await browser.newPage(viewport(320));
+    try {
+      await applyTextSize(page, size);
+      await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}.d1-below{overflow:auto} label, output{display:block;font-size:.75rem}</style>'
+        + '<div class="d1-below"><div class="aw-replay-controls"><label>Speed <select><option>1×</option></select></label><output class="aw-replay-time">15:00 / 15:00</output></div></div>');
+      expect(await rootFontSize(page)).toBe(size);
+      const check = () => page.evaluate(judgePage, { ...RULE_LIMITS, panelOnly: true });
+      expect((await check()).failures).toEqual([]);
+      await page.addStyleTag({ content: ".aw-replay-controls { width:330px }" });
+      expect((await check()).failures).toContainEqual(expect.objectContaining({ rule: "sideways", extent: 10 }));
+      await page.addStyleTag({ content: ".aw-replay-controls { width:auto; display:grid } .aw-replay-controls > * { grid-area:1 / 1 } select { font:inherit }" });
+      expect(rules(await check())).toContain("overlap");
+    } finally { await page.close(); }
+  });
+
   it("rejects transport overflow outside the open mark list even when the page itself fits", async () => {
     const page = await browser.newPage({ ...viewport(320) });
     try {
@@ -596,6 +612,8 @@ describe("render check widths and doubled text", () => {
       ["comparison-leading-total-fixture.json", [320], [32], ["1,000", "0", "0", "0"]],
       ["comparison-thousands-fixture.json", [320], [32], Array(4).fill("1,000")],
     ]);
+    expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.panelOnly, s.widths, s.textSizes]))
+      .toEqual([[true, [320], [40, 64]]]);
     const markLists = SURFACES.filter(surface => surface.markList);
     expect(markLists.map(({ markList, widths, textSizes, url }) => [markList, widths, textSizes, new URL(url, "http://localhost").searchParams.get("board")]))
       .toEqual([["3d", [320, 390], [32], null], ["2d", [320, 390], [32], "2d"]]);

@@ -120,3 +120,10 @@
   .d1 .aw-mark-row .aw-mark-separator { display: none; }
   .d1 .aw-mark-row .aw-mark-colony { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* The grouping code reads a CSS pixel distance. Resolve the enlarged badge width
+   and its focus ring to pixels before it compares the marks' centres. */
+@property --aw-mark-gap { syntax: '<length>'; inherits: true; initial-value: 18px; }
+@media (320px <= width < 10em) {
+  .d1 .aw-replay-controls { --aw-mark-gap: calc(1.625rem + 8px); }
+}

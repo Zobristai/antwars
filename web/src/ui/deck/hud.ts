@@ -224,6 +224,30 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   };
   fitOffer();
   if (compactOffer) listen(compactOffer, "change", fitOffer);
+  // Keep the attribution unchanged unless the handle alone needs the whole footer line.
+  const largePhoneText = mq("(320px <= width < 10em)");
+  const handle = h(doc, "span", "d1-credit-handle", "@LambethEthan");
+  const fitCredit = () => {
+    if (!largePhoneText?.matches) {
+      if (handle.parentElement) inspired.textContent = "Inspired by @LambethEthan";
+      return;
+    }
+    if (!handle.parentElement) inspired.replaceChildren("Inspired by ", handle);
+    handle.style.removeProperty("font-size");
+    const padding = win.getComputedStyle(foot);
+    const room = foot.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight);
+    if (room <= 0 || handle.getBoundingClientRect().width <= room) return;
+    // The two fonts hint at different widths. Choose the largest fitting quarter-pixel in the drawn font.
+    let low = 0, high = Math.ceil(parseFloat(win.getComputedStyle(handle).fontSize) * 4);
+    while (high - low > 1) {
+      const mid = Math.floor((low + high) / 2);
+      handle.style.fontSize = `${mid / 4}px`;
+      if (handle.getBoundingClientRect().width <= room) low = mid; else high = mid;
+    }
+    handle.style.fontSize = `${low / 4}px`;
+  };
+  fitCredit();
+  if (largePhoneText) listen(largePhoneText, "change", fitCredit);
   const wide = mq(BUTTON_IN_BAR);
   const placeButton = () => {
     const inBar = wide === null || wide.matches;
@@ -415,8 +439,14 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
       const withoutWaiting = other.length ? `\u00a0· ${other.join(" · ")}` : "";
       const line = { legend: legendEl, mode, rest, metadata, back, wait, full, withoutWaiting, noFacts };
       fitLegend = () => fitLegendLine(line);
-      fitLegend();
+    } else {
+      // A recording can have no trailing connection words: the dot and mode alone can overflow.
+      fitLegend = () => {
+        legendEl.classList.remove("is-compact");
+        if (largePhoneText?.matches && legendEl.scrollWidth > legendEl.clientWidth) legendEl.classList.add("is-compact");
+      };
     }
+    fitLegend();
     setHidden(back, l.back === null);
     if (l.back) { setText(back, l.back.text); setAttr(back, "href", keep(l.back.href, search())); }
   };
@@ -485,6 +515,7 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
   let footerH = -1;
   let laneH = -1;
   const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(entries => {
+    if (entries.some(e => e.target === foot)) fitCredit();
     if (entries.some(e => e.target === frameEl || e.target === mode)) fitLegend?.();
     const next = legendEl.offsetHeight;
     const nextDeck = deckEl.offsetHeight, nextMetadata = metadata.offsetHeight, nextFooter = foot.offsetHeight, nextLane = lane.offsetHeight;

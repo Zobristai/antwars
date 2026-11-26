@@ -1176,3 +1176,23 @@ button.d1-member:focus-visible { outline: 2px solid var(--aw-ink-bright); outlin
 @media (min-width: 320px) and (max-width: 11.99em) {
   .score-band .d1-econ > :is(.sb-next, .sb-queen-kills), .score-band .d1-econ.has-flyers > :is(.sb-next, .sb-queen-kills) { grid-column: 1 / -1; }
 }
+
+/* At 320px with doubled text there are still 10em. Below that, give whole words
+   and controls their own lines rather than squeezing them into that layout. */
+@media (320px <= width < 10em) {
+  /* Without a match the legend is a phrase, not the single LIVE or RECORDING mode. */
+  .score-band .d1-dot[hidden] + .d1-mode { max-width: 100%; white-space: normal; }
+  .score-band .d1-econ > .d1-cell, .score-band .d1-econ.has-flyers > .d1-cell { grid-column: 1 / -1; }
+  .score-band .sb-queens, .score-band .d1-lamps { flex-wrap: wrap; }
+  .score-band .sb-queen-value { flex-basis: 100%; }
+  .score-band :is(.d1-ml, .sb-meta-item, .sb-holder, .sb-rule, .sb-unavailable, .d1-foot-credit, .d1-offer) { white-space: normal; }
+  .score-band .d1-offer { text-align: center; }
+  .score-band .d1-foot > .d2-link { display: block; align-content: center; max-width: 100%; }
+  .score-band .d1-credit-handle { display: inline-block; white-space: nowrap; }
+  .d1 .aw-replay-controls {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(calc(1.125rem + 8px), var(--d1-tap));
+    row-gap: var(--aw-space-1); padding-block: var(--aw-space-1);
+  }
+  .d1 .aw-replay-controls > .aw-replay-time { grid-area: 2 / 1; white-space: normal; }
+  .d1 .aw-replay-controls > input[type="range"] { grid-row: 3; }
+}

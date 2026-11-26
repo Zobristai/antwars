@@ -837,6 +837,42 @@ describe("scrolling HUD fit evidence", () => {
       }
     } finally { await browser.close(); await server.close(); }
   }, 30_000);
+  it("caps only the attribution handle, and only where it would outgrow the panel", async () => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/footer-test") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end('<meta name="viewport" content="width=device-width, initial-scale=1"><main class="aw-hud"></main>');
+    });
+    await server.listen();
+    const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+      args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor("Liberation Sans") } });
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      const page = await browser.newPage({ viewport: { width: 320, height: 844 }, deviceScaleFactor: 2, isMobile: true });
+      await applyTextSize(page, 64);
+      await page.goto(`http://127.0.0.1:${addr.port}/footer-test`);
+      await page.addScriptTag({ type: "module", content: `
+        import '/web/src/ui/ui.css'; import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+        mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, actions: {} });
+      ` });
+      const credit = page.getByRole("link", { name: "Inspired by @LambethEthan" });
+      // Mounting the module is asynchronous; measure resizing only after the HUD is on the page.
+      await credit.waitFor();
+      for (const width of [320, 390, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await expect.poll(() => credit.evaluate((a, width) => {
+          const foot = a.closest("footer")!, span = a.querySelector<HTMLElement>(".d1-credit-handle")!;
+          const css = getComputedStyle(foot), room = foot.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+          const range = new Range(); range.selectNodeContents(span);
+          const run = range.getBoundingClientRect(), px = parseFloat(getComputedStyle(span).fontSize);
+          return { word: span.textContent, lines: range.getClientRects().length, prefixSize: getComputedStyle(a).fontSize,
+            fits: run.width <= room, fitted: width === 390 ? px === 48 : px < 48 && run.width > room - 3 };
+        }, width), { message: `credit at ${width}px` }).toEqual({ word: "@LambethEthan", lines: 1, prefixSize: "48px", fits: true, fitted: true });
+      }
+    } finally { await browser.close(); await server.close(); }
+  });
   it("keeps the enlarged footer attribution on one line on a high-density 320 px phone", async () => {
     const css = ["design-system/tokens.css", "ui/ui.css", "ui/deck/deck.css"].map(path =>
       readFileSync(new URL(`../../../web/src/${path}`, import.meta.url), "utf8")).join("\n");

@@ -34,7 +34,7 @@
  */
 
 export const RULE_IDS = ["wrap", "clipped", "cut", "offscreen", "sideways", "page-wider", "row-uneven", "grid-uneven",
-  "tile-empty", "part-uneven", "page-empty", "column-start", "comparison-figures", "tight"] as const;
+  "tile-empty", "part-uneven", "page-empty", "column-start", "comparison-figures", "overlap", "tight"] as const;
 export type RuleId = (typeof RULE_IDS)[number];
 
 export const RULE_LIMITS = {
@@ -61,7 +61,7 @@ export interface Finding {
 }
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
-export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
+export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; panelOnly?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
   const vw = document.documentElement.clientWidth;
   const failures: Finding[] = [];
   const tight: Finding[] = [];
@@ -159,6 +159,29 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   };
   // Running text, which may wrap. Labels, buttons and table headings are not here: they are one-line items.
   const PROSE = "h1, h2, h3, h4, h5, h6, p, blockquote, figcaption, dd, pre, summary";
+  // At above-double text, whole labels can use as many rows as needed. Judge the
+  // scroller and the parts that must never occupy each other's space, not one-line fit.
+  if (limits.panelOnly) {
+    const panel = document.querySelector<HTMLElement>(".d1-below");
+    if (!panel || !shown(panel)) throw new Error("Replay panel not shown");
+    const area = panel.getBoundingClientRect();
+    const over = Math.max(panel.scrollWidth - panel.clientWidth, area.right - vw, -area.left);
+    if (over > 0) fail({ rule: "sideways", element: name(panel), text: "Replay panel",
+      measure: `panel ${panel.scrollWidth}px inside ${panel.clientWidth}px, viewport ${vw}px`, extent: over, box: box(area) }, panel);
+    // Stat labels can spill beyond their grid boxes. Measure the painted lines;
+    // for controls, lamps and counted marks their whole boxes have to fit.
+    const parts = [...panel.querySelectorAll(".d1-cell > .d1-ml, .sb-queen-value > .d1-mv, .aw-replay-time, .aw-replay-controls label, .aw-replay-controls select, .d1-lamp, .aw-mark-count")]
+      .filter(shown).flatMap(el => el.matches("select, .d1-lamp, .aw-mark-count") ? [{ el, r: el.getBoundingClientRect() }]
+        : textRects(el).filter(part => !part.el.closest("select")));
+    for (const [i, a] of parts.entries()) for (const b of parts.slice(0, i)) {
+      if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      const x = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+      const y = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+      if (x > 0 && y > 0) fail({ rule: "overlap", element: name(a.el), text: text(a.el),
+        measure: `overlaps ${name(b.el)} by ${x.toFixed(1)} × ${y.toFixed(1)}px`, extent: Math.min(x, y), box: box(a.r) }, a.el);
+    }
+    return { failures, tight, counted: { items: parts.length, grids: 0, tiles: 0 } };
+  }
   // For the finished replay the open native modal, not the inert HUD behind it, is the surface.
   const scope = limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
     : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])")
