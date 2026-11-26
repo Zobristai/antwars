@@ -32,13 +32,15 @@ async function judged(body: string, width = 400, textSize: TextSize = 16): Promi
 const rules = (j: PageJudgement): RuleId[] => j.failures.map(f => f.rule);
 
 describe("render check rules", () => {
-  it("keeps the agent label and each address part whole except at the enlarged phone breaks", async () => {
-    const row = (label: string, url: string) => `<section class="fg-agent"><p class="fg-agent-label">${label}</p>`
-      + `<code class="aw-byoa-url" style="display:block">${url}</code></section>`;
+  it("separates the enlarged phone label rule from the address’s width-based breaks", async () => {
+    const row = (label: string, url: string, room = 120) => `<section class="fg-agent"><p class="fg-agent-label">${label}</p>`
+      + `<code class="aw-byoa-url" style="display:block;width:${room}px">${url}</code></section>`;
     const label = "MCP address (Streamable HTTP)", url = "https://antwars.ai/mcp";
     const legal = row("MCP address <br>(Streamable HTTP)", "https://<br>antwars<br>.ai<br>/mcp");
     expect(rules(await judged(legal, 320, 32))).not.toContain("wrap");
     for (const width of [390, 400, 639]) expect(rules(await judged(legal, width, 32))).not.toContain("wrap");
+    // A planted separator break in an address that fits a fresh line is still a failure, even on a doubled phone.
+    for (const size of [16, 32] as const) expect(rules(await judged(row(label, "https://antwars.ai<br>/mcp", 300), 320, size))).toContain("wrap");
     for (const bad of [row("MCP <br>address (Streamable HTTP)", url), row("MCP address (Streamable <br>HTTP)", url),
       row(label, "https:/<br>/antwars.ai/mcp"), row(label, "https://ant<br>wars.ai/mcp"),
       row(label, "https://antwars.<br>ai/mcp"), row(label, "https://antwars.ai/<br>mcp")]) {
@@ -47,7 +49,7 @@ describe("render check rules", () => {
     for (const [width, size] of [[320, 16], [319, 32], [640, 32], [1280, 32]] as const) {
       const wraps = (await judged(legal, width, size)).failures.filter(f => f.rule === "wrap");
       expect(wraps.some(f => f.element.endsWith("p.fg-agent-label"))).toBe(true);
-      expect(wraps.some(f => f.element.endsWith("code.aw-byoa-url"))).toBe(true);
+      expect(wraps.some(f => f.element.endsWith("code.aw-byoa-url"))).toBe(false);
     }
   });
 
@@ -58,7 +60,9 @@ describe("render check rules", () => {
     expect(rules(await judged(address(20), 320, 32))).not.toContain("wrap"); // 21 glyphs into a 20-glyph row
     expect(rules(await judged(address(21), 320, 32))).toContain("wrap"); // fits exactly on a fresh line
     expect(rules(await judged(address(20, ".exa<br>mple/mcp"), 320, 32))).toContain("wrap"); // neighbouring part still fits
-    expect(rules(await judged(address(20), 640, 32))).toContain("wrap");
+    expect(rules(await judged(address(20), 640, 32))).not.toContain("wrap");
+    expect(rules(await judged(address(20), 320, 16))).not.toContain("wrap");
+    expect(rules(await judged(address(21), 320, 16))).toContain("wrap");
   });
 
   it("allows Rules prose to break after an inter-word slash only on phones at doubled text", async () => {

@@ -78,7 +78,10 @@
 /* Today's address row (agent.ts), restyled from the HUD's one-line form (ui.css .d2 .aw-byoa-*): it wraps, and Copy is the
    pages' grey pill. */
 .fg .fg-agent .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 35rem; margin: 0; }
-.fg .fg-agent .aw-byoa-url { flex: 1 1 17em; min-width: 0; min-height: var(--d2-tap); display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--aw-bg); box-shadow: inset 0 0 0 1px var(--aw-line); font: 500 var(--aw-text-body)/1.4 "Landing Plex Mono", var(--aw-mono); color: var(--aw-ink-bright); white-space: nowrap; }
+.fg .fg-agent .aw-byoa-url { flex: 1 1 17em; min-width: 0; min-height: var(--d2-tap); display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--aw-bg); box-shadow: inset 0 0 0 1px var(--aw-line); font: 500 var(--aw-text-body)/1.4 "Landing Plex Mono", var(--aw-mono); color: var(--aw-ink-bright); white-space: normal; }
+.fg-address-line { width: 100%; min-width: 0; }
+/* A segment that fits a fresh line stays whole. Only longer segments wrap within themselves. */
+.fg-address-part { display: inline-block; vertical-align: top; width: max-content; max-width: 100%; overflow-wrap: anywhere; }
 .fg .fg-agent .aw-byoa-copy { min-height: var(--d2-tap); padding: 0 16px; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font-size: var(--aw-text-body); font-weight: 600; }
 .fg .fg-agent .aw-byoa-copy:hover { background: var(--aw-raise-hover); }
 .fg .fg-agent .aw-byoa-note:empty { display: none; }
@@ -87,11 +90,7 @@
 
 .fg-foot > .d2-credit { font-size: inherit; }
 @media (320px <= width < 20em) {
-  .fg-agent-label, .fg .fg-agent .aw-byoa-url { white-space: normal; }
-  .fg-address-line { width: 100%; min-width: 0; }
-  /* Size each segment against the whole line, not the space left by the previous segment.
-     Only one that cannot fit on a fresh line needs to wrap inside itself. */
-  .fg-address-part { display: inline-block; vertical-align: top; width: max-content; max-width: 100%; overflow-wrap: anywhere; }
+  .fg-agent-label { white-space: normal; }
 }
 @media (width < 19em) {
   .fg .fg-foot { margin-inline: calc(var(--aw-space-2) - var(--fg-gutter)); }

@@ -413,10 +413,12 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       && group.getBoundingClientRect().top >= player.getBoundingClientRect().bottom - 0.5
       && [player, group].every(part => lineCount(textRects(part).map(t => t.r)) === 1);
 
-    const allowedAddressBreak = lines > 1 && enlargedPhone && (
-      el.matches(labelSelector) && lines === 2 && partsStayWhole(el, /^[^(]+?(?=\s*\()|\(.*\)$/g)
-      || el.matches(urlSelector) && partsStayWhole(el, /^[a-z]+:\/\/|[./]?[^./]+|[./]/gi, contentWidth(el) + 1 / 64));
-    if (lines > 1 && !prose && !stacked && !allowedAddressBreak) {
+    const labelBreak = enlargedPhone && el.matches(labelSelector) && lines === 2 && partsStayWhole(el, /^[^(]+?(?=\s*\()|\(.*\)$/g);
+    // The URL follows the width of its actual content box at every browser text size.
+    const fitsWidth = el.matches(urlSelector) ? contentWidth(el) + 1 / 64 : Infinity;
+    const addressBreak = lines > 1 && rects.reduce((sum, r) => sum + r.width, 0) > fitsWidth
+      && partsStayWhole(el, /^[a-z]+:\/\/|[./]?[^./]+|[./]/gi, fitsWidth);
+    if (lines > 1 && !prose && !stacked && !labelBreak && !addressBreak) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
       const cs = style(el);
