@@ -129,4 +129,9 @@
 /* Allow for the painted outlines as well as the phone's usual hit-target gap. */
 @media (320px <= width < 10em) {
   .d1 .aw-replay-controls { --aw-fit-mark-outlines: 1; }
+  /* Keep the event and clock together when they fit; otherwise move the clock
+     whole to the next line. The colony keeps the full line below both. */
+  .d1 .aw-mark-row { display: flex; flex-wrap: wrap; }
+  .d1 .aw-mark-row .aw-mark-kind { white-space: nowrap; }
+  .d1 .aw-mark-row .aw-mark-colony { order: 1; flex: 0 0 100%; white-space: normal; }
 }

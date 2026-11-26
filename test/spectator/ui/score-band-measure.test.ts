@@ -959,7 +959,7 @@ describe("scrolling HUD fit evidence", () => {
       await page.addScriptTag({ type: "module", content: `
         import '/web/src/ui/ui.css'; import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
         import { mountReplayControls } from '/web/src/replay-controls.ts'; import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
-        const events = [0, 100, 40500, 40600, 99900, 100000].map(ms => ({ kind:'fight', colony:null, ms, tick:ms/100 }));
+        const events = [0, 100, 40500, 40600, 99900, 100000].map(ms => ({ kind:'nest', colony:0, ms, tick:ms/100 }));
         const controls = mountReplayControls(document, { events, duration:100000, position:70000, rate:1, error:null, seek() {} });
         const hud = mountDeckHud({ doc:document, host:document.querySelector('.aw-hud'), tips:[], replay:controls.el, teamView:null, actions:{ select() {}, selectAgent() {}, pointOrder() {}, hover() {} } });
         hud.update({ frame:scoreFrame(), board:'2d', mode:null, connection:'', stalled:false, selected:null, selectedAgent:-1 });
@@ -970,6 +970,20 @@ describe("scrolling HUD fit evidence", () => {
       await expect.poll(() => counts.allTextContents()).toEqual(["4", "2"]);
       const [a, b] = await counts.evaluateAll(ns => ns.map(n => { const r = n.getBoundingClientRect(); return [r.left, r.right]; }));
       expect(b![0]! - a![1]!).toBeGreaterThanOrEqual(8); // Both 2px outlines with 2px offsets.
+      await page.locator(".aw-mark.group").first().press("Enter");
+      const menu = page.locator(".aw-mark-list:visible");
+      await menu.waitFor();
+      const rows = menu.locator(".aw-mark-row");
+      expect(await rows.count()).toBe(4);
+      const times = await rows.evaluateAll(nodes => nodes.map(row => {
+        const text = (node: Element) => { const r = new Range(); r.selectNodeContents(node); return [...r.getClientRects()]; };
+        const event = text(row.querySelector(".aw-mark-kind")!)[0]!, clock = text(row.querySelector("b")!);
+        const list = row.parentElement!.getBoundingClientRect();
+        return { whole: clock.length === 1, below: clock[0]!.top >= event.bottom,
+          inside: clock[0]!.left >= list.left && clock[0]!.right <= list.right };
+      }));
+      expect(times).toEqual(Array(4).fill({ whole: true, below: true, inside: true }));
+      await page.keyboard.press("Escape");
       await page.locator(".sb-history:visible").first().click();
       const empty = page.locator(".d1-tl-none:visible").first();
       await empty.waitFor();
