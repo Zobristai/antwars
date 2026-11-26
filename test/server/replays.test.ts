@@ -188,12 +188,12 @@ it("logs a failed store once per match while play and the next lobby's match con
   const replayStore: ReplayStore = { create: async (object) => { attempts.push(object.name); throw new Error("fake store down"); } };
   const run = slotRun();
   server = await startSpectatedServer({ ...run.options, replayStore }, live);
-  await run.seatLobbies(3);
-  await vi.waitFor(() => expect(server!.game.match!.seq).toBeGreaterThanOrEqual(3), { timeout: 5_000 });
-  // A new match can start before the previous recording's async gzip completes.
-  // Wait for the upload attempts themselves, not only the slot's sequence.
+  const lobbyCount = 3;
+  await run.seatLobbies(lobbyCount);
+  await vi.waitFor(() => expect(server!.game.match!.seq).toBeGreaterThanOrEqual(lobbyCount), { timeout: 5_000 });
+  // Starting the last match doesn't finish its recording; wait for every save before teardown.
   await run.settled(() => {
-    expect(attempts.length).toBeGreaterThanOrEqual(2);
+    expect(attempts).toHaveLength(lobbyCount);
     expect(errors.mock.calls.length).toBe(attempts.length);
   });
   expect(new Set(attempts).size).toBe(attempts.length);
