@@ -1767,31 +1767,9 @@
    "textSize": 32,
    "typeface": "Liberation Sans",
    "rule": "clipped",
-   "element": "dd > span.d1p-model > span.d1p-name > span.d1p-mname",
-   "text": "Gemini 4 Hydrogen",
-   "extent": 9,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "waiting",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Liberation Sans",
-   "rule": "clipped",
    "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
    "text": "",
    "extent": 440,
-   "why": "Already on main when this coverage was added to the render check."
-  },
-  {
-   "surface": "waiting",
-   "width": 320,
-   "textSize": 32,
-   "typeface": "Roboto",
-   "rule": "clipped",
-   "element": "dd > span.d1p-model > span.d1p-name > span.d1p-mname",
-   "text": "Gemini 4 Hydrogen",
-   "extent": 7,
    "why": "Already on main when this coverage was added to the render check."
   },
   {

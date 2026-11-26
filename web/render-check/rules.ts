@@ -357,11 +357,14 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     items.push(el);
   }
   const narrowStandings = matchMedia("(320px <= width < 20em)").matches;
+  // Exclude overlays such as an open rating tooltip, even when its text is nested inside the badge.
+  const inLine = (n: Element, line: Element) => {
+    for (let e: Element | null = n; e && e !== line; e = e.parentElement) if (outOfFlow(e)) return false;
+    return true;
+  };
   for (const el of items) {
-    // Only what stands in the item's line: a part positioned out of it (a tooltip shown above a badge) is not a line.
-    const inLine = (n: Element) => { for (let e: Element | null = n; e && e !== el; e = e.parentElement) if (outOfFlow(e)) return false; return true; };
-    const rects = textRects(el).filter(t => inLine(t.el)).map(t => t.r);
-    for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && inLine(m)) rects.push(r); }
+    const rects = textRects(el).filter(t => inLine(t.el, el)).map(t => t.r);
+    for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && inLine(m, el)) rects.push(r); }
     // Rendered lines, an explicit <br> included: a one-line item broken by hand is still broken.
     const lines = lineCount(rects);
     const words = text(el);
@@ -389,6 +392,48 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   }
 
   const rootPx = parseFloat(style(document.documentElement).fontSize);
+  // A match row is not prose: the start, lead and player lines each have two groups of whole items.
+  // The start and lead may break between groups only when they do not fit at enlarged phone text.
+  // Player badges instead take a second line by design under the card's 15rem step.
+  // A native rating button can draw taller glyphs than a level badge on the same line.
+  const sameMatchLine = (rects: DOMRect[]) => Math.min(...rects.map(r => r.bottom)) > Math.max(...rects.map(r => r.top));
+  for (const card of scope.querySelectorAll<HTMLElement>(".d1p-card:has(.d1p-match-rows)")) {
+    const cardWidth = card.clientWidth - parseFloat(style(card).paddingLeft) - parseFloat(style(card).paddingRight);
+    for (const line of card.querySelectorAll(".d1p-match-rows :is(.d1p-line, .d1p-model)")) {
+      if (!shown(line)) continue;
+      const player = line.matches(".d1p-model");
+      const parts = [...line.children].filter(shown);
+      const runs = (part: Element) => [...textRects(part).filter(t => inLine(t.el, line)).map(t => t.r),
+        ...[...part.querySelectorAll(".d1p-bolt")].filter(b => shown(b) && inLine(b, line)).map(b => b.getBoundingClientRect())];
+      const groups = parts.map(runs);
+      const first = groups[0] ?? runs(line);
+      const rest = groups.slice(1).flat();
+      const rects = [...first, ...rest];
+      const lines = lineCount(rects);
+      let valid = rects.length > 0 && sameMatchLine(rects);
+      if (rest.length && first.length) {
+        let below = player && cardWidth < 15 * rootPx;
+        if (!player && narrowStandings && lines === 2 && groups.every(sameMatchLine)) {
+          // Use the unbroken text runs, not the laid-out box: a block stamp can stretch across the row.
+          const needed = parts.reduce((sum, part, i) => {
+            const rs = groups[i]!;
+            const ink = rs.length ? Math.max(...rs.map(r => r.right)) - Math.min(...rs.map(r => r.left)) : 0;
+            const cs = style(part);
+            return sum + ink + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth)
+              + parseFloat(cs.borderRightWidth) + parseFloat(cs.marginLeft) + parseFloat(cs.marginRight);
+          }, 0);
+          const space = document.createElement("canvas").getContext("2d")!;
+          space.font = style(line).font;
+          const gap = line.matches(".is-lead") ? 0 : space.measureText(" ").width;
+          below = needed + gap > line.getBoundingClientRect().width + 0.5;
+        }
+        if (below) valid = sameMatchLine(first) && sameMatchLine(rest)
+          && Math.min(...rest.map(r => r.top)) >= Math.max(...first.map(r => r.bottom)) - 0.5;
+      }
+      if (!valid) fail({ rule: "wrap", element: name(line), text: text(line), measure: "match row items not on their expected line",
+        extent: Math.max(1, lines), box: box(line.getBoundingClientRect()) }, line);
+    }
+  }
   // At enlarged text both player names can shorten; at default text only narrow Top matches tiles can.
   // A title alone, or overflow:hidden alone, does not make a cut intentional.
   const designedEnds = new Set<Element>();

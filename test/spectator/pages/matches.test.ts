@@ -244,6 +244,8 @@ describe("Waiting and Live keep their layout while Recordings uses colony slots"
       ["Lake Skinner Colony", "Southern California, under 1 km² (Thomas et al. 2006, Molecular Ecology)"],
       ["Sweetwater Colony", "Southern California (Thomas et al. 2006, Molecular Ecology)"]]);
     expect(colonies(item).map(([name]) => name)).toEqual(["Lake Skinner Colony", "Sweetwater Colony"]);
+    expect(item.classes()).toContain("d1p-own-colonies");
+    expect(rowAt(liveList.card, 0).item.classes()).not.toContain("d1p-own-colonies");
     // Each drawn name in its own colour, through its row's colony inks.
     const ink = (node: ElementPort) => ["--aw-k0", "--aw-k1"].map(key => node.style.getPropertyValue(key));
     const drawnInk = colonyColours(drawnLive.colonyNames!).map(colourCss);
@@ -724,7 +726,7 @@ describe("a model label with nothing after its provider prefix", () => {
     expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-user \{ font-weight: var\(--aw-bold\); color: inherit; \}/);
     expect(sheet).toMatch(/\.d1p-rec-name > \.d1p-mname \{ color: inherit; \}/);
     // Live now and Waiting keep their own badges.
-    expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: 10px; letter-spacing: 0.02em; }");
+    expect(sheet).toContain(".d1p-model :is(.d1p-tag, .d1-tag) { margin-left: 0; padding: 0 2px; font-size: var(--aw-text-badge-sm); letter-spacing: 0.02em; }");
   });
 
   it("orders a Recordings line name, level, seat count, rating, and shows a parked handle's retirement in its name only", () => {
