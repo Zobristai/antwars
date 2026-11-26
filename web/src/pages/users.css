@@ -20,7 +20,6 @@
 .users-table .field-3 { width: 9%; } .users-table .field-4 { width: 15%; } .users-table .field-5 { width: 22%; }
 .users-table :is(.field-2,.field-3) { text-align: right; font-variant-numeric: tabular-nums; }
 .users-table .field-3 { padding-right: 1.25rem; }
-.users-table .field-0 strong { font-size: var(--aw-text-lead); }
 .users-agent.is-next::before { content: ', '; }
 .users-card .d1p-prov, .users-card .d1p-elo-badge { font-size: var(--aw-text-badge-sm); line-height: var(--aw-lh-badge-sm); }
 .users-card .d1p-prov { margin-left: 6px; }
@@ -56,10 +55,17 @@
 }
 .d1p[data-page="users"] { --d1p-content: var(--aw-content-wide); }
 .d1p[data-page="users"] :is(.d1p-refresh,.d1p-loaded) { font-size: var(--aw-text-body); line-height: var(--aw-lh-body); }
-.users-entry { font-weight: var(--aw-bold); }
-.users-entry::before { display: inline-block; content: ''; border: .28em solid transparent; border-left-color: currentColor; }
+.users-entry { font-size: var(--aw-text-lead); font-weight: var(--aw-bold); vertical-align: top; }
+@container d1p-card (17rem <= width < 21rem) {
+  /* Let a name use the gutter before the right-aligned count without moving either column. */
+  .users-table tbody .field-0 .users-value { margin-inline-end: calc(-1 * var(--aw-space-2)); }
+}
+.users-entry::before {
+  content: ''; display: inline-block; vertical-align: middle; margin-inline-end: var(--aw-space-2);
+  border: solid transparent; border-width: .28em 0 .28em .4em; border-left-color: currentColor;
+}
 .users-open { background: var(--aw-raise); scroll-margin-top: var(--aw-bar); }
-.users-open .users-entry::before { transform: rotate(90deg); }
+.users-open .users-entry::before { border-width: .4em .28em 0; border-color: currentColor transparent transparent; }
 .users-details { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap: var(--aw-space-4); }
 .users-details small { display: block; font-size: inherit; }
 .users-table .users-panel { background: var(--aw-bg); }
