@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import type { ObserveEvent } from "../../src/mcp/game.js";
-import { MAX_EVENT_PAGE, MAX_OBSERVE_REPLY_BYTES as MAX_REPLY_BYTES, MAX_OBSERVE_TEXT_CHARS as MAX_TEXT_CHARS, payload } from "../../src/mcp/replies.js";
+import { MAX_EVENT_PAGE, MAX_FILTER_SCAN, MAX_OBSERVE_REPLY_BYTES as MAX_REPLY_BYTES, MAX_OBSERVE_TEXT_CHARS as MAX_TEXT_CHARS, payload } from "../../src/mcp/replies.js";
 import { COLONY_NAMES, rulesConfig } from "../../src/sim/config.js";
 import type { VisibleEvent } from "../../src/sim/types.js";
 import { prepareLargestView } from "./response-size-fixture.js";
@@ -196,5 +196,86 @@ it("detailsSince retrieves the complete count-mark event without making current 
     expect(full.data.view.events[0]).toHaveProperty("message");
     expect(full.data.view.events[0]).toHaveProperty("availability");
     expect(full.data.view.events[0]).not.toHaveProperty("detailsSince");
+  } finally { await h.close(); }
+});
+
+it("pages matching events in seat-history coordinates across fights and empty scan windows", async () => {
+  const h = await startHarness();
+  try {
+    const agent = await h.connect();
+    const { agentId: id } = (await agent.call("join")).data;
+    const other = await h.connect();
+    await other.call("join");
+    const state = h.game.match!.state;
+    const own = state.agents.find(a => a.id === id)!;
+    const start = h.game.eventHistory(id).length;
+    const burst = Array.from({ length: MAX_EVENT_PAGE + 3 }, (_, i) => priorities(id, state.tick, i))
+      .flatMap(events => [fight(state.tick, 8), ...events, { type: "death" as const, tick: state.tick, antId: 7, colony: 0 as const, tileX: 8, tileY: 24 }]);
+    own.pendingEvents = [...Array.from({ length: MAX_FILTER_SCAN }, (_, i) => fight(state.tick, i)), ...burst];
+    await agent.call("rules");
+    state.tick = state.config.matchTicks - 1;
+    h.advance(1);
+    const eventFilter = { exclude: ["fight", "death"] };
+    const first = await agent.call("observe", { since: start, eventFilter });
+    bounded(first);
+    expect(first.data.view).toMatchObject({ events: [], eventsMore: true, eventCursor: start + MAX_FILTER_SCAN });
+    const resumed = await agent.call("observe", { since: first.data.view.eventCursor });
+    expect(resumed.data.view.events[0]).toEqual(burst[0]);
+    const events: ObserveEvent[] = [];
+    let cursor = first.data.view.eventCursor;
+    let more = true;
+    while (more) {
+      const reply = await agent.call("observe", { since: cursor, eventFilter });
+      bounded(reply);
+      const view = reply.data.view;
+      expect(view.eventCursor).toBeGreaterThan(cursor);
+      events.push(...view.events);
+      cursor = view.eventCursor;
+      more = view.eventsMore;
+    }
+    const history = h.game.eventHistory(id);
+    expect(cursor).toBe(history.length);
+    expect(events).toEqual(history.slice(start).filter(event => !eventFilter.exclude.includes(event.type)));
+    const privateEvents = await other.call("observe", { since: 0, eventFilter: { include: ["count_mark_accepted", "squad_replaced"] } });
+    bounded(privateEvents);
+    expect(privateEvents.data.view.events).toEqual([]);
+  } finally { await h.close(); }
+});
+
+it("bounds filtered current sampling without dropping excluded or unscanned priorities", async () => {
+  const h = await startHarness();
+  try {
+    const agent = await h.connect();
+    const { agentId: id } = (await agent.call("join")).data;
+    const state = h.game.match!.state;
+    const own = state.agents.find(a => a.id === id)!;
+    const [founded, lost] = priorities(id, state.tick, 1);
+    own.pendingEvents = [...Array<VisibleEvent>(MAX_FILTER_SCAN).fill(founded!), lost!];
+    const cursor = h.game.eventCursor(id);
+    const eventFilter = { include: ["queen_lost"] };
+    const first = await agent.call("observe", { eventFilter });
+    bounded(first);
+    expect(first.data.view).toMatchObject({ events: [], priorityEventsMore: true, eventCursor: cursor });
+    const next = await agent.call("observe", { eventFilter });
+    bounded(next);
+    expect(next.data.view).toMatchObject({ events: [lost], priorityEventsMore: false, eventCursor: cursor });
+    const unfiltered = await agent.call("observe");
+    expect(unfiltered.data.view.events).toEqual(Array<VisibleEvent>(MAX_EVENT_PAGE).fill(founded!));
+    expect(h.game.pendingPriorityEvents(id)).toHaveLength(MAX_FILTER_SCAN - MAX_EVENT_PAGE);
+  } finally { await h.close(); }
+});
+
+it("advertises the optional filter and explains invalid event names or filter shapes", async () => {
+  const h = await startHarness();
+  try {
+    const agent = await h.connect();
+    await agent.call("join");
+    const observe = (await agent.client.listTools()).tools.find(tool => tool.name === "observe")!;
+    expect(observe.description).toMatch(/eventFilter.*include or exclude/);
+    for (const eventFilter of [{ include: ["unknown"] }, { include: [], exclude: [] }, {}, "fight"]) {
+      const reply = await agent.call("observe", { eventFilter });
+      expect(reply.isError).toBe(true);
+      expect(reply.data.error).toMatchObject({ code: "bad_arguments", message: expect.stringMatching(/eventFilter.*include or exclude.*fight/) });
+    }
   } finally { await h.close(); }
 });
