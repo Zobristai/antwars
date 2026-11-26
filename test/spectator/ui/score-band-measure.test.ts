@@ -641,6 +641,110 @@ describe("scrolling HUD fit evidence", () => {
       }
     } finally { await server.close(); }
   }, 60_000);
+  it.each(["Roboto", "Liberation Sans"] as const)("keeps a single replay label visible when the panel scrolls or a seek clears its facts in %s", async font => {
+    const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
+    server.middlewares.use((req, res, next) => {
+      if (req.url !== "/replay-label") return next();
+      res.setHeader("Content-Type", "text/html");
+      res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><main class="aw-hud"></main>');
+    });
+    await server.listen();
+    try {
+      const addr = server.httpServer!.address();
+      if (!addr || typeof addr === "string") throw Error("Missing test server port");
+      const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
+        args: ["--no-sandbox"], env: { ...process.env, FONTCONFIG_FILE: await fontconfigFor(font) } });
+      try {
+        for (const size of [16, 32] as const) {
+          const page = await browser.newPage({ hasTouch: true });
+          await applyTextSize(page, size);
+          await page.goto(`http://127.0.0.1:${addr.port}/replay-label`);
+          await page.addScriptTag({ type: "module", content: `
+            import '/web/src/ui/ui.css';
+            import { mountDeckHud } from '/web/src/ui/deck/hud.ts';
+            import { mountReplayControls } from '/web/src/replay-controls.ts';
+            import { scoreFrame } from '/test/spectator/ui/score-band-frame.ts';
+            const controls = mountReplayControls(document, { duration:600000, rate:1, position:0, error:null,
+              events:[{kind:'nest', colony:0, ms:450000, tick:4500}],
+              seek(ms) { document.body.dataset.sought = ms; requestAnimationFrame(() => paint(null)); } }, ['Lake Hodges Colony','Sample Colony']);
+            const hud = mountDeckHud({doc:document, host:document.querySelector('.aw-hud'), replay:controls.el, tips:[], teamView:null, waiting:null, boardAspect:null, actions:{}});
+            const frame = scoreFrame();
+            const paint = frame => hud.update({frame, board:document.body.dataset.board, mode:{label:'RECORDING · rated match', detail:'', link:null}, connection:'', stalled:false, selected:null, selectedAgent:-1});
+            addEventListener('show-frame', () => paint(frame));
+            function update() { controls.update(); requestAnimationFrame(update); } update();
+          ` });
+          const mark = page.locator(".aw-mark.nest"), chip = page.locator(".aw-mark-label");
+          const measured = () => chip.evaluate(el => {
+            const r = el.getBoundingClientRect(), row = el.parentElement!.getBoundingClientRect();
+            const panel = el.closest(".d1-below")?.getBoundingClientRect();
+            const range = new Range(); range.selectNodeContents(el.querySelector(".aw-mark-words")!);
+            const name = el.querySelector(".aw-mark-colony[title]")!;
+            const reachable = [...name.getClientRects()].some(t => name.contains(document.elementFromPoint((t.left + t.right) / 2, (t.top + t.bottom) / 2)));
+            return { reachable, whole: r.width > 0 && r.height > 0 && r.left >= Math.max(0, panel?.left ?? 0) && r.right <= Math.min(innerWidth, panel?.right ?? innerWidth)
+              && r.top >= Math.max(0, panel?.top ?? 0) && r.bottom <= Math.min(innerHeight, panel?.bottom ?? innerHeight),
+              words: [...range.getClientRects()].every(t => t.left >= r.left && t.right <= r.right && t.top >= r.top && t.bottom <= r.bottom),
+              text: el.textContent, above: r.bottom <= row.top, panel: panel && [panel.top, panel.bottom], row: [row.top, row.bottom], label: [r.top, r.bottom] };
+          });
+          const positionPanel = (atRail: boolean) => mark.evaluate((b, atRail) => {
+            const panel = b.closest<HTMLElement>('.d1-below');
+            if (!panel) return null;
+            const row = b.closest('.aw-replay-controls')!;
+            panel.scrollTop = atRail ? panel.scrollTop + row.getBoundingClientRect().top - panel.getBoundingClientRect().top : 0;
+            return { scroll: panel.scrollTop, offset: row.getBoundingClientRect().top - panel.getBoundingClientRect().top };
+          }, atRail);
+          for (const width of size === 16 ? [320, 390, 1024, 1280] : [320, 390, 1280]) for (const height of width < 400 ? [568, 844] : [800]) {
+            await page.setViewportSize({ width, height });
+            const wide = width >= 75 * size;
+            await page.locator(`${wide ? '.d1-frame' : '.d1-below'} .aw-mark.nest`).waitFor();
+            for (const board of ["2d", "3d"]) for (const scrolled of wide ? [false] : [false, true]) {
+              const cell = `${board}, ${width}×${height}, ${size}px, ${font}, ${scrolled ? 'scrolled' : 'rest'}`;
+              await page.mouse.move(0, 0);
+              // Position the panel, not the label. Coordinate input below cannot implicitly scroll a target into view.
+              await page.evaluate(board => {
+                document.body.dataset.board = board; delete document.body.dataset.sought;
+                dispatchEvent(new Event('show-frame'));
+              }, board);
+              const initial = await positionPanel(scrolled);
+              if (scrolled) { expect(initial!.scroll, cell).toBeGreaterThan(0); expect(Math.abs(initial!.offset), cell).toBeLessThan(1); }
+              const fit = { reachable: true, whole: true, words: true, text: 'Nest lost · Lake Hodges Colony · 7:30', ...(wide ? { above: true } : {}) };
+              await page.locator('.aw-replay-controls input').evaluate(el => (el as HTMLElement).focus({ preventScroll: true }));
+              // A visible button can still belong to the previous rail layout. Let resize observation and the
+              // next controls update run; retry if they replaced this button or the layer no longer fits the rail.
+              await expect.poll(() => mark.evaluate(async button => {
+                const layer = button.parentElement!, rail = layer.parentElement!.querySelector('input')!;
+                await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+                return button.isConnected && layer.offsetWidth === rail.offsetWidth && layer.offsetLeft === rail.offsetLeft
+                  && layer.offsetHeight === rail.offsetHeight && layer.offsetTop === rail.offsetTop;
+              }), { message: `${cell}, mark settled on rail` }).toBe(true);
+              await page.keyboard.press('Tab');
+              const focus = await mark.evaluate(el => {
+                const active = document.activeElement;
+                return { onMark: active === el, target: active ? (active.cloneNode(false) as Element).outerHTML : 'no element' };
+              });
+              expect(focus.onMark, `${cell}, Tab focused ${focus.target}`).toBe(true);
+              expect(await measured(), `${cell}, focus`).toMatchObject(fit);
+              if (!wide && !scrolled) {
+                await positionPanel(true);
+                await expect.poll(measured, { message: `${cell}, scroll while focused` }).toMatchObject(fit);
+              }
+              await page.keyboard.press('Shift+Tab');
+              await positionPanel(scrolled);
+              const box = (await mark.boundingBox())!, x = box.x + box.width / 2, y = box.y + box.height / 2;
+              await page.mouse.move(x, y);
+              expect(await measured(), `${cell}, hover`).toMatchObject(fit);
+              expect(await mark.evaluate((b, [x, y]) => b.contains(document.elementFromPoint(x!, y!)), [x, y]), `${cell}, mark still under pointer`).toBe(true);
+              await page.mouse.move(0, 0);
+              if (width < 400) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y);
+              expect(await page.locator('body').getAttribute('data-sought'), cell).toBe('450000');
+              await page.locator('.sb-metadata').waitFor({ state: 'hidden' });
+              await expect.poll(measured, { message: `${cell}, during seek` }).toMatchObject(fit);
+            }
+          }
+          await page.close();
+        }
+      } finally { await browser.close(); }
+    } finally { await server.close(); }
+  }, 60_000);
   it("lets replay rows take focus and pointer hits on either side of the stacked layout", async () => {
     const server = await createServer({ configFile: false, root: process.cwd(), server: { host: "127.0.0.1", port: 0 }, appType: "custom", logLevel: "silent" });
     server.middlewares.use((req, res, next) => {
