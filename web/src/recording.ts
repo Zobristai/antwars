@@ -3,6 +3,7 @@ import { decodeMessage, type StreamMessage } from "../../src/live/format.ts";
 import { TICK_MS } from "../../src/live/snapshot.ts";
 import type { Arrival } from "./inbox.ts";
 import { RENDER_DELAY_MS } from "./buffer.ts";
+import { measurementNow } from "./timing.ts";
 import { ReplayEventScan, type ReplayEvent } from "./replay-events.ts";
 
 export const RECORDING_AHEAD = 20;
@@ -340,13 +341,13 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
       let worker: MarksWorker | null = null;
       try { worker = marksWorker?.() ?? null; }
       catch (cause: unknown) { console.error("antwar: marks worker unavailable; reading marks on the page", cause); marksWorker = null; }
-      let slice = performance.now();
+      let slice = measurementNow();
       const read = worker
         ? await readMarksInWorker(worker, response.body, firstTick!, lifetime.signal)
         : await readMarks(recordingMessages(response.body, lifetime.signal), firstTick!, () => {
           // A cached response must also yield to input and rendering.
-          if (performance.now() - slice < SCAN_SLICE_MS) return;
-          return new Promise<void>(resolve => setTimeout(resolve, 0)).then(() => { slice = performance.now(); });
+          if (measurementNow() - slice < SCAN_SLICE_MS) return;
+          return new Promise<void>(resolve => setTimeout(resolve, 0)).then(() => { slice = measurementNow(); });
         });
       if (closed) return;
       knownEnd ??= read.lastTick;
