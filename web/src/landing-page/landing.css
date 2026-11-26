@@ -44,20 +44,20 @@
   content: ""; position: absolute; z-index: -1; inset: 0 -100vw; pointer-events: none;
   background: linear-gradient(to top, var(--aw-bg) 0, rgb(18 23 25 / 0.9) 200px, rgb(18 23 25 / 0.66) calc(100% - 160px), rgb(18 23 25 / 0) 100%);
 }
-.fg-title { grid-column: 1 / -1; max-width: 11em; font-size: 72px; font-weight: 700; line-height: 76px; letter-spacing: -0.03em; color: var(--aw-ink-bright); text-wrap: balance; }
+.fg-title { grid-column: 1 / -1; max-width: 11em; font-size: var(--aw-text-hero); font-weight: 700; line-height: var(--aw-lh-hero); letter-spacing: -0.03em; color: var(--aw-ink-bright); text-wrap: balance; }
 .fg-title:focus { outline: none; }
-.fg-lede { grid-column: 1 / -1; max-width: 30em; margin-top: 16px; font-size: 22px; line-height: 32px; color: var(--aw-ink); }
+.fg-lede { grid-column: 1 / -1; max-width: 30em; margin-top: 16px; font-size: var(--aw-text-intro); line-height: var(--aw-lh-intro); color: var(--aw-ink); }
 /* The lede's "real time" stays on one line (copy.ts ledeKeep); its text is unchanged. */
 .fg-keep { white-space: nowrap; }
 .fg-hero-actions { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin-top: 32px; }
 /* Watch any match and the challenge bubble are the site's cyan button (deck.css .d1-agent-button), a 44 px tap at
    every width. */
 .fg-hero-actions { --d1-tap: 44px; }
-.fg .fg-quiet { min-height: 52px; gap: 6px; font-size: 16px; font-weight: 600; color: var(--aw-ink-bright); text-decoration: none; }
+.fg .fg-quiet { min-height: 52px; gap: 6px; font-size: var(--aw-text-prose-sm); font-weight: 600; color: var(--aw-ink-bright); text-decoration: none; }
 .fg .fg-quiet:hover { color: var(--aw-ink); }
 .fg-quiet-word { text-decoration: underline; text-underline-offset: 4px; }
 /* The recording line: the gameplay proof, bottom right on a desktop, under the way in elsewhere. */
-.fg-recording { grid-column: 2; margin-top: 32px; font-size: 13px; line-height: 20px; color: var(--aw-ink-2); }
+.fg-recording { grid-column: 2; margin-top: 32px; font-size: var(--aw-text-body); line-height: var(--aw-lh-body); color: var(--aw-ink-2); }
 .fg-recording-label { font-weight: 700; color: var(--aw-ink-bright); }
 
 /* ---------------------------------------------------------------- the sections under it */
@@ -65,14 +65,14 @@
 .fg-records { display: grid; gap: 40px; margin-top: var(--fg-gap); }
 .fg-section { min-width: 0; }
 .fg-agent { margin-top: var(--fg-gap); }
-.fg-section-title { margin-bottom: 24px; font-size: 40px; font-weight: 700; line-height: 44px; letter-spacing: -0.02em; color: var(--aw-ink-bright); }
+.fg-section-title { margin-bottom: 24px; font-size: var(--aw-text-section); font-weight: 700; line-height: var(--aw-lh-section); letter-spacing: -0.02em; color: var(--aw-ink-bright); }
 .fg-agent-field { padding: 20px var(--d1p-inset); }
 .fg-agent-label { margin-bottom: 6px; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--aw-ink-2); }
 /* Today's address row (agent.ts), restyled from the HUD's one-line form (ui.css .d2 .aw-byoa-*): it wraps, and Copy is the
    pages' grey pill. */
 .fg .fg-agent .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 560px; margin: 0; }
 .fg .fg-agent .aw-byoa-url { flex: 1 1 220px; min-width: 0; min-height: var(--d2-tap); display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--aw-bg); box-shadow: inset 0 0 0 1px var(--aw-line); font: 500 13px/1.4 var(--aw-mono); color: var(--aw-ink-bright); white-space: normal; overflow-wrap: anywhere; }
-.fg .fg-agent .aw-byoa-copy { min-height: var(--d2-tap); padding: 0 16px; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font-size: 13px; font-weight: 600; }
+.fg .fg-agent .aw-byoa-copy { min-height: var(--d2-tap); padding: 0 16px; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font-size: var(--aw-text-body); font-weight: 600; }
 .fg .fg-agent .aw-byoa-copy:hover { background: var(--aw-raise-hover); }
 .fg .fg-agent .aw-byoa-note:empty { display: none; }
 /* The pages' footer: their credit, Rules and the inspiration. */
@@ -88,7 +88,7 @@
 /* ---------------------------------------------------------------- one column: the recording line under the way in */
 @media (max-width: 1009px) {
   .fg-hero-body { grid-template-columns: minmax(0, 1fr); }
-  .fg-title { font-size: 56px; line-height: 60px; }
+  .fg-title { font-size: var(--aw-text-hero-md); line-height: var(--aw-lh-hero-md); }
   .fg-recording { grid-column: 1; margin-top: 8px; }
 }
 
@@ -101,11 +101,11 @@
   .fg-hero { min-height: 600px; }
   .fg-hero-body { padding: 120px 0 8px; }
   .fg-hero-body::before { background: linear-gradient(to top, var(--aw-bg) 0, rgb(18 23 25 / 0.9) 200px, rgb(18 23 25 / 0.66) calc(100% - 120px), rgb(18 23 25 / 0) 100%); }
-  .fg-title { font-size: 32px; line-height: 36px; letter-spacing: -0.02em; }
-  .fg-lede { margin-top: 12px; font-size: 17px; line-height: 26px; }
+  .fg-title { font-size: var(--aw-text-hero-sm); line-height: var(--aw-lh-hero-sm); letter-spacing: -0.02em; }
+  .fg-lede { margin-top: 12px; font-size: var(--aw-text-prose); line-height: var(--aw-lh-prose); }
   .fg-hero-actions { gap: 8px 24px; margin-top: 24px; }
   .fg .fg-quiet { min-height: 48px; }
   .fg-recording { margin-top: 4px; }
-  .fg-section-title { margin-bottom: 16px; font-size: 28px; line-height: 32px; }
+  .fg-section-title { margin-bottom: 16px; font-size: var(--aw-text-section-sm); line-height: var(--aw-lh-section-sm); }
   .fg .fg-foot .d2-link { min-height: 44px; min-width: 44px; justify-content: center; }
 }

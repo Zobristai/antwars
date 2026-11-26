@@ -31,7 +31,7 @@
   --d1p-content: 912px; --d1p-index: 200px; --d1p-gap: 32px; --d1p-gutter: 16px;
   position: relative; display: flex; flex-direction: column; min-height: 100%; box-sizing: border-box;
   background: var(--aw-bg); color: var(--aw-ink); color-scheme: dark;
-  font: 400 13px/1.35 var(--aw-sans); -webkit-font-smoothing: antialiased;
+  font: 400 var(--aw-text-body)/1.35 var(--aw-sans); -webkit-font-smoothing: antialiased;
 }
 /* The scroll host passes pointer events through to the page it holds. */
 .aw-page-host > .d1p { pointer-events: auto; }
@@ -41,6 +41,9 @@
   margin: 0; padding: 0; border: 0; font: inherit; color: inherit; letter-spacing: inherit; text-transform: none; text-align: inherit;
 }
 .d1p :where(ul, ol) { list-style: none; }
+/* Keep ranking and live/waiting rows on their existing base rather than enlarging only their inherited text. */
+.d1p[data-page="leaderboard"], .fg-records > [aria-labelledby="d1p-aw-house-mode-ranking"],
+.d1p-match, .d1p-match-rows { font-size: 13px; }
 /* Without weight, so the shared pills (ui/ui.css .d2-pill) keep their own type and ink. */
 :where(.d1p) :where(button) { font: inherit; color: inherit; }
 .d1p [hidden] { display: none !important; }
@@ -72,11 +75,12 @@
 /* ---------------------------------------------------------------- the band: title, summary, choices */
 .d1p-title { font-size: var(--aw-text-title); font-weight: var(--aw-bold); line-height: var(--aw-lh-title); letter-spacing: var(--aw-track-title); text-transform: uppercase; color: var(--aw-ink-bright); }
 .d1p-title:focus { outline: none; }
-.d1p-lead { margin-top: 12px; font-size: 14px; line-height: 20px; color: var(--aw-ink-2); }
+.d1p-lead { margin-top: 12px; font-size: var(--aw-text-lead); line-height: var(--aw-lh-lead); color: var(--aw-ink-2); }
 /* The page's one Refresh, on the title's left edge with the time the lists were loaded after it: one group under the
    title, never a pill pushed to the band's far edge. The time follows the pill, so its arrival moves nothing. */
 .d1p-fresh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
 .d1p-loaded { font-size: 13px; color: var(--aw-ink-3); font-variant-numeric: tabular-nums; }
+[data-page="matches"] :is(.d1p-refresh, .d1p-loaded), .users-detail-foot .d2-pill { font-size: var(--aw-text-body); }
 .d1p-loaded:empty { visibility: hidden; }
 .d1p-summary { min-width: 0; }
 /* Refresh in main's one cyan button style (deck.css .d1-agent-button). */
@@ -84,6 +88,7 @@
 .d1p .d1p-refresh:hover { background: color-mix(in srgb, var(--aw-c1) 60%, #fff); }
 /* The HUD's caps kicker. */
 .d1p-kicker { font-size: 11px; font-weight: 700; line-height: 14px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--aw-ink-3); }
+.d1p:is([data-page="rules"], [data-page="users"]) .d1p-kicker { font-size: var(--aw-text-label); line-height: var(--aw-lh-kicker); }
 
 /* The board choice in the HUD's tab treatment: the board shown in ink-bright with a 2 px rule under its label. */
 /* Its two groups side by side, each kicker over its tabs; on phones one over the other. */
@@ -473,7 +478,7 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rule:is(#d1-food-and-hatching, #d1-autonomous-ants, #d1-thoughts-and-marks, #d1-battle-balance, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 15px; line-height: 20px; }
 .d1p-rule p { max-width: 600px; font-size: 15px; line-height: 24px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
 .d1p-rule p + p { margin-top: 12px; }
-.d1p-win li { position: relative; max-width: 600px; padding-left: 18px; font-size: 17px; line-height: 26px; color: var(--aw-ink-bright); }
+.d1p-win li { position: relative; max-width: 600px; padding-left: 18px; font-size: var(--aw-text-prose); line-height: var(--aw-lh-prose); color: var(--aw-ink-bright); }
 .d1p-win li + li { margin-top: 10px; }
 .d1p-win li::before { content: ""; position: absolute; top: 11px; left: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--aw-ink-2); }
 
@@ -496,6 +501,11 @@ td.c-model > .d1p-colony { display: block; }
 @media (width < 65.5rem) {
   .d1p-split { grid-template-columns: minmax(0, 1fr); row-gap: 24px; }
   .d1p-index { position: static; padding-top: 0; }
+}
+
+/* Choose the list's type step by viewport width so enlarging browser text doubles the same size. */
+@media (width < 736px) {
+  .d1p-win li { font-size: var(--aw-text-prose-sm); line-height: var(--aw-lh-prose-sm); }
 }
 
 /* ---------------------------------------------------------------- the phone form under 46rem */
@@ -533,7 +543,6 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-index-list a[aria-current] { padding-left: 12px; }
   .d1p-rules-kicker { padding-top: 14px; padding-bottom: 10px; }
   .d1p-rule { padding: 18px 0 16px; }
-  .d1p-win li { font-size: 16px; line-height: 24px; }
   .d1p-win li::before { top: 10px; }
   .d1p-foot { gap: 0 12px; margin-top: 24px; padding: 4px var(--d1p-pad) 8px; }
   .d1p-foot .d2-link { min-height: 44px; }
