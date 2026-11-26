@@ -62,6 +62,8 @@ export interface Surface {
   comparisonOnly?: boolean;
   /** Judge reflow inside the replay panel at above-double text. */
   panelOnly?: boolean;
+  /** Judge only the expected top bar, not the page or replay panel below it. */
+  topBar?: "hud" | "pages";
   expectedKills?: readonly string[];
   /** Open and judge the grouped marks at the late clock and again at the finish. */
   markList?: "2d" | "3d";
@@ -139,6 +141,10 @@ export const SURFACES: readonly Surface[] = [
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
   { id: "replay-panel-large-text", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
     panelOnly: true, widths: [320], textSizes: [40, 64], what: "The replay panel on a phone at above-double text" },
+  { id: "replay-top-bar-large-text", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
+    topBar: "hud", widths: [320], textSizes: [64], what: "The match top bar at large phone text" },
+  { id: "watch-top-bar-large-text", url: "/?watch=1", hud: true,
+    topBar: "pages", widths: [320], textSizes: [64], what: "The Watch list's top bar at large phone text" },
   { id: "replay-comparison-sample", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true, comparisonColonies: 4,
     comparisonOnly: true, fixtures: "comparison-sample-fixture.json", what: "The comparison band with recorded figures for all four colonies" },
   { id: "replay-comparison-crowded", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
@@ -775,7 +781,7 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
-            const limits = { ...RULE_LIMITS, panelOnly: surface.panelOnly, resultDialog: surface.resultDialog, markList: !!surface.markList,
+            const limits = { ...RULE_LIMITS, panelOnly: surface.panelOnly, topBar: surface.topBar, resultDialog: surface.resultDialog, markList: !!surface.markList,
               comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.comparisonOnly, expectedKills: surface.expectedKills };
             judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);
