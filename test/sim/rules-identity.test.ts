@@ -38,7 +38,9 @@ describe("the rules generations", () => {
     expect(now).toMatchObject({ rules28: true, antHp: 2000, hatchCost: 2, hatchRate: { foodPerSecond: 2 }, flyers: FLYER_RULES,
       castes: { soldierCost: 6, soldierHpPermille: 5000, soldierDamagePermille: 3000 } });
     expect(before.countMarks).not.toHaveProperty("renewOnRelay");
-    expect(now.countMarks).toEqual({ ...rules27Redesign().countMarks, renewOnRelay: true });
+    const { renewOnRelay, ...previousCountMarks } = now.countMarks as NonNullable<SimConfig["countMarks"]>;
+    expect(renewOnRelay).toBe(true);
+    expect(JSON.stringify(previousCountMarks)).toBe(JSON.stringify(before.countMarks));
     expect(now.hatchTiming).toBeUndefined();
     const { biteDamage: _bite, biteIntervalTicks: _interval, ...kept } = (before.queenHp as Record<string, number>);
     expect(now.queenHp).toEqual({ ...kept, hp: 100_000, damagePerSecond: 10_000 });
