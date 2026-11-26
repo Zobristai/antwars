@@ -60,13 +60,16 @@ describe("patrol count-mark opt-in and unchanged claims", () => {
     expect(state.marks).toHaveLength(1);
     expect(patrol).toMatchObject({ laidTick: 100, count: 1, revision: 1 });
     expect(state.ants.filter(ant => ant.claim === patrol.id)).toHaveLength(1);
-    expireMarks(state, 100 + config.markLifetimeTicks);
-    claimCountMarks(state, state.tick);
+    const deadline = state.tick + config.markLifetimeTicks;
+    expireMarks(state, deadline - 1);
+    expect(state.marks).toEqual([patrol]);
+    expireMarks(state, deadline);
+    claimCountMarks(state, deadline);
     expect(state.marks).toEqual([]);
     expect(state.ants.every(ant => ant.claim === undefined)).toBe(true);
   });
 
-  it("changes caste without renewing expiry and recruits far-away colony ants, never enemy or squad ants", () => {
+  it("changes caste without changing laid order and recruits far-away colony ants, never enemy or squad ants", () => {
     const state = scene();
     put(state, 0, 20, 20, { squad: "squad" });
     const worker = put(state, 0, 45, 20, { caste: "worker" });

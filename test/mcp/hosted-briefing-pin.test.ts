@@ -213,6 +213,17 @@ function verifyVocabularyOnly(key: string, current: string, compact: boolean): v
   expect(sha(beforeVocabulary(current, compact)), `pre-change output: ${key}`).toBe(BEFORE_VOCABULARY_RULES[key]);
 }
 
+// Keep the historical pins byte-for-byte. In live redesign rules only the renewal clause changed.
+function beforeRenewal(text: string): string {
+  const renewal = "one command restarts the 180 s lifetime";
+  expect(text.split(renewal)).toHaveLength(2);
+  return text.replace(renewal, "the mark keeps its original 180 s lifetime");
+}
+
+function historicalRules(config: SimConfig): SimConfig {
+  return { ...config, queenKillsFirst: undefined, ...(config.countMarks && { countMarks: { ...config.countMarks, renewOnRelay: undefined } }) };
+}
+
 const UNDRAWN = newMatchConfig(rulesConfig("redesign"));
 const DRAWN = createMatch(6006, UNDRAWN).config;
 
@@ -220,7 +231,7 @@ function hostedTexts(extra: Partial<BriefingContext> = {}, historical = false): 
   const out: Record<string, string> = {};
   for (const house of [false, true]) for (const undrawn of [true, false]) {
     const current = undrawn ? UNDRAWN : DRAWN;
-    const config = historical ? { ...current, queenKillsFirst: undefined } : current;
+    const config = historical ? historicalRules(current) : current;
     const context = { house, undrawn, ...extra };
     for (const nest of [false, true]) out[`join house=${house} undrawn=${undrawn} nest=${nest}`] = joinBriefing(config, DEFAULT_MCP_CONFIG, nest, context);
     out[`rules house=${house} undrawn=${undrawn}`] = briefing(config, DEFAULT_MCP_CONFIG, context);
@@ -234,7 +245,7 @@ describe("hosted briefing stays byte-identical to main 5df81d04", () => {
   it("every hosted join briefing and rules text matches its 5df81d04 digest", () => {
     const digests = Object.fromEntries(Object.entries(hostedTexts({}, true)).map(([name, text]) => [name, sha(text)]));
     expect(digests).toEqual(HOSTED_AT_5DF81D04);
-    const current = hostedTexts();
+    const current = Object.fromEntries(Object.entries(hostedTexts()).map(([name, text]) => [name, name.startsWith("rules ") ? beforeRenewal(text) : text]));
     expect(Object.fromEntries(Object.entries(current).map(([name, text]) => [name, sha(beforeVocabulary(text, usesCompactAgentText(UNDRAWN)))]))).toEqual(HOSTED_QUEEN_FIRST);
     for (const [name, text] of Object.entries(current)) {
       expect(previousScoring(text, UNDRAWN), name).toBe(hostedTexts({}, true)[name]);
@@ -298,7 +309,7 @@ describe("preview held-match briefing stays byte-identical to main 5df81d04", ()
     const digests: Record<string, string> = {};
     for (const rules of PREVIEW_RULES) for (const players of [2, 4] as const) {
       const mcp = { ...DEFAULT_MCP_CONFIG, maxAgentsPerMatch: players };
-      const config = { ...newMatchConfig(rulesConfig(rules)), players, queenKillsFirst: undefined };
+      const config = historicalRules({ ...newMatchConfig(rulesConfig(rules)), players });
       digests[`join ${rules} players=${players}`] = sha(joinBriefing(config, mcp, false, { house: false, undrawn: true }));
       digests[`rules ${rules} players=${players}`] = sha(briefing(createMatch(COMPARISON_SEED, config).config, mcp));
     }
@@ -307,9 +318,10 @@ describe("preview held-match briefing stays byte-identical to main 5df81d04", ()
     for (const rules of PREVIEW_RULES) for (const players of [2, 4] as const) {
       const mcp = { ...DEFAULT_MCP_CONFIG, maxAgentsPerMatch: players };
       const config = { ...newMatchConfig(rulesConfig(rules)), players };
+      const rulesText = briefing(createMatch(COMPARISON_SEED, config).config, mcp);
       const texts = {
         join: joinBriefing(config, mcp, false, { house: false, undrawn: true }),
-        rules: briefing(createMatch(COMPARISON_SEED, config).config, mcp),
+        rules: rules === "redesign" ? beforeRenewal(rulesText) : rulesText,
       };
       for (const [kind, text] of Object.entries(texts)) {
         const key = `${kind} ${rules} players=${players}`;
@@ -324,7 +336,7 @@ describe("preview held-match briefing stays byte-identical to main 5df81d04", ()
     for (const rules of PREVIEW_RULES) for (const players of [2, 4] as const) {
       const mcp = { ...DEFAULT_MCP_CONFIG, maxAgentsPerMatch: players };
       const config = createMatch(COMPARISON_SEED, { ...newMatchConfig(rulesConfig(rules)), players }).config;
-      verifyVocabularyOnly(`rules ${rules} players=${players}`, briefing({ ...config, queenKillsFirst: undefined }, mcp), usesCompactAgentText(config));
+      verifyVocabularyOnly(`rules ${rules} players=${players}`, briefing(historicalRules(config), mcp), usesCompactAgentText(config));
     }
   });
 
@@ -349,7 +361,7 @@ describe("preview held-match briefing stays byte-identical to main 5df81d04", ()
         const rulesText = full.data.rules as string;
         expect(rulesText).not.toMatch(/steer/i);
         expect(rulesText).toContain("queen kills");
-        expect(sha(beforeVocabulary(rulesText, usesCompactAgentText(rulesConfig(rules))))).toBe(PREVIEW_QUEEN_FIRST[`rules ${rules} players=${players}`]);
+        expect(sha(beforeVocabulary(beforeRenewal(rulesText), usesCompactAgentText(rulesConfig(rules))))).toBe(PREVIEW_QUEEN_FIRST[`rules ${rules} players=${players}`]);
       }
     }, 30_000);
   }
