@@ -541,13 +541,21 @@ describe("Score Band side-by-side History ledger", () => {
     expect(strip.scrollTop).toBe(0);
     expect(strip.hidden).toBe(false);
 
-    // Mounted HUD switches cleanly between wide and narrow modes via mountDeckHud.
-    const hudPort = dom({ search: "", wide: true });
+    // At the port's desktop width (1440px, 16px text) the two min-width queries
+    // match; the small-screen and enlarged-phone queries do not.
+    const hudPort = dom();
+    const media = hudPort.win.matchMedia;
+    hudPort.win.matchMedia = query => {
+      const min = /^\(min-width: ([\d.]+)em\)$/.exec(query);
+      return { ...media(query), media: query, matches: !!min && hudPort.win.innerWidth >= Number(min[1]) * 16 };
+    };
     Object.assign(hudPort.win.location, { href: "https://antwars.example/?watch=1", pathname: "/" });
     const host = hudPort.doc.createElement("div") as unknown as ElementPort;
     hudPort.body.append(host);
     const hud = mountDeckHud({ doc: hudPort.doc, host, tips: [], replay: null, teamView: null, waiting: null, boardAspect: null, actions } as unknown as HudHost);
     hud.update({ frame: makeFrame(1), connection: "live", board: "3d", selected: null, selectedAgent: -1, mode: null, stalled: false } as HudView);
+    expect(host.byClass("d1-foot")[0]!.parent).toBe(host.byClass("d1-hud")[0]);
+    expect(host.byClass("d1-credit-handle")).toHaveLength(0);
     expect(host.byClass("sb-history-strip")).toHaveLength(1);
     expect(host.byClass("sb-deck-table")).toHaveLength(1);
     expect(host.byClass("sb-deck-table")[0]!.byClass("sb-columns")).toHaveLength(1);

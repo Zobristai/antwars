@@ -1003,7 +1003,7 @@ describe("scrolling HUD fit evidence", () => {
     server.middlewares.use((req, res, next) => {
       if (req.url !== "/footer-test") return next();
       res.setHeader("Content-Type", "text/html");
-      res.end('<meta name="viewport" content="width=device-width, initial-scale=1"><main class="aw-hud"></main>');
+      res.end('<meta name="viewport" content="width=device-width, initial-scale=1"><main class="aw-hud" hidden></main>');
     });
     await server.listen();
     const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? "/opt/chrome-for-testing/chrome-linux64/chrome",
@@ -1019,8 +1019,13 @@ describe("scrolling HUD fit evidence", () => {
         mountDeckHud({ doc: document, host: document.querySelector('.aw-hud'), tips: [], replay: null, teamView: null, actions: {} });
       ` });
       const credit = page.getByRole("link", { name: "Inspired by @LambethEthan" });
-      // Mounting the module is asynchronous; measure resizing only after the HUD is on the page.
-      await credit.waitFor();
+      // The board can mount its overlays hidden. Fit only after the footer has a width.
+      const foot = page.locator(".d1-foot");
+      await foot.waitFor({ state: "attached" });
+      expect(await foot.evaluate(e => e.clientWidth)).toBe(0);
+      expect(await foot.locator(".d1-credit-handle").count()).toBe(0);
+      await page.locator(".aw-hud").evaluate(e => e.removeAttribute("hidden"));
+      await credit.locator(".d1-credit-handle").waitFor();
       for (const width of [320, 390, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await expect.poll(() => credit.evaluate((a, width) => {

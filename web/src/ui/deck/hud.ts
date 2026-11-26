@@ -232,6 +232,8 @@ export function mountDeckHud(context: HudHost): Mounted<HudView> {
       if (handle.parentElement) inspired.textContent = "Inspired by @LambethEthan";
       return;
     }
+    // Hiding board overlays gives the footer zero width. Its resize observer refits it when shown.
+    if (!foot.clientWidth) return;
     if (!handle.parentElement) inspired.replaceChildren("Inspired by ", handle);
     handle.style.removeProperty("font-size");
     const padding = win.getComputedStyle(foot);
