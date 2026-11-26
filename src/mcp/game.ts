@@ -1388,11 +1388,14 @@ export class Game {
   }
 
   /** Sampling never acknowledges history; priorities leave the queue only when sent. */
-  acknowledgeCurrentEvents(agentId: string, cursor: number, priorityCount: number): void {
+  acknowledgeCurrentEvents(agentId: string, cursor: number, delivered: number | readonly number[]): void {
     const rec = this.records.get(agentId);
     if (rec !== undefined) {
       rec.currentEventCursor = Math.max(rec.currentEventCursor, cursor);
-      rec.priorityEvents.splice(0, priorityCount);
+      if (typeof delivered === "number") rec.priorityEvents.splice(0, delivered);
+      // Filtered priorities need not form a prefix. Remove their ascending queue
+      // positions from the end so earlier positions remain valid.
+      else for (let i = delivered.length - 1; i >= 0; i--) rec.priorityEvents.splice(delivered[i]!, 1);
     }
   }
 
