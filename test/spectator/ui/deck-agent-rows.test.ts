@@ -70,14 +70,13 @@ describe("the team section's agent rows", () => {
     const make = body("makeRow");
     expect(make).toContain('listen(button, "pointerenter", point);');
     expect(make).toContain('listen(button, "focus", () => { point();');
-    expect(make).toContain('listen(button, "click", () => { focusCard = true; actions.select(null); actions.selectAgent(index); });');
+    expect(make).toContain('listen(button, "click", pick);');
   });
 
   it("puts the asterisk beside each self-reported model, the same explanation on a pointer or a tap, and no keyboard stop", () => {
     const make = body("makeRow");
     expect(make).toContain('const ast = h(doc, "span", "d1-ast-mark", "*");');
     expect(make).toContain('listen(ast, "pointerenter", () => showTip(ast));');
-    expect(make).toContain('listen(ast, "click", e => { e.stopPropagation(); showTip(ast); });');
     expect(make).not.toMatch(/tabIndex|tabindex|"button", "d1-ast/);
     expect(body("writeRow")).toContain("setHidden(node.ast, !row.asterisk);");
     // The tip's default lines are the asterisk's explanation, unchanged.

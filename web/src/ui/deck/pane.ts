@@ -94,8 +94,10 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
   tip.hidden = true;
   let tipFor: Element | null = null;
   let tipKey = "";
+  let pickedTip = false;
   const showTip = (target: Element, lines: readonly string[] = [D1_COPY.selfReported]) => {
     tipFor = target;
+    pickedTip = false;
     const keyNow = lines.join("\n");
     if (keyNow !== tipKey) { tipKey = keyNow; tip.replaceChildren(...lines.map(line => h(doc, "span", "d1-tip-line", line))); }
     tip.hidden = false;
@@ -107,23 +109,31 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     tip.style.left = `${Math.round(x)}px`;
     tip.style.top = `${Math.round(y)}px`;
   };
-  const hideTip = () => { tipFor = null; tip.hidden = true; };
+  const hideTip = () => { tipFor = null; pickedTip = false; tip.hidden = true; };
+  const clickTip = (e: Event, target: HTMLElement, pick?: () => void, lines?: readonly string[]) => {
+    e.stopPropagation();
+    pick?.();
+    showTip(target, lines);
+    // Card focus can scroll the clicked target away from a stationary pointer. Keep its tip until dismissed.
+    pickedTip = pick !== undefined;
+  };
   // A finger lifting is not a pointer leaving: a tap keeps the tip until the next tap elsewhere.
   const leaveTip = (e: Event) => {
     const p = e as PointerEvent;
     if (p.pointerType === "touch") return;
+    if (pickedTip) return;
     const to = p.relatedTarget as Node | null;
     if (!(to && (tip.contains(to) || tipFor?.contains(to)))) hideTip();
   };
   listen(tip, "pointerleave", leaveTip);
   /**
-   * A rating badge's "± RD" in the same tip as the asterisk's: a mouse or pen over it shows it, a tap shows it without
-   * opening the row's card, and keyboard focus on the badge (the heading's) or its row (an agent row's) shows it too.
+   * A rating badge's "± RD" in the same tip as the asterisk's: hover, tap and keyboard focus (on the heading badge or the
+   * row button) reveal it. Only a tap on an agent row's badge also picks that agent.
    */
-  const rdTip = (badge: HTMLElement, rd: () => string) => {
+  const rdTip = (badge: HTMLElement, rd: () => string, pick?: () => void) => {
     listen(badge, "pointerenter", e => { if ((e as PointerEvent).pointerType !== "touch" && rd()) showTip(badge, [rd()]); });
     listen(badge, "pointerleave", leaveTip);
-    listen(badge, "click", e => { if (!rd()) return; e.stopPropagation(); showTip(badge, [rd()]); });
+    listen(badge, "click", e => { if (rd()) clickTip(e, badge, pick, [rd()]); });
   };
   listen(doc, "pointerdown", e => { const at = e.target as Node | null; if (tipFor && !(at && (tip.contains(at) || tipFor.contains(at)))) hideTip(); });
 
@@ -298,7 +308,7 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     // A Benchmark handle's badges as one unit beside its name, never split or shrunk (the Leaderboard's d1p-tags).
     const tags = h(doc, "span", "d1-tags");
     // The self-reported asterisk follows the model it marks, its explanation the same tip: a pointer
-    // over it shows it, a tap shows it without opening the card; never a stop for the keyboard,
+    // over it shows it, a tap also opens the card; never a stop for the keyboard,
     // the row's own name says "self-reported".
     const ast = h(doc, "span", "d1-ast-mark", "*");
     titleBox.append(title);
@@ -314,18 +324,19 @@ export function mountTeams(doc: Document, actions: HudActions, hooks: TeamHooks)
     badge.setAttribute("aria-hidden", "true");
     surface.append(button, badge, who);
     item.append(surface);
+    const pick = () => { focusCard = true; actions.select(null); actions.selectAgent(index); };
     listen(ast, "pointerenter", () => showTip(ast));
-    listen(ast, "click", e => { e.stopPropagation(); showTip(ast); });
+    listen(ast, "click", e => clickTip(e, ast, pick));
     listen(ast, "pointerleave", leaveTip);
-    rdTip(elo, () => node.rd);
+    rdTip(elo, () => node.rd, pick);
     // Pointing at a row, or focusing it, lights its squad and its order's tile; choosing it opens its card.
     const point = () => { actions.hover(index); light(index); };
     const leave = () => { actions.hover(selectedAgent); light(targetFor); };
     listen(button, "pointerenter", point);
     listen(button, "pointerleave", leave);
     listen(button, "focus", () => { point(); if (node.rd && button.matches(":focus-visible")) showTip(elo, [node.rd]); });
-    listen(button, "blur", () => { leave(); if (tipFor === elo) hideTip(); });
-    listen(button, "click", () => { focusCard = true; actions.select(null); actions.selectAgent(index); });
+    listen(button, "blur", () => { leave(); if (tipFor === elo && !pickedTip) hideTip(); });
+    listen(button, "click", pick);
     const node: RowNode = { index, item, button, badge, title, tags, model, modelTags, ast, elo, result, rd: "", written: "" };
     return node;
   };
