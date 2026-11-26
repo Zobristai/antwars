@@ -271,7 +271,7 @@ describe("a two-colony seat's observe reply", () => {
       const reply = await session.call("observe");
       expect(reply.error, reply.text).toBe(false);
       expect(reply.data).not.toHaveProperty("opponents");
-      expect(Object.keys(reply.data)).toEqual(["houseIdleSeconds", "status", "view"]);
+      expect(Object.keys(reply.data)).toEqual(["houseIdleSeconds", "status", "freeAntsByCaste", "view"]);
       expect(reply.data.status).toHaveLength(3);
     }
   });
