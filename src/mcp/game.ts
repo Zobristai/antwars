@@ -8,9 +8,10 @@ import { isQuadrantRotation, OWN_VALUE_GRID_SCALE, validateMapValues } from "../
 import { quadrantMatchMaps } from "../sim/mapShapes.js";
 import { newMatchConfig } from "../sim/gridScale.js";
 import { eliminationsAt, headerLine, tickLine } from "../sim/log.js";
+import { countMarkPool } from "../sim/marks.js";
 import { cloneState, createMatch } from "../sim/map.js";
 import { advance, prepareInitialPointRests, step, type ServerTerminal } from "../sim/step.js";
-import type { Agent, BroodSet, ColonyId, EliminationReason, InputErrorCode, InputResult, MatchResult, SimInput, SimState, StepOutput, VisibleEvent } from "../sim/types.js";
+import type { Agent, BroodSet, ColonyId, EliminationReason, InputErrorCode, InputResult, MarkCaste, MatchResult, SimInput, SimState, StepOutput, VisibleEvent } from "../sim/types.js";
 import { asTwoColony } from "../sim/types.js";
 import type { AgentView } from "../sim/view.js";
 import { HOLD_BEHAVIOUR } from "../sim/holdBehaviour.js";
@@ -104,6 +105,8 @@ export interface Opponent {
 
 /** Adapter-only observe fields, captured with the sim view, never by taking another view. */
 export interface ObserveInfo {
+  /** Living ants available to the observing seat's colony, before verb or caste restrictions. */
+  readonly freeAntsByCaste?: Readonly<Record<MarkCaste, number>>;
   /** Present for a rated-house seat; the live server setting, not a rules value. */
   readonly houseIdleSeconds?: number;
   /** Compact, documented seat metadata; reset tool names are space-separated. */
@@ -1426,25 +1429,25 @@ export class Game {
     const where = this.locate(rec);
     const retryAfterMs = this.overRate(rec);
     const state = where.kind === "queued" ? null : where.match?.state ?? null;
-    const observe = input.type === "observe" ? { observeInfo: this.observeInfoForAgent(agentId) } : {};
+    const observe = () => input.type === "observe" ? { observeInfo: this.observeInfoForAgent(agentId, retryAfterMs === null) } : {};
     if (retryAfterMs !== null) {
       const agent = state?.agents.find(a => a.id === agentId);
       const tick = state?.tick ?? null;
       const nextCommandTick = state === null || agent === undefined || where.kind === "ended" ? null
         : agent.lastCommandTick === null ? state.tick : Math.max(state.tick, agent.lastCommandTick + state.config.commandFloorTicks);
       return { kind: "error", code: "call_rate", view: null, timing: { tick, nextCommandTick, retryAfterMs },
-        ...(where.kind === "ended" ? { result: where.match?.state.result ?? null } : {}), ...observe };
+        ...(where.kind === "ended" ? { result: where.match?.state.result ?? null } : {}), ...observe() };
     }
-    if (where.kind === "queued") return input.type === "observe" || input.type === "rejoin" ? { kind: "queued", nextStart: this.next, ...observe } : adapterError("not_started", null);
+    if (where.kind === "queued") return input.type === "observe" || input.type === "rejoin" ? { kind: "queued", nextStart: this.next, ...observe() } : adapterError("not_started", null);
     if (where.kind === "ended") {
-      if (where.match === null) return { kind: "error", code: "match_over", view: null, ...observe };
+      if (where.match === null) return { kind: "error", code: "match_over", view: null, ...observe() };
       // The sim answers every call after the end with match_over and a view carrying the winner. After the end
       // step only takes views, so keeping its state advances nothing but marks the agent's events delivered.
       const out = step(where.match.state, [input]);
       where.match.state = out.state;
       const result = out.results[0];
       if (result !== undefined) this.retainEvents(agentId, result.view);
-      if (input.type === "observe" && result?.view != null) return { kind: "view", view: result.view, ...observe };
+      if (input.type === "observe" && result?.view != null) return { kind: "view", view: result.view, ...observe() };
       return result === undefined ? { kind: "error", code: "match_over", view: null } : toOutcome(result);
     }
     return this.submit(where.match, input, countsAsHouseActivity, identity);
@@ -1485,12 +1488,12 @@ export class Game {
         : this.houseActivity.get(agentId) ?? this.current.state.agents.find(agent => agent.id === agentId)?.joinedTick };
   }
 
-  observeInfoForAgent(agentId: string): ObserveInfo {
+  observeInfoForAgent(agentId: string, includeFreeAnts = true): ObserveInfo {
     const rec = this.records.get(agentId);
     const where = rec === undefined ? null : this.locate(rec);
     const state = where === null || where.kind === "queued" ? null : where.match?.state ?? null;
     const config = rec === undefined ? this.undrawnConfig : this.configFor(rec);
-    const base = observeInfo(state, agentId, config);
+    const base = observeInfo(state, agentId, config, includeFreeAnts);
     if (rec === undefined) return base;
     const agent = state?.agents.find(agent => agent.id === agentId);
     const since = this.houseActivity.get(agentId) ?? agent?.joinedTick ?? 0;
@@ -1501,7 +1504,7 @@ export class Game {
     const brood = config.castes !== undefined ? ["set_brood"] : [];
     const resets = [...new Set([...base.status[1].split(" "), ...brood, "observe", "rules", "join"])].join(" ");
     const opponents = state === null || agent === undefined ? undefined : opponentsOf(state, agent.colony, this.colonyNames(agentId));
-    return { houseIdleSeconds: this.houseIdleSeconds,
+    return { houseIdleSeconds: this.houseIdleSeconds, ...base,
       status: base.status[2] === undefined ? [left, resets] : [left, resets, base.status[2]],
       ...(opponents === undefined ? {} : { opponents }) };
   }
@@ -1606,7 +1609,7 @@ export class Game {
 }
 
 /** No view-taking, event consumption, timer reset or opponent map disclosure. */
-export function observeInfo(state: SimState | null, agentId: string, config: SimConfig): ObserveInfo {
+export function observeInfo(state: SimState | null, agentId: string, config: SimConfig, includeFreeAnts = true): ObserveInfo {
   // Rules 27 names mark only where the mark tool exists.
   const mark = config.wordMarksDisabled === true ? [] : ["mark"];
   const commands = ["order", ...mark, ...(config.countMarks === undefined ? [] : ["count_mark"]), ...(config.queenFounding === undefined ? [] : ["found_queen"])];
@@ -1628,6 +1631,7 @@ export function observeInfo(state: SimState | null, agentId: string, config: Sim
     status: state === null || agent === undefined || config.rules !== "redesign" || !enemyShare
       ? [secondsLeft, resets]
       : [secondsLeft, resets, Math.trunc(enemyTiles * 1000 / (config.mapWidth * config.mapHeight))],
+    ...(!includeFreeAnts || state === null || agent === undefined ? {} : { freeAntsByCaste: countMarkPool(state, agent.colony, state.tick).freeAntsByCaste }),
   };
 }
 

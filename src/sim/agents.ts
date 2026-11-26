@@ -6,7 +6,7 @@ import { COUNT_MARK_MAX_COUNT, COUNT_MARK_MAX_COUNT_TEXT, SUB } from "./config.j
 import { distance, tileCentre, withinTiles, ZERO, type Vec } from "./geometry.js";
 import { forageDirection, toward } from "./forage.js";
 import { activeQueens, forEachNear, hasAdjacentEnemy, nextQueenFoundingTick, queenFoundingCost, queenSpacingNests, queensOf, tileIndex, type Grid } from "./map.js";
-import { countMarkCasteEligible, localRulesSide, markDirection, parseWords, releaseClaim, trailMark } from "./marks.js";
+import { countMarkPool, markDirection, parseWords, releaseClaim, trailMark } from "./marks.js";
 import { lineSpotOf } from "./lineMarks.js";
 import { countMarkVerbs, lineMarksEnabled, nextPatrolWaypoint, patrolChains, patrolWaypoint, reachedPatrolWaypoint, type PatrolChains } from "./patrol.js";
 import { BROODS, COUNT_CASTES, type Agent, type Ant, type Brood, type BroodSet, type ColonyId, type CountMarkVerb, type InputError, type Mark, type MarkCaste, type Order, type QueenBrood, type SimEvent, type SimInput, type SimState } from "./types.js";
@@ -520,15 +520,9 @@ function applyCountMark(
   }
   const terrain = terrainRefusal(state, agent.id, tile.tileX, tile.tileY, () => nearestCountMarkPlacement(state, agent, tile.tileX, tile.tileY));
   if (terrain !== null) return terrain;
-  const live = state.ants.filter((ant) => ant.colony === agent.colony && ant.hp > 0);
-  const marks = new Set(state.marks.filter((mark) => mark.colony === agent.colony && mark.count !== undefined &&
-    tick - mark.laidTick < state.config.markLifetimeTicks).map((mark) => mark.id));
-  const claimed = live.filter((ant) => ant.squad === null && ant.claim !== undefined && marks.has(ant.claim)).length;
   agent.lastCommandTick = tick;
   agent.idle = false;
-  const planner = !localRulesSide(state, agent.colony);
-  const free = live.filter((ant) => ant.squad === null && (ant.claim === undefined || !marks.has(ant.claim)) && !(planner && ant.role === "guard")
-    && countMarkCasteEligible(state.config, ant, { verb, caste })).length;
+  const pool = rules.reportClaimAvailability ? countMarkPool(state, agent.colony, tick, { verb, caste }) : undefined;
   const same = moved !== undefined ? undefined : state.marks.find((m) => m.agentId === agent.id && m.verb === verb && m.tileX === tile.tileX && m.tileY === tile.tileY
     && m.toTileX === to?.tileX && m.toTileY === to?.tileY);
   if (moved !== undefined) {
@@ -549,9 +543,11 @@ function applyCountMark(
     layMark(state, agent, tile.tileX, tile.tileY, [], tick, events, { verb, count: input.count, ...(caste === undefined ? {} : { caste }),
       ...(to === undefined ? {} : { toTileX: to.tileX, toTileY: to.tileY }) });
   }
-  if (rules.reportClaimAvailability) {
+  if (pool !== undefined) {
     const mark = moved ?? same ?? state.marks.at(-1)!;
-    const availability = { claimedAnts: claimed, freeAntsNow: free };
+    const { worker, soldier, flyer } = pool.freeAntsByCaste;
+    const free = worker + soldier + flyer;
+    const availability = { claimedAnts: pool.claimedAnts, freeAntsNow: free };
     const event: Extract<SimEvent, { type: "count_mark_accepted" }> = {
       type: "count_mark_accepted", tick, markId: mark.id, agentId: agent.id, colony: agent.colony,
       tileX: tile.tileX, tileY: tile.tileY, verb, count: input.count, availability,
