@@ -78,6 +78,24 @@ try {
   assert.equal(page.url(), `${url}#board`);
   await ready(page);
   await waitFor(page, "the replay to resume", async () => (await frame(page)).playbackTick === beforeReload.playbackTick, 5000);
+  // Stall a viewer's seek while its playback buffer is being rebuilt from the beginning.
+  const rebuilding = Promise.withResolvers<void>();
+  await page.route(`**/replays/${stored.id}`, () => { rebuilding.resolve(); }, { times: 1 });
+  const scrubber = page.getByRole("slider", { name: "Replay position" });
+  const seekMs = 6000;
+  await scrubber.evaluate((slider: HTMLInputElement, ms) => {
+    slider.value = String(ms);
+    slider.dispatchEvent(new Event("change"));
+  }, seekMs);
+  await rebuilding.promise;
+  await lose(page);
+  await reloadLost();
+  await ready(page);
+  await waitFor(page, "the interrupted seek to land", async () => {
+    const result = await frame(page);
+    return result.playbackTick > beforeReload.playbackTick && Number(await scrubber.inputValue()) === seekMs;
+  }, 5000);
+  console.log(`Replay: interrupted seek resumed at ${seekMs} ms.`);
   assert.deepEqual(errors.filter(e => e.startsWith("page error:")), []);
   console.log(`Replay: identical pixels after restore; automatic 2D and interrupted recovery reloads resumed at tick ${beforeReload.playbackTick}.`);
   await page.context().close();

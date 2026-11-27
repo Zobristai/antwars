@@ -361,7 +361,12 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   // Leaving an explicit replay keeps its position for a board switch or a recovery reload;
   // a position not yet resumed is passed on as it was.
   view?.addEventListener("pagehide", () => {
-    if (replay) rememberReplayPosition(view, params, resumeAt ?? recording?.position ?? 0, isRecoveryReload?.() ?? false);
+    if (replay) {
+      const recovery = isRecoveryReload?.() ?? false;
+      // During a seek the decoder starts again at zero. Recover at the viewer's target, not that cursor.
+      const seekTarget = recovery ? recording?.seekTarget : null;
+      rememberReplayPosition(view, params, seekTarget ?? resumeAt ?? recording?.position ?? 0, recovery);
+    }
     close();
   }, { once: true });
   setFallback(null);
