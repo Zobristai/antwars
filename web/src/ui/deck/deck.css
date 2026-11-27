@@ -88,6 +88,9 @@ body:has(> #aw-waiting:not([hidden]):not([data-needs-webgl])) .d1 { visibility: 
   display: inline-flex; align-items: center; justify-content: center; min-height: var(--d1-tap, 36px); padding: 0 18px; border: 0; border-radius: 999px;
   background: var(--aw-c1); color: var(--aw-bg); font-size: 13px; font-weight: 700; line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer;
 }
+@media (width < 320px) {
+  :is(.fg-hero-actions, .d1p-end) > .d1-agent-button { white-space: normal; text-align: center; }
+}
 .d1 .d1-agent-button { color: var(--aw-bg); }
 /* The result dialog also stands in the 2D board's .d2 root, whose links inherit their ink (ui.css .d2 a). */
 .d1-dialog .d1-agent-button { color: var(--aw-bg); }
