@@ -656,7 +656,7 @@ export function createRatings(
     (error: unknown) => { console.warn("antwar house rating backfill failed", error); return false; },
   );
   let houseMarked = backfill();
-  const ffaPage = createFfaPage(store, identities, publicVisibility);
+  const ffaPage = createFfaPage(store, publicVisibility);
   /**
    * The replay id stored for each match (watchMatches), read in one batch; a match without one is absent. With
    * withTimes, the same batch also reads each match's lobby for its match time (null when it cannot be read). With the

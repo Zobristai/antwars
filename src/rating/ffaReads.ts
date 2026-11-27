@@ -1,8 +1,6 @@
 import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
-import { houseOwnedAmong } from "../identity/houseOwnership.js";
-import type { Identities } from "../identity/identities.js";
-import { placeholder } from "../identity/retention.js";
-import { boundedReads } from "../store/join-reads.js";
+import { HOUSE_USERNAME } from "../identity/houseOwnership.js";
+import { identityDisplay, nameState, placeholder } from "../identity/retention.js";
 import { houseLabel } from "./houseLabels.js";
 import { readMany, type Fields, type QueryOptions, type Store } from "../store/firestore.js";
 import { FFA_COLLECTION, FFA_ESTIMATOR, FFA_INITIAL } from "./ffa.js";
@@ -37,19 +35,33 @@ function waitFor<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
 }
 
 /** No stored sort key. Materialize both scopes from one consistent ratings scan, never from a caller's cursor time. */
-export function createFfaPage(store: Store, identities: Pick<Identities, "findById">, visibility?: BatchPublicVisibility) {
+export function createFfaPage(store: Store, visibility?: BatchPublicVisibility) {
   async function batch(rows: readonly (Position & ReturnType<typeof ffaRating>)[], signal: AbortSignal) {
     const ids = rows.map(row => row.identityId);
     const visible = visibility && await visibility.identitiesVisibleEach(ids, signal);
     const publicRows = rows.filter(row => !visible || visible.get(row.identityId));
     if (!publicRows.length) return [];
-    const owned = await houseOwnedAmong(paths => readMany(store, paths, signal), publicRows.map(row => row.identityId));
-    return boundedReads(publicRows, 8, async row => {
-      const identity = await identities.findById(row.identityId, signal);
-      const displayName = identity?.displayName ?? placeholder(row.identityId), benchmark = owned.has(row.identityId);
+    // Join names and ownership in batches, including owners who have no rating row of their own.
+    const pathOf = (id: string) => `identities/${id}`;
+    const claim = `usernames/${HOUSE_USERNAME}`;
+    const docs = await readMany(store, [claim, ...publicRows.map(row => pathOf(row.identityId))], signal);
+    const missingOwners = new Set<string>();
+    for (const row of publicRows) {
+      const owner = docs.get(pathOf(row.identityId))?.ownerId;
+      if (owner && !docs.has(pathOf(owner))) missingOwners.add(pathOf(owner));
+    }
+    const owners = await readMany(store, [...missingOwners], signal);
+    const houseId = docs.get(claim)?.identityId, now = Date.now();
+    return publicRows.map(row => {
+      const fields = docs.get(pathOf(row.identityId)), ownerId = fields?.ownerId ?? row.identityId;
+      const owner = docs.get(pathOf(ownerId)) ?? owners.get(pathOf(ownerId));
+      const state = owner ? nameState(owner, now) : "purged";
+      const displayName = fields && owner && state !== "purged"
+        ? identityDisplay(row.identityId, fields, ownerId, { ...owner, nameState: state }) : placeholder(row.identityId);
+      const benchmark = !!fields && ownerId === houseId;
       const label = benchmark ? houseLabel(displayName) : { thinkingLevel: null, serviceTier: null };
       return { ...row, benchmark, displayName, ...label, rd: null, wins: null, losses: null, draws: null, form: [] };
-    }, signal);
+    });
   }
   async function build(signal: AbortSignal) {
     const entries: Awaited<ReturnType<typeof batch>> = [];

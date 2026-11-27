@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { expect, it, vi } from "vitest";
 import { createPublicVisibility } from "../../src/identity/publicVisibility.ts";
 import { FFA_ESTIMATOR } from "../../src/rating/ffa.ts";
@@ -8,7 +9,7 @@ it("pages by conservative score across storage batches, leaving hidden owners, t
   const { store, docs } = memoryWatchStore();
   const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
   const seed = (n: number, mu: number, sigma: number, matches: number, owner?: number) => {
-    docs.set(`identities/${id(n)}`, { kind: owner === undefined ? "username" : "handle", ...(owner === undefined ? {} : { ownerId: id(owner) }) });
+    docs.set(`identities/${id(n)}`, { kind: owner === undefined ? "username" : "handle", displayName: `Player${n}`, claimedAt: String(Date.now()), ...(owner === undefined ? {} : { ownerId: id(owner) }) });
     docs.set(`ratings-ffa/${id(n)}`, { estimator: FFA_ESTIMATOR, mu: String(mu), sigma: String(sigma), ratedMatches: String(matches) });
   };
   // Fill the first storage batch with zero-match rows; the best scores are not the largest means.
@@ -17,12 +18,11 @@ it("pages by conservative score across storage batches, leaving hidden owners, t
   seed(4, 50, 1, 1); seed(5, 55, 1, 3, 4);
   docs.set("usernames/antwars", { identityId: id(1) });
   const policy = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [id(4)]);
-  const identities = { findById: async (id: string) => ({ id, kind: "username" as const, displayName: id }) };
   const readTimes: (string | undefined)[] = [];
   const ratings = createRatings({ ...store, query(collection, options) {
     if (collection === "ratings-ffa") readTimes.push(options.readTime);
     return store.query(collection, options);
-  } }, identities, policy);
+  } }, undefined, policy);
   const out: [string, number][] = [];
   let cursor: string | undefined;
   do {
@@ -91,4 +91,37 @@ it("expires a continuation without rebuilding; a new first page refreshes once",
     const scans = () => query.mock.calls.filter(([collection]) => collection === "ratings-ffa").length;
     expect(scans()).toBe(1); await ratings.ffaLeaderboard(); expect(scans()).toBe(2);
   } finally { vi.useRealTimers(); }
+});
+
+it("serves a cold board with 1,000 rated handles using batched identity reads within the page deadline", async () => {
+  const { docs, store } = memoryWatchStore();
+  docs.set("identities/owner", { kind: "username", displayName: "Colony", claimedAt: String(Date.now()) });
+  for (let i = 0; i < 1000; i++) {
+    docs.set(`identities/p${i}`, { kind: "handle", displayName: `Colony/ant${i}`, ownerId: "owner" });
+    docs.set(`ratings-ffa/p${i}`, { estimator: FFA_ESTIMATOR, mu: String(i), sigma: "1", ratedMatches: "2" });
+  }
+  let reads = 0;
+  const ratings = createRatings({ ...store, async getMany(paths, signal) {
+    reads++;
+    await delay(50, undefined, { signal });
+    return new Map(paths.map(path => [path, docs.get(path) ?? null]));
+  } }, { findById: async () => { throw new Error("unexpected per-player lookup"); } });
+  const page = await ratings.ffaLeaderboard({ limit: 1, signal: AbortSignal.timeout(5_000) });
+  if (!page.ok) throw new Error(page.reason);
+  expect(page.value.entries).toMatchObject([{ displayName: "Colony/ant999", rating: 996 }]);
+  expect(reads).toBeLessThanOrEqual(20);
+});
+
+it("uses the current owner's retained name without exposing a released or purged name", async () => {
+  const { docs, store } = memoryWatchStore();
+  for (const state of ["claimed", "released", "purged"]) {
+    docs.set(`identities/${state}`, { kind: "username", displayName: "Meadow", claimedAt: String(Date.now()), nameState: state });
+    docs.set(`identities/seat-${state}`, { kind: "handle", ownerId: state, displayName: "Previous/ant" });
+    docs.set(`ratings-ffa/seat-${state}`, { estimator: FFA_ESTIMATOR, mu: "25", sigma: "3", ratedMatches: "1" });
+  }
+  const page = await createRatings(store).ffaLeaderboard();
+  if (!page.ok) throw new Error(page.reason);
+  expect(Object.fromEntries(page.value.entries.map(row => [row.identityId, row.displayName]))).toEqual({
+    "seat-claimed": "Meadow/ant", "seat-released": "account:released/ant", "seat-purged": "account:seat-purged",
+  });
 });
