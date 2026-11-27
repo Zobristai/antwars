@@ -38,7 +38,8 @@ import { streamQueens } from "../../../src/live/format.ts";
 import { openingBounds, openingPhase } from "../start-framing.ts";
 import { fitOpeningPose } from "./start-framing.ts";
 import { foundingAspect, foundingFrame, fitFoundingPose } from "./queen-framing.ts";
-import { Frame, Playback, QUEEN_FRAME_TILES, fallWindow, fallenNests, fallenQueenBox } from "../buffer.ts";
+import { ReplayFrames } from "../replay-frame.ts";
+import { Playback, QUEEN_FRAME_TILES, fallWindow, fallenNests, fallenQueenBox } from "../buffer.ts";
 import { createClock } from "../clock.ts";
 import { gpuReadback, realTimeSource, type RealNow } from "../timing.ts";
 import { CVD_MATRICES, QUEEN_EMBLEM } from "../effects.ts";
@@ -142,7 +143,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
   if (!input) return;
   const { replay, feed, head, source, linkState } = input;
   let playback = new Playback({ live: !input.recorded });
-  let replayGeneration = input.recording?.generation ?? 0;
+  const frames = new ReplayFrames();
   const setup = head.full!.setup;
   // The page's one match: its colonies' colours, before anything draws them.
   setMatchColonies(colonyNamesOf(setup), document);
@@ -500,7 +501,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     if (pose === next) lastDefault = next;
   };
 
-  let frame = new Frame();
+  let frame = frames.frame;
   /** The frame the board draws: the playback frame, or one colony's view of it (team-view.ts); the HUD reads frame. */
   let shown = frame;
   const waiting = new Waiting(document.getElementById("aw-waiting"), document.querySelector(".aw-wait-state"));
@@ -658,11 +659,21 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     const t0 = realNow?.() ?? 0;
     let workerMs = 0;
     let deliveryMs = 0;
+    for (const arrival of input.take(realMs)) {
+      if (input.recording && frames.restart(input.recording.generation)) playback = new Playback();
+      if (arrival.kind === "prepared") {
+        playback.pushPrepared(arrival.prepared, arrival.at);
+        workerMs += arrival.workerMs;
+        deliveryMs += arrival.deliveryMs;
+      } else playback.push(arrival.m, arrival.at);
+    }
+    const now = input.now(realMs);
+    const t1 = realNow?.() ?? 0;
+    const seeking = input.recording?.seeking ?? false;
+    const drew = frames.sample(playback, now, seeking);
+    frame = frames.frame;
     controls?.update();
-    if (input.recording && input.recording.generation !== replayGeneration) {
-      replayGeneration = input.recording.generation;
-      playback = new Playback();
-      frame = new Frame();
+    if (frames.landed) {
       overlays.select(null);
       overlays.selectAgent(-1);
       words.clearFocus();
@@ -673,16 +684,6 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
       matchSeen = 0;
       showView(viewName);
     }
-    for (const arrival of input.take(realMs)) {
-      if (arrival.kind === "prepared") {
-        playback.pushPrepared(arrival.prepared, arrival.at);
-        workerMs += arrival.workerMs;
-        deliveryMs += arrival.deliveryMs;
-      } else playback.push(arrival.m, arrival.at);
-    }
-    const now = input.now(realMs);
-    const t1 = realNow?.() ?? 0;
-    const drew = playback.sample(now, frame);
     shown = teamView.apply(frame);
     const board = frame.board;
     const nextOpening = openingPhase(frame.tick, board) ? board : null;
@@ -700,7 +701,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     // by its beat; at no other time does the camera move by itself, and the next match opens on the fight again. The
     // turn is a short eased move on the playback clock, a cut for a
     // viewer who prefers reduced motion.
-    if (board && playback.matches !== matchSeen) {
+    if (board && !seeking && playback.matches !== matchSeen) {
       if (matchSeen > 0) showView(viewName);
       matchSeen = playback.matches;
     }
@@ -714,16 +715,16 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
       // Her box judged at the relief's height under it, as toScreen draws her and the stills measure her (nests()).
       const to = fallPose(camPose(), fallBox, fallenQueenBox(board!)!, W, H, w, h, overlays.boardArea(w, h), (tx, ty) => ground.heightAt(tx, ty));
       if (reducedMotion()) applyPose(to);
-      else fallMove = { from: camPose(), to, startedAt: now };
+      else fallMove = { from: camPose(), to, startedAt: frames.time };
     }
     if (fallMove !== null) {
-      const t = (now - fallMove.startedAt) / FALL_MOVE_MS;
+      const t = (frames.time - fallMove.startedAt) / FALL_MOVE_MS;
       applyPose(lerpPose(fallMove.from, fallMove.to, easeInOut(t)));
       if (t >= 1) fallMove = null;
     }
     // The board's state moves every frame, drawn or not, so a catch-up without drawing ends where a drawn one would.
     if (boardLook() !== lookShown) relook();
-    ground.update(shown, now);
+    ground.update(shown, frames.time);
     rocks.update(shown);
     const selected = squads.selected;
     // Projected first: an ant biting a queen aims at her ring as the camera draws it now (ants.queenRing).
@@ -759,9 +760,9 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     words.update(shown, toScreen, blocked, placementView, squads.anchors(shown, toScreen), squads.badgeR, toScreenInFront, cueRects);
     squads.updateBadges(shown, toScreen, words.badges);
     cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : [], words.layer.visible ? words.chipObstacles : []);
-    if (board?.result) endedAt ??= now;
+    if (board?.result) endedAt ??= frames.time;
     else endedAt = null;
-    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = cues.aboveBadges.alpha = endedAt === null ? 1 : Math.max(0, 1 - (now - endedAt) / FINALE_FADE_MS);
+    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = cues.aboveBadges.alpha = endedAt === null ? 1 : Math.max(0, 1 - (frames.time - endedAt) / FINALE_FADE_MS);
     // Hover and tap details, as on the 2D board: the page's tooltips, above every panel, until the finale.
     const tipsOn = overlaysOn && wordsOn && endedAt === null;
     const markTip = tipsOn ? words.tipContent() : null;
@@ -774,7 +775,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
       const ended = replay && excerptEnded(frame.tick, input.lastTick);
       overlays.setMode(modeCopy(mode, board.agents.length, ended, location.pathname, input.storedId, board.setup.rated, input.delaySeconds));
       // A stall the client already detects (Playback.underrun), shown only while the match or recording still runs.
-      overlays.setStalled(board.result === null && !ended && playback.underrun(now));
+      overlays.setStalled(!seeking && board.result === null && !ended && playback.underrun(now));
     }
     if (overlaysOn) {
       overlays.update(frame);
@@ -782,7 +783,7 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
       if (areaStale && board) refitArea();
     }
     const t2 = realNow?.() ?? 0;
-    if (render) {
+    if (render || frames.landed) {
       scene.render();
       const o0 = clock.now();
       pixi.renderer.render(pixi.stage);
@@ -801,9 +802,9 @@ export async function start3d(client: { ready: Promise<ClientInfo>; resolveReady
     waiting.frame(drew);
 
     if (board?.result) {
-      resultShownAt ??= now;
-      if (now - resultShownAt >= NEXT_MATCH_POLL_MS) {
-        resultShownAt = now;
+      resultShownAt ??= frames.time;
+      if (frames.time - resultShownAt >= NEXT_MATCH_POLL_MS) {
+        resultShownAt = frames.time;
         input.nextMatch();
       }
     } else resultShownAt = null;

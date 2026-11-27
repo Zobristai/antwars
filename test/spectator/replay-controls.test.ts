@@ -129,8 +129,8 @@ it("wires the shared controls and fresh playback into 2D, 3D and boardless loops
     expect(source.match(/mountReplayControls\(document, input\.recording, colonyNamesOf\(head\.full!\.setup\)\)/g)).toHaveLength(count);
     // The HUD is given the controls themselves (HudHost.replay), never left to find them.
     expect(source.match(/replay: controls\?\.el \?\? null/g)).toHaveLength(count);
-    expect(source.match(/input\.recording\.generation !== replayGeneration/g)).toHaveLength(count);
-    expect(source.match(/playback = new Playback\(\);\s*frame = new Frame\(\);/g)).toHaveLength(count);
+    expect(source.match(/frames\.restart\(input\.recording\.generation\)\) playback = new Playback\(\)/g)).toHaveLength(count);
+    expect(source.match(/frames\.sample\(playback, now, [^;]+;\s*frame = frames\.frame;\s*controls\?\.update\(\);/g)).toHaveLength(count);
     expect(source).toContain("endedAt = resultShownAt = null;");
     expect(source).toContain("fallTurned = false;");
   }
