@@ -361,11 +361,9 @@ class MatchStream {
           : id => hub.beforeRecordingPublication!(this.access!, id),
         handoff: hub.recordHandoff, lobbyId: this.access?.visibility === "private" ? this.access.lobbyId : null,
         ...(hub.captureMatchLogs ? { logHeader: headerLine(state.seed, state.config) } : {}), resume: recording });
-    // House matches are live even under the default (or a larger configured) delay.
-    // All other matches retain the configured floor and rated/unrated minimums.
     // A resumed stream keeps the delay it was saved with.
     const delay = resume?.delaySeconds ?? (this.access === undefined ? hub.config.delaySeconds
-      : isHouseMatch(this.access) ? 0 : Math.max(hub.config.delaySeconds, spectatorDelaySeconds(this.access)));
+      : Math.max(hub.config.delaySeconds, spectatorDelaySeconds(this.access)));
     this.delaySeconds = delay;
     this.delayTicks = Math.round(delay * state.config.ticksPerSecond);
     this.delayMs = Math.max(delay * 1000, this.delayTicks * (hub.playoutMs ?? 1000 / state.config.ticksPerSecond));

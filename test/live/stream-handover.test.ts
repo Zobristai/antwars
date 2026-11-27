@@ -9,8 +9,8 @@
  *
  * A reference hub is pushed the same ticks with no handover. The resumed stream is checked against it:
  * its deltas are byte-identical and its full snapshots equal but for the match identity, which stays
- * the first server's. The delay rules are today's: 300 s for a rated match outside the house modes, 60 s
- * unrated, 0 s for house matches although they are rated; 10 ticks a second.
+ * the first server's. The delay rules are today's: 300 s for an index or rated match, 60 s
+ * for other unrated matches; 10 ticks a second.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, rulesConfig } from "../../src/sim/config.ts";
@@ -200,7 +200,7 @@ describe("a spectator reconnecting at the same lobby path after a handover", () 
 describe("delays across a handover", () => {
   it.each([
     { name: "an unrated match keeps its 60 s delay", access: { lobbyId: LOBBY, visibility: "public", rated: false } as const, seconds: 60 },
-    { name: "a house match keeps its 0 s delay although it is rated", access: { lobbyId: LOBBY, visibility: "public", rated: true, mode: "house-1v1" } as const, seconds: 0 },
+    { name: "an index match keeps its 300 s delay", access: { lobbyId: LOBBY, visibility: "public", rated: true, mode: "house-1v1" } as const, seconds: 300 },
   ])("$name", { timeout: 120_000 }, async ({ access, seconds }) => {
     const delayTicks = seconds * DEFAULT_CONFIG.ticksPerSecond;
     const run = await handOver(access, delayTicks + 1_400, [delayTicks + 300, delayTicks + 800]);

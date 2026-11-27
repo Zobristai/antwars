@@ -64,6 +64,8 @@ export class LiveServer {
   onTick: ((m: LiveMatch) => void) | null = null;
   /** Every lobby this server has played, with its access; matches still held by the hub, for their seats. */
   private readonly lobbies = new Map<string, MatchAccess>();
+  // Instant browser fixtures use unclassified local streams, not a queue mode.
+  private readonly local = new Map<string, { seq: number; startedAt: number }>();
   private readonly live = new Map<string, LiveMatch>();
   /** What the hub saved of each finished match, by replay id: its recording (gzip) and its built record. */
   private readonly replays = new Map<string, Uint8Array>();
@@ -87,7 +89,12 @@ export class LiveServer {
     };
     this.hub = new LiveHub({ config, replayStore, recordHandoff, captureMatchLogs: true });
     this.server = createServer((req, res) => {
-      const path = new URL(req.url ?? "/", "http://localhost").pathname;
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const path = url.pathname;
+      if (path.startsWith("/watch/live/")) {
+        const local = this.local.get(path.slice("/watch/live/".length));
+        if (local) req.url = `/live/${local.seq}${url.search}`;
+      }
       if (path.startsWith("/live/") || path.startsWith("/watch/live/")) {
         this.hub.handle(req, res);
         return;
@@ -112,6 +119,13 @@ export class LiveServer {
       res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" }).end(value === undefined ? undefined : JSON.stringify(value));
     };
     if (path === "/watch/catalog") {
+      if (this.local.size) {
+        const matches = [...this.live.values()].filter(m => m.finalTick === null).map(m => ({
+          lobbyId: m.lobbyId, startedAt: this.local.get(m.lobbyId)!.startedAt, rated: false,
+          delaySeconds: 0, colonies: seats(m.state), matchType: null,
+        }));
+        return json(200, { matches, lobbies: [] });
+      }
       const matches = this.hub.catalogMatches();
       for (const lobbyId of this.live.keys()) if (!matches.some((m) => m.lobbyId === lobbyId)) this.live.delete(lobbyId);
       const players = new Map([...this.live].map(([lobbyId, m]) => [lobbyId, seats(m.state)] as const));
@@ -124,6 +138,7 @@ export class LiveServer {
     const status = /^\/watch\/status\/([^/]+)$/.exec(path);
     if (status) {
       const lobbyId = decodeURIComponent(status[1]!);
+      if (this.local.has(lobbyId)) return json(200, { lobbyId, started: true, playbackFinished: !this.live.has(lobbyId), delaySeconds: 0 });
       const access = this.lobbies.get(lobbyId);
       // A lobby no longer held by the hub has finished its delayed playback.
       return access ? json(200, this.hub.watchStatus(lobbyId) ?? matchWatchStatus(access, "finished")) : json(404);
@@ -155,12 +170,14 @@ export class LiveServer {
   /** Start a match now, one tick every 100 ms of real time; the lazy agent joins with the scripted ones, or at the tick given. */
   start(seq: number, script: ScriptOptions, lazy: boolean | number = false): LiveMatch {
     let state = createMatch(script.seed, script.config);
-    // A public, unrated lobby; at no delay the game's zero-delay class, since the hub holds every other public match at least 60 s.
     const lobbyId = randomUUID();
-    const access: MatchAccess = this.hub.config.delaySeconds === 0
-      ? { lobbyId, visibility: "public", rated: false, mode: "house-1v1" }
-      : { lobbyId, visibility: "public", rated: false };
-    this.hub.startMatch(seq, state, access);
+    const access: MatchAccess = { lobbyId, visibility: "public", rated: false };
+    if (this.hub.config.delaySeconds === 0) {
+      this.local.set(lobbyId, { seq, startedAt: Date.now() });
+      this.hub.startMatch(seq, state);
+    } else {
+      this.hub.startMatch(seq, state, access);
+    }
     const m: LiveMatch = { seq, lobbyId, script, state, finalTick: null };
     this.lobbies.set(lobbyId, access);
     this.live.set(lobbyId, m);
@@ -175,7 +192,10 @@ export class LiveServer {
       state = out.state;
       m.state = state;
       this.hub.pushTick(seq, out);
-      if (state.result !== null) m.finalTick = state.tick;
+      if (state.result !== null) {
+        m.finalTick = state.tick;
+        if (this.local.has(lobbyId)) this.live.delete(lobbyId);
+      }
       this.onTick?.(m);
     }, TICK_MS);
     return m;
@@ -233,7 +253,7 @@ async function serve(size: string, delay: number, port: number) {
     };
   };
   run();
-  // A public match's delay is at least 60 s unless it is the zero-delay class (LiveServer.start).
+  // Zero selects a local stream; a public unrated fixture has the ordinary 60-second floor.
   console.log(`serving a scripted ${size} match at ${url}/index.html (delay ${delay === 0 ? 0 : Math.max(delay, 60)} s); Ctrl-C to stop`);
 }
 

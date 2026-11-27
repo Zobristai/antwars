@@ -29,7 +29,7 @@ export function isHouseMatch(match: MatchAccess): boolean {
 }
 
 export function spectatorDelaySeconds(match: MatchAccess): number {
-  return isHouseMatch(match) ? 0 : match.rated ? RATED_DELAY_SECONDS : UNRATED_DELAY_SECONDS;
+  return match.rated || isHouseMatch(match) ? RATED_DELAY_SECONDS : UNRATED_DELAY_SECONDS;
 }
 
 /** Discovery and legacy current-match selection must never infer public from missing metadata. */

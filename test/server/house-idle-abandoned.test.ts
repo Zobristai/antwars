@@ -134,7 +134,8 @@ it("the live hub releases abandonment without waiting for ratings and checkpoint
     hub.appendLog(429, tickLine(0, [], "abandoned"));
     const terminal = step(initial, [], undefined, undefined, undefined, "abandoned");
     hub.pushTick(429, terminal);
-    clock.advance(100);
+    clock.advance(300_000);
+    expect(hub.watchStatus("idle-house")?.playbackFinished).toBe(true);
     const saved = await checkpoint;
     expect(saved.rated).toBe(false);
     expect(ratingReads).toBe(0);
