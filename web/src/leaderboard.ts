@@ -81,7 +81,7 @@ export function readLeaderboard(value: unknown): LeaderboardPage | null {
   return { entries, ...(value.next === undefined ? {} : { next: value.next as string }) };
 }
 
-export type LeaderboardMode = "1v1" | "2v2" | "3v3" | "4v4" | "house-1v1" | "house-2v2" | "house-3v3" | "house-4v4";
+export type LeaderboardMode = "1v1" | "2v2" | "3v3" | "4v4" | "house-1v1" | "house-2v2" | "house-3v3" | "house-4v4" | "quadrants";
 /** One ranking read: a mode, and for a public mode optionally only its house-owned identities. */
 export interface LeaderboardQuery { readonly mode: LeaderboardMode; readonly scope?: "house" }
 

@@ -12,6 +12,7 @@ export const C = {
   onlyRetired: "Every model loaded here is retired.",
   serviceUnavailable: "The public leaderboard is not enabled on this server.",
   modes: "Choose a ranking",
+  freeForAll: "Free-for-all",
   houseTitle: "Ranked", houseModels: "house models", everyoneTitle: "Ranked", houseModeTitle: "Antwars Model Index",
   tableLoading: "Loading rankings…",
   tableEmpty: "No rated players in this table.",

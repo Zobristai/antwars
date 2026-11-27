@@ -59,7 +59,7 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
   const tabs: { readonly mode: LeaderboardMode; readonly button: HTMLButtonElement }[] = [];
   // The two ranking groups.
   const groups: readonly { readonly label: string; readonly choices: readonly { readonly mode: LeaderboardMode; readonly size: string }[] }[] =
-    BOARD_GROUPS.map(group => ({ label: group.label, choices: group.modes.map(choice => ({ mode: choice, size: sizeOf(choice) })) }));
+    BOARD_GROUPS.map(group => ({ label: group.label, choices: group.modes.map(choice => ({ mode: choice, size: choice === "quadrants" ? C.freeForAll : sizeOf(choice) })) }));
   groups.forEach((group, index) => {
     const block = h(doc, "div", "d1p-board-group");
     const label = h(doc, "p", "d1p-kicker", group.label);
@@ -70,6 +70,7 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
     for (const { mode: choice, size } of group.choices) {
       const button = h(doc, "button", "d1p-tab");
       button.type = "button";
+      if (choice === "quadrants") button.classList.add("d1p-ffa-tab");
       button.append(h(doc, "span", undefined, size));
       // The size repeats in every row, so the name carries its group.
       button.setAttribute("aria-label", `${group.label} ${size}`);
@@ -177,7 +178,7 @@ export function rankingCard(doc: Document, table: RankingView, shown: Leaderboar
   if (state !== null) head.append(stateLine(doc, state.glyph, state.text));
   if (options.retired?.set) head.append(retiredSwitch(doc, table.id, titleId, options.retired.shown, options.retired.set));
   section.append(head);
-  if (table.rows.length > 0 || table.status === "loading") section.append(...rankingTable(doc, table, titleId, options.search));
+  if (table.rows.length > 0 || table.status === "loading") section.append(...rankingTable(doc, table, titleId, options.search, shown));
   // A failed table says so in its state line; its retry is the band's Refresh, which mounts the tables again
   // (leaderboard-page/view.ts). No second Refresh in the card: each state is shown once.
   if (options.foot) section.append(foot(doc, options.foot));
@@ -218,7 +219,12 @@ function foot(doc: Document, ...nodes: HTMLElement[]): HTMLElement {
 const nameOf = (doc: Document, entry: LeaderboardRow): Node[] =>
   entry.benchmark === true ? nameNodes(doc, { ...nameParts(entry), quiet: null }) : builderNameNodes(doc, entry);
 /** The rating, ± its RD and the provisional word, in the shared rating look (identity.ts). */
-const eloNodes = (doc: Document, entry: LeaderboardRow): Node[] => ratingNodes(doc, entry);
+const eloNodes = (doc: Document, entry: LeaderboardRow, mode: LeaderboardMode): Node[] => {
+  if (mode !== "quadrants") return ratingNodes(doc, entry);
+  const score = h(doc, "span", "d1-tag d1-elo d1p-elo-badge", entry.rating.toFixed(2));
+  score.title = `μ − 3σ: ${entry.rating}`;
+  return [score];
+};
 /** Last 5, newest first: a result stamp each, a link to its replay where one is stored. Each link is keyed by
  * its table and layout (place), player and replay, so a redraw of another table keeps focus on it. */
 const formNodes = (doc: Document, entry: LeaderboardRow, search: string, place: string): HTMLElement[] => formMarks(entry, search).map(mark => {
@@ -240,7 +246,7 @@ const formNodes = (doc: Document, entry: LeaderboardRow, search: string, place: 
 });
 
 /** The board as a real table on wide screens, and as labelled stacked rows under 46rem, as Matches does. */
-function rankingTable(doc: Document, table: RankingView, titleId: string, search: string): HTMLElement[] {
+function rankingTable(doc: Document, table: RankingView, titleId: string, search: string, mode: LeaderboardMode): HTMLElement[] {
   const grid = h(doc, "table", "d1p-table d1p-lb d1p-wide");
   grid.setAttribute("aria-labelledby", titleId);
   const head = h(doc, "thead"), labels = h(doc, "tr");
@@ -301,7 +307,7 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
     name.scope = "row";
     name.append(...nameOf(doc, entry));
     const elo = h(doc, "td", "c-elo");
-    elo.append(...eloNodes(doc, entry));
+    elo.append(...eloNodes(doc, entry, mode));
     const form = h(doc, "td", "c-form");
     form.append(...formNodes(doc, entry, search, `${titleId}|wide`));
     row.append(place, name, elo, h(doc, "td", "c-matches", String(entry.ratedMatches)), h(doc, "td", "c-record", record), form);
@@ -313,7 +319,7 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
     const itemName = h(doc, "p", "d1p-line is-lead");
     itemName.append(...nameOf(doc, entry));
     const itemElo = h(doc, "p", "c-elo");
-    itemElo.append(h(doc, "span", "d1p-sr", `${C.eloColumn} `), ...eloNodes(doc, entry));
+    itemElo.append(h(doc, "span", "d1p-sr", `${C.eloColumn} `), ...eloNodes(doc, entry, mode));
     const stats = h(doc, "p", "d1p-line d1p-lb-stats");
     stats.append(stat(C.matchesColumn, String(entry.ratedMatches)));
     // Without a reconciled record, Record and Last 5 show nothing, as the table's cells do.

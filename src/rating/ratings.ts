@@ -1,3 +1,5 @@
+import { FFA_COLLECTION } from "./ffa.js";
+import { ffaPage, ffaRating } from "./ffaReads.js";
 import { joinReads } from "../store/join-reads.js";
 import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
 import type { TestRecordings } from "../replays/test-recordings.js";
@@ -65,7 +67,7 @@ const HOUSE_RATING = "houseRating";
 
 export type Winner = "a" | "b" | "draw";
 
-/** The modes rated separately. Every rating read and write accepts exactly these. */
+/** The modes rated separately. The Glicko rating collections and writes accept exactly these. */
 export type RankedMode = "1v1" | "2v2" | "3v3" | "4v4" | "house-1v1" | "house-2v2" | "house-3v3" | "house-4v4";
 export const RANKED_MODES: readonly RankedMode[] = ["1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4"];
 export const isRankedMode = (mode: unknown): mode is RankedMode => RANKED_MODES.includes(mode as RankedMode);
@@ -166,8 +168,8 @@ export interface RatingRecord {
   readonly form: readonly { readonly result: MatchResultLetter; readonly matchId: string }[];
 }
 
-export interface LeaderboardPage {
-  readonly entries: readonly LeaderboardEntry[];
+export interface LeaderboardPage<Row = LeaderboardEntry> {
+  readonly entries: readonly Row[];
   /** Present only when more entries follow; pass it back for the next page. */
   readonly next?: string;
 }
@@ -179,25 +181,27 @@ export interface LeaderboardPage {
  * house_unavailable: the house marker backfill has not succeeded, so the house
  * rankings could be incomplete; nothing is served until it has.
  */
-export type LeaderboardOutcome =
-  | { readonly ok: true; readonly value: LeaderboardPage }
+export type LeaderboardOutcome<Row = LeaderboardEntry> =
+  | { readonly ok: true; readonly value: LeaderboardPage<Row> }
   | { readonly ok: false; readonly reason: "invalid_cursor" }
   | { readonly ok: false; readonly reason: "cursor_expired"; readonly cause: FirestoreError }
   | { readonly ok: false; readonly reason: "house_unavailable" };
 
+interface BoardOptions {
+  readonly scope?: LeaderboardScope; readonly limit?: number; readonly cursor?: string; readonly signal?: AbortSignal;
+}
+type FfaEntry = Omit<LeaderboardEntry, "rd"> & ReturnType<typeof ffaRating> & { readonly rd: null };
+
 export interface Ratings {
   /** The rating, RD and rated-match count in one mode, 1v1 when omitted; 1500, 350 and 0 before the identity's first rated result there. */
   readRating(identityId: string, mode?: RankedMode): Promise<Rating>;
+  readFfaRating(identityId: string): Promise<ReturnType<typeof ffaRating>>;
   /** Actual committed deltas, never inferred from a player's later account rating. null until recorded. */
   readMatchChanges(matchId: string): Promise<readonly RatingChange[] | null>;
   applyResult(result: MatchResult): Promise<ApplyOutcome>;
   /** One ranked mode's rankings, highest first; mode defaults to 1v1 and scope to everyone. */
-  leaderboard(options?: {
-    readonly mode?: RankedMode; readonly scope?: LeaderboardScope; readonly limit?: number; readonly cursor?: string;
-    /** Also serve each row's model (LeaderboardEntry.model): the web page's read only, never the agents' tool. */
-    readonly model?: boolean;
-    readonly signal?: AbortSignal;
-  }): Promise<LeaderboardOutcome>;
+  leaderboard(options?: BoardOptions & { readonly mode?: RankedMode; readonly model?: boolean }): Promise<LeaderboardOutcome>;
+  ffaLeaderboard(options?: BoardOptions): Promise<LeaderboardOutcome<FfaEntry>>;
 }
 
 /** Identity and match ids: document IDs Firestore accepts, without path characters. */
@@ -346,7 +350,7 @@ interface Cursor {
   readonly readTime: string;
   readonly ratingKey: string;
   readonly identityId: string;
-  readonly mode: RankedMode;
+  readonly mode: RankedMode | "quadrants";
   readonly scope: LeaderboardScope;
 }
 
@@ -373,8 +377,17 @@ function decodeCursor(cursor: string): Cursor | undefined {
   const [readTime, ratingKey, identityId, mode = "1v1", scope = "everyone"] = parsed as unknown[];
   if (typeof readTime !== "string" || !READ_TIME.test(readTime)) return undefined;
   if (typeof ratingKey !== "string" || !RATING_KEY.test(ratingKey)) return undefined;
-  if (!isValidId(identityId) || !isRankedMode(mode) || !isScope(scope)) return undefined;
+  if (!isValidId(identityId) || (!isRankedMode(mode) && mode !== "quadrants") || !isScope(scope)) return undefined;
   return { readTime, ratingKey, identityId, mode, scope };
+}
+
+function boardPage(options: BoardOptions, mode: Cursor["mode"], scope: LeaderboardScope) {
+  if (!isScope(scope)) throw new RangeError(`unknown leaderboard scope: ${String(scope)}`);
+  const limit = options.limit ?? DEFAULT_PAGE_SIZE;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) throw new RangeError(`limit must be 1-${MAX_PAGE_SIZE}`);
+  const cursor = options.cursor === undefined ? undefined : decodeCursor(options.cursor);
+  if (options.cursor !== undefined && (!cursor || cursor.mode !== mode || cursor.scope !== scope)) return undefined;
+  return { limit, cursor };
 }
 
 /**
@@ -682,6 +695,11 @@ export function createRatings(
       return storedRating(identityId, await store.get(`${ratingCollection(mode)}/${identityId}`));
     },
 
+    async readFfaRating(identityId) {
+      if (!isValidId(identityId)) throw new Error("invalid identity id");
+      return ffaRating(await store.get(`${FFA_COLLECTION}/${identityId}`));
+    },
+
     async readMatchChanges(matchId) {
       if (!isValidId(matchId)) throw new Error("invalid match id");
       const fields = await store.get(`ratedMatches/${matchId}`);
@@ -707,14 +725,35 @@ export function createRatings(
       return store.transaction<ApplyOutcome>((read) => ratingWrites(read, result));
     },
 
+    async ffaLeaderboard(options = {}) {
+      const mode = "quadrants", scope = options.scope ?? "everyone";
+      const paging = boardPage(options, mode, scope);
+      if (!paging) return { ok: false, reason: "invalid_cursor" };
+      const { cursor, limit } = paging;
+      let after;
+      if (cursor) {
+        try { after = { ...cursor, rating: decodeRating(cursor.ratingKey) }; }
+        catch { return { ok: false, reason: "invalid_cursor" }; }
+      }
+      const page = await ffaPage(store, publicVisibility, { limit, house: scope === "house", cursor: after, signal: options.signal });
+      if (!page.ok) return page;
+      const entries = await joinReads(page.rows.map(async row => {
+        const identity = await identities.findById(row.identityId, options.signal);
+        const displayName = identity?.displayName ?? placeholder(row.identityId);
+        const label = row.benchmark ? houseLabel(displayName) : { thinkingLevel: null, serviceTier: null };
+        return { ...row, displayName, ...label, rd: null, wins: null, losses: null, draws: null, form: [] };
+      }));
+      const last = entries.at(-1);
+      const next = page.more && last ? encodeCursor({ readTime: page.readTime, ratingKey: encodeRating(last.rating), identityId: last.identityId, mode, scope }) : undefined;
+      return { ok: true, value: { entries, ...(next ? { next } : {}) } };
+    },
+
     async leaderboard(options = {}) {
       const { mode = "1v1", scope = "everyone" } = options;
       if (!isRankedMode(mode)) throw new RangeError(`unknown ranked mode: ${String(mode)}`);
-      if (!isScope(scope)) throw new RangeError(`unknown leaderboard scope: ${String(scope)}`);
-      const limit = options.limit ?? DEFAULT_PAGE_SIZE;
-      if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE_SIZE) throw new RangeError(`limit must be 1-${MAX_PAGE_SIZE}`);
-      const cursor = options.cursor === undefined ? undefined : decodeCursor(options.cursor);
-      if (options.cursor !== undefined && (!cursor || cursor.mode !== mode || cursor.scope !== scope)) return { ok: false, reason: "invalid_cursor" };
+      const paging = boardPage(options, mode, scope);
+      if (!paging) return { ok: false, reason: "invalid_cursor" };
+      const { cursor, limit } = paging;
       if (scope === "house") {
         const attempt = houseMarked;
         if (!(await attempt)) {

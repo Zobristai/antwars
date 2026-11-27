@@ -149,6 +149,19 @@ describe("touch targets", () => {
   });
 });
 
+it("shows Free-for-all scores and ranks in both layouts, without a Glicko deviation", async () => {
+  const p = page();
+  p.choose("Ranked Free-for-all");
+  await p.answer("quadrants", new Response(JSON.stringify({ entries: [
+    { displayName: "Bee", rating: 5.75, ratedMatches: 5 }, { displayName: "Ann", rating: -2.25, ratedMatches: 1 },
+  ] })));
+  const cards = leaderboardCards(p.root);
+  expect(cards.map(card => card.title)).toEqual(["Free-for-all"]);
+  expect(cards[0]!.cells.map(cells => cells.slice(0, 4))).toEqual([["1", "Bee", "5.75", "5"], ["2", "Ann", "-2.25", "1"]]);
+  expect(p.root.byClass("d1p-narrow")[0]!.byClass("d1p-elo-badge").map(node => node.textContent)).toEqual(["5.75", "-2.25"]);
+  p.dispose();
+});
+
 describe("badges", () => {
   it("holds a name's two badges in one group, in the table and in the stacked rows", async () => {
     const p = page();
@@ -171,8 +184,8 @@ describe("the band and its cyan Refresh", () => {
     const band = p.root.byClass("d1p-band")[0]!;
     expect(band.byClass("d1p-title")).toHaveLength(1);
     expect(band.byClass("d1p-loaded")).toHaveLength(1);
-    // Both ranking groups' four sizes, and nothing else.
-    expect(band.byClass("d1p-tab")).toHaveLength(8);
+    // Four sizes in both groups, plus the ranked Free-for-all.
+    expect(band.byClass("d1p-tab")).toHaveLength(9);
     expect(p.root.byClass("d1p-rail")).toHaveLength(0);
     expect(p.root.byClass("d1p-refresh").map(node => node.textContent)).toEqual([PAGE_WORDS.refresh]);
     expect(band.all().includes(p.root.byClass("d1p-refresh")[0]!)).toBe(true);
