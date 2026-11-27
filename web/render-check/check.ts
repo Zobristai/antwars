@@ -62,6 +62,8 @@ export interface Surface {
   comparisonOnly?: boolean;
   /** Judge reflow inside the replay panel at above-double text. */
   panelOnly?: boolean;
+  /** Judge the landing address label at above-double text, in its actual field. */
+  addressLabelOnly?: boolean;
   /** Judge only the expected top bar, not the page or replay panel below it. */
   topBar?: "hud" | "pages";
   expectedKills?: readonly string[];
@@ -124,6 +126,8 @@ export function longClockExcerpt(source: Buffer): Buffer {
 export const SURFACES: readonly Surface[] = [
   { id: "landing", url: "/", hud: false, what: "the front page" },
   { id: "landing-intermediate-text", url: "/", hud: false, widths: [320], textSizes: [24], what: "the front page at intermediate phone text" },
+  { id: "landing-label-large-text", url: "/", hud: false, widths: [320], textSizes: [64], addressLabelOnly: true,
+    what: "the front page’s address label at large phone text" },
   // Not capture=1: on Watch that also changes what the page shows with no live match.
   { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), its top matches' results hidden as a visitor first sees them" },
   { id: "watch-results-shown", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), in a browser that chose to show the top matches' results", storage: { "aw.topMatches.showResults": "true" } },
@@ -784,12 +788,15 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
+            if (surface.addressLabelOnly) {
+              await page.locator(".fg-agent-label").evaluate(el => el.scrollIntoView({ block: "center" }));
+            }
             if (surface.url === "/") {
               const address = await landingUrlFonts(page);
               urlFonts = address.fonts;
               if (address.problem) invalid.push(address.problem);
             }
-            const limits = { ...RULE_LIMITS, panelOnly: surface.panelOnly, topBar: surface.topBar, resultDialog: surface.resultDialog, markList: !!surface.markList,
+            const limits = { ...RULE_LIMITS, addressLabelOnly: surface.addressLabelOnly, panelOnly: surface.panelOnly, topBar: surface.topBar, resultDialog: surface.resultDialog, markList: !!surface.markList,
               comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.comparisonOnly, expectedKills: surface.expectedKills };
             judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);

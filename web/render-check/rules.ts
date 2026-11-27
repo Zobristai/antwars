@@ -61,7 +61,7 @@ export interface Finding {
 }
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
-export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; topBar?: "hud" | "pages"; panelOnly?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
+export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; topBar?: "hud" | "pages"; panelOnly?: boolean; addressLabelOnly?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
   const vw = document.documentElement.clientWidth;
   const failures: Finding[] = [];
   const tight: Finding[] = [];
@@ -183,11 +183,23 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     return { failures, tight, counted: { items: parts.length, grids: 0, tiles: 0 } };
   }
   // For the finished replay the open native modal, not the inert HUD behind it, is the surface.
-  const scope = limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
+  const labelSelector = ".fg-agent .fg-agent-label";
+  const scope = limits.addressLabelOnly ? document.querySelector<HTMLElement>(labelSelector)
+    : limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
     : limits.topBar ? document.querySelector<HTMLElement>(limits.topBar === "hud" ? ".d1 .d1-top" : ".d1p .d1-top")
     : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])")
     : limits.comparisonOnly ? document.querySelector<HTMLElement>(".sb-comparison") : document.body;
   if (!scope) throw new Error("The expected surface did not open");
+  if (limits.addressLabelOnly) {
+    const runs = textRects(scope);
+    if (!shown(scope) || text(scope) !== "MCP address (Streamable HTTP)" || !runs.length) throw new Error("The complete address label was not shown");
+    const expectedSize = parseFloat(style(document.documentElement).fontSize) * 0.75;
+    for (const { el, r } of runs) {
+      if (parseFloat(style(el).fontSize) !== expectedSize) throw new Error("The address label did not follow the browser text size");
+      const front = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      if (!scope.contains(front)) throw new Error("The address label was obscured");
+    }
+  }
   if (limits.topBar) {
     const requirePart = (selector: string) => {
       const el = scope.querySelector(selector);
@@ -308,7 +320,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   // Section titles on Rules and the Watch title (docs/design-system.md, Layout rules) stay on one line even if
   // a badge or a block inside the heading moves to a second line. Other headings may be running text.
   const ONE_LINE_TITLE = 'h3.d1p-rule-title, [data-page="watch"] h1.d1p-title';
-  const labelSelector = ".fg-agent .fg-agent-label", urlSelector = ".fg-agent .aw-byoa-url";
+  const urlSelector = ".fg-agent .aw-byoa-url";
   const ONE_LINE = `${labelSelector}, ${urlSelector}, label, th, button, [role=button], p.d1p-state, ${ONE_LINE_TITLE}`;
   const painted = (c: string) => c !== "" && c !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(c);
   /**
@@ -394,9 +406,9 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   };
   // Compare the complete string, including spaces that collapse at line ends. Both
   // the label and the paragraph use one font; the hidden probe inherits it in place.
-  const needsAnotherLine = (el: Element) => {
+  const needsAnotherLine = (el: Element, part = el.textContent) => {
     const probe = document.createElement("span");
-    probe.textContent = el.textContent;
+    probe.textContent = part;
     probe.style.cssText = "position:fixed;visibility:hidden;white-space:nowrap;width:max-content";
     el.append(probe);
     const needed = probe.getBoundingClientRect().width;
@@ -426,9 +438,12 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       && group.getBoundingClientRect().top >= player.getBoundingClientRect().bottom - 0.5
       && [player, group].every(part => lineCount(textRects(part).map(t => t.r)) === 1);
 
-    const labelBreak = lines > 1 && el.matches(labelSelector) && needsAnotherLine(el) && (
-      enlargedPhone && lines === 2 && partsStayWhole(el, /^[^(]+?(?=\s*\()|\(.*\)$/g)
-      || zoomedPhone && partsStayWhole(el, /\S+/g));
+    // No word may split. Keep each group intact when it fits a fresh line,
+    // measuring the space between its words even if layout collapsed that space.
+    const labelBreak = lines > 1 && (enlargedPhone || zoomedPhone) && el.matches(labelSelector)
+      && needsAnotherLine(el) && partsStayWhole(el, /\S+/g)
+      && [/^[^(]+?(?=\s*\()/g, /\(.*\)$/g].every(group => partsStayWhole(el, group)
+        || needsAnotherLine(el, el.textContent?.match(group)?.[0] ?? ""));
     // The URL follows the width of its actual content box at every browser text size.
     const fitsWidth = el.matches(urlSelector) ? contentWidth(el) + 1 / 64 : Infinity;
     const addressBreak = lines > 1 && rects.reduce((sum, r) => sum + r.width, 0) > fitsWidth
@@ -668,7 +683,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   }
   // The dedicated top-bar cases stop at the bar's text and control checks. The
   // panel or page underneath need not fit on a single screen at this size.
-  if (limits.topBar) return { failures, tight, counted: { items: items.length, grids: 0, tiles: 0 } };
+  if (limits.topBar || limits.addressLabelOnly) return { failures, tight, counted: { items: items.length, grids: 0, tiles: 0 } };
   const pageWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
   if (pageWidth > vw + 0.5) fail({ rule: "page-wider", element: "html", text: "", measure: `${pageWidth} px wide, viewport ${vw} px`, extent: Math.round(pageWidth - vw), box: null }, null);
 

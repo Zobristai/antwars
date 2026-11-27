@@ -89,13 +89,15 @@
 .fg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; margin-top: var(--fg-gap); padding-top: 12px; border-top: 1px solid var(--aw-line); font-size: var(--aw-text-meta); color: var(--aw-ink-3); }
 
 .fg-foot > .d2-credit { font-size: inherit; }
-@media (320px <= width < 20em) {
-  .fg-agent-label { white-space: normal; }
-}
-/* A phone at 200% zoom can have less room than the parenthetical itself. */
-@media (width < 320px) {
+/* Keep the qualifier on a fresh line if it fits; only wrap at its space if it doesn't. */
+@media (width < 320px), (320px <= width < 20em) {
   .fg-agent-label { white-space: normal; }
   .fg-agent-label .fg-keep { display: inline-block; max-width: 100%; white-space: normal; vertical-align: top; }
+}
+/* At very large text sizes, give just the label up to six em for its longest word,
+   borrowing from the field padding without moving the address or Copy button. */
+@media (320px <= width < 20em) {
+  .fg-agent-label { margin-inline: clamp(calc(0px - var(--d1p-inset)), 50% - 3em, 0px); }
 }
 @media (width < 19em) {
   .fg .fg-foot { margin-inline: calc(var(--aw-space-2) - var(--fg-gutter)); }

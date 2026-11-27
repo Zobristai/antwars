@@ -37,20 +37,32 @@ describe("render check rules", () => {
       + `<code class="aw-byoa-url" style="display:block;width:${room}px">${url}</code></section>`;
     const label = "MCP address (Streamable HTTP)", url = "https://antwars.ai/mcp";
     const legal = row("MCP address <br>(Streamable HTTP)", "https://<br>antwars<br>.ai<br>/mcp");
-    expect(rules(await judged(legal, 320, 32))).not.toContain("wrap");
-    for (const width of [390, 400, 639]) expect(rules(await judged(legal, width, 32))).not.toContain("wrap");
-    // A planted separator break in an address that fits a fresh line is still a failure, even on a doubled phone.
-    for (const size of [16, 32] as const) expect(rules(await judged(row(label, "https://antwars.ai<br>/mcp", 300), 320, size))).toContain("wrap");
-    for (const bad of [row("MCP <br>address (Streamable HTTP)", url), row("MCP address (Streamable <br>HTTP)", url),
-      row(label, "https:/<br>/antwars.ai/mcp"), row(label, "https://ant<br>wars.ai/mcp"),
-      row(label, "https://antwars.<br>ai/mcp"), row(label, "https://antwars.ai/<br>mcp")]) {
-      expect(rules(await judged(bad, 320, 32))).toContain("wrap");
-    }
-    for (const [width, size] of [[320, 16], [640, 32], [1280, 32]] as const) {
-      const wraps = (await judged(legal, width, size)).failures.filter(f => f.rule === "wrap");
-      expect(wraps.some(f => f.element.endsWith("p.fg-agent-label"))).toBe(true);
-      expect(wraps.some(f => f.element.endsWith("code.aw-byoa-url"))).toBe(false);
-    }
+    const page = await browser.newPage();
+    try {
+      const cdp = await page.context().newCDPSession(page);
+      const judgeLayout = async (body: string, width: number, textSize: TextSize) => {
+        await page.setViewportSize({ width, height: 600 });
+        await cdp.send("Page.setFontSizes", { fontSizes: { standard: textSize } });
+        // Navigate to a fresh document (and JS global) for every layout, including repeated fixtures.
+        const html = `<!doctype html><html><head>${BASE}</head><body>${body}</body></html>`;
+        await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+        return page.evaluate(judgePage, RULE_LIMITS);
+      };
+      expect(rules(await judgeLayout(legal, 320, 32))).not.toContain("wrap");
+      for (const width of [390, 400, 639]) expect(rules(await judgeLayout(legal, width, 32))).not.toContain("wrap");
+      // A planted separator break in an address that fits a fresh line is still a failure, even on a doubled phone.
+      for (const size of [16, 32] as const) expect(rules(await judgeLayout(row(label, "https://antwars.ai<br>/mcp", 300), 320, size))).toContain("wrap");
+      for (const bad of [row("MCP <br>address (Streamable HTTP)", url), row("MCP address (Streamable <br>HTTP)", url),
+        row(label, "https:/<br>/antwars.ai/mcp"), row(label, "https://ant<br>wars.ai/mcp"),
+        row(label, "https://antwars.<br>ai/mcp"), row(label, "https://antwars.ai/<br>mcp")]) {
+        expect(rules(await judgeLayout(bad, 320, 32))).toContain("wrap");
+      }
+      for (const [width, size] of [[320, 16], [640, 32], [1280, 32]] as const) {
+        const wraps = (await judgeLayout(legal, width, size)).failures.filter(f => f.rule === "wrap");
+        expect(wraps.some(f => f.element.endsWith("p.fg-agent-label"))).toBe(true);
+        expect(wraps.some(f => f.element.endsWith("code.aw-byoa-url"))).toBe(false);
+      }
+    } finally { await page.close(); }
   });
 
   it("at intermediate text size, permits label and Rules slash breaks only when the line does not fit", async () => {
@@ -60,6 +72,17 @@ describe("render check rules", () => {
       expect(rules(await judged(item(175), 320, 24))).not.toContain("wrap");
       expect(rules(await judged(item(320), 320, 24))).toContain("wrap");
     }
+  });
+
+  it("allows the large phone label’s qualifier to break only at its space and only if it cannot move whole", async () => {
+    // The same forced space break is necessary in the measured large-text row,
+    // but gratuitous at doubled text. Use the label’s font, not a glyph-count proxy.
+    const row = (qualifier: string) => `<section class="fg-agent"><p class="fg-agent-label"
+      style="width:286px;font:600 0.75rem/1rem 'Liberation Sans',sans-serif">MCP address <br>${qualifier}</p></section>`;
+    const split = row("(Streamable <br>HTTP)");
+    expect(rules(await judged(split, 320, 64))).not.toContain("wrap");
+    expect(rules(await judged(split, 320, 32))).toContain("wrap");
+    expect(rules(await judged(row("(Stream<br>able HTTP)"), 320, 64))).toContain("wrap");
   });
 
   it.each([160, 195])("keeps every word of the address label visible at a %i CSS px zoomed viewport", async width => {
@@ -745,8 +768,8 @@ describe("render check widths and doubled text", () => {
       ["comparison-leading-total-fixture.json", [320], [32], ["1,000", "0", "0", "0"]],
       ["comparison-thousands-fixture.json", [320], [32], Array(4).fill("1,000")],
     ]);
-    expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.topBar ?? s.panelOnly, s.widths, s.textSizes]))
-      .toEqual([[true, [320], [40, 64]], ["hud", [320], [64]], ["pages", [320], [64]]]);
+    expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.topBar ?? (s.addressLabelOnly ? "landing label" : s.panelOnly), s.widths, s.textSizes]))
+      .toEqual([["landing label", [320], [64]], [true, [320], [40, 64]], ["hud", [320], [64]], ["pages", [320], [64]]]);
     expect(SURFACES.filter(s => s.textSizes?.includes(24)).map(s => [s.url, s.widths, s.textSizes]))
       .toEqual([["/", [320], [24]], ["/rules", [320], [24]]]);
     const markLists = SURFACES.filter(surface => surface.markList);
