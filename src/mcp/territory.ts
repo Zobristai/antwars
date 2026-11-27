@@ -11,8 +11,6 @@ export interface PackedTerritory {
   readonly enemies?: Readonly<Record<number, string>>;
 }
 
-export const TERRITORY_TEXT = "map:true territory.data=own base64-bitset-lsb0 (i=y*width+x). enemies[n]=sighted tiles of colony n (ant/queen number): base64, inflate zlib, sum uint16LE deltas from 0.";
-
 function tileCount(width: number, height: number): number {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > MAX_BOARD_SIDE_TILES || height > MAX_BOARD_SIDE_TILES) {
     throw new Error(`Invalid territory dimensions: expected integers in 1..${MAX_BOARD_SIDE_TILES}`);

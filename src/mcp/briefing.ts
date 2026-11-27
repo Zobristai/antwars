@@ -6,7 +6,6 @@ import { hasDistinctMapLayouts, mapLayoutDescription, quadrantLayoutDescription 
 import { colonyCountOf, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
 import { agentLimitText, DEFAULT_MCP_CONFIG, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { CELL_ENCODING, FLYER_CELL_ENCODING, FOUR_COLONY_CELL_ENCODING, FOUR_COLONY_FLYER_CELL_ENCODING } from "../sim/view.js";
-import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
 import { USERNAME_RETENTION_TEXT } from "../identity/retention.js";
 import { gridScaleOf } from "../sim/gridScale.js";
@@ -124,6 +123,8 @@ function flyerPatrolText(config: SimConfig): string {
 }
 
 export const MY_MARKS_TEXT = "myMarks: every live mark you laid, in or out of smell range, with its tile tileX/tileY; a LINE mark adds its second end toTileX/toTileY.";
+
+export const TERRITORY_TEXT = "map:true territory.data=own base64-bitset-lsb0 (i=y*width+x). enemies[n]=sighted tiles of colony n (ant/queen number): base64, inflate zlib, sum uint16LE deltas from 0.";
 
 export const COMPACT_VIEW_TEXT = "Decode via observe tool. map:true territory: base64-bitset-lsb0; enemies[n]=sighted tiles of colony n (ant/queen number); marks/myMarks: columnar-v1.";
 
