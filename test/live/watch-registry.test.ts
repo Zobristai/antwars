@@ -33,7 +33,7 @@ describe("durable spectator match identity", () => {
     await registry.register({ ...match, mode });
     const reader = createWatchRegistry(store);
     expect(await reader.read(id)).toMatchObject({ mode });
-    expect((await reader.publicMatches()).map(spectatorDelaySeconds)).toEqual([0]);
+    expect((await reader.publicMatches()).map(spectatorDelaySeconds)).toEqual([300]);
     await registry.register({ ...match, mode });
     await expect(registry.register({ ...match, mode: "1v1" })).rejects.toThrow("identity changed");
     await expect(registry.register(match)).rejects.toThrow("identity changed");

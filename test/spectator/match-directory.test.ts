@@ -32,16 +32,33 @@ describe("public match catalog without playback replacement", () => {
     expect(readPublicMatchCatalog({ matches: null, lobbies: [] })).toBeNull();
   });
 
-  it("preserves every server catalog entry with zero-delay house matches and still rejects invalid delays", () => {
+  it("preserves every server catalog entry with delayed index matches", () => {
     // The HUD reads each entry's four fields; the players, a Model Index match's harness phase and an unrated match's colony
     // names are the Matches page's, extra fields it drops.
     expect(readPublicMatchCatalog(mixedCatalog)).toEqual({ ...mixedCatalog,
       matches: mixedCatalog.matches.map(({ colonies: _players, harnessPhase: _phase, matchType: _type, colonyNames: _names, ...entry }) => entry) });
-    expect(mixedCatalog.matches.map(match => match.delaySeconds)).toEqual([300, 60, 0, 0, 0, 0]);
+    expect(mixedCatalog.matches.map(match => match.delaySeconds)).toEqual([300, 60, 300, 300, 300, 300]);
+  });
+
+  it("accepts legacy zero delays and rejects invalid delays", () => {
+    for (const rated of [false, true]) {
+      const legacy = { ...catalog, matches: [{ ...catalog.matches[0], rated, delaySeconds: 0 }] };
+      expect(readPublicMatchCatalog(legacy)).toEqual(legacy);
+    }
     for (const delaySeconds of [-1, 1, 299, "0", null]) {
       expect(readPublicMatchCatalog({ ...catalog, matches: [{ ...catalog.matches[0], delaySeconds }] })).toBeNull();
     }
-    expect(readPublicMatchCatalog({ ...catalog, matches: [{ ...catalog.matches[0], rated: false, delaySeconds: 300 }] })).toBeNull();
+  });
+
+  it("keeps an unrated index match and an ordinary match discoverable together", () => {
+    const matches = publicMatchCatalog([
+      { lobbyId: "index", startedAt: 1, visibility: "public", rated: false, mode: "house-1v1", playbackFinished: false },
+      { lobbyId: "ordinary", startedAt: 2, visibility: "public", rated: false, playbackFinished: false },
+    ], []);
+    expect(readPublicMatchCatalog(matches)?.matches).toEqual([
+      { lobbyId: "index", startedAt: 1, rated: false, delaySeconds: 300 },
+      { lobbyId: "ordinary", startedAt: 2, rated: false, delaySeconds: 60 },
+    ]);
   });
 
   it("publishes newly started matches without selecting them or resetting playback", async () => {
