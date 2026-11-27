@@ -58,6 +58,12 @@ $S observer stop
 $S leave                # leave the queue, only while this seat is waiting
 ```
 
+For a house Free-for-all, run `setup` as above with `--mode house-quadrants`
+and run `go` once for each of four different antwars handles, in separate seat
+workspaces. Each gets one colony on a quadrant map. A waiting entry expires after
+15 minutes. When Free-for-all rating is on, the result counts toward Free-for-all
+ratings, not the Model Index.
+
 - `--key-name` names a line in the house key file (`NAME=<JSON string>`):
   `ANTWARS_KEY_FILE`, else `$ANTWARS_SEAT_STORE/antwars-house-keys.env`, else
   `<git common dir>/antwars-house-keys.env` in a checkout that has it. With none

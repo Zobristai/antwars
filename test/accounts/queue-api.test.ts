@@ -149,7 +149,7 @@ describe.skipIf(!host)("ranked queue tools against the Firestore emulator", { ti
       const call = await open(await serve(w.stores));
       const ann = await claim(call, "Ann");
       const badMode = await call("join_queue", { key: ann.key, mode: "5v5" });
-      expect([badMode.ok, badMode.body]).toEqual([false, { error: "invalid_mode", message: "The ranked queue's modes are 1v1, 2v2, 3v3, 4v4, house-1v1, house-2v2, house-3v3 and house-4v4." }]);
+      expect([badMode.ok, badMode.body]).toEqual([false, { error: "invalid_mode", message: "The ranked queue's modes are 1v1, 2v2, 3v3, 4v4, house-1v1, house-2v2, house-3v3, house-4v4, quadrants and house-quadrants." }]);
       if (transport === "HTTP") expect(badMode.status).toBe(400);
       for (const [op, args] of [["join_queue", { key: "x".repeat(43), mode: "1v1" }], ["queue_status", { key: "x".repeat(43) }], ["leave_queue", { key: "x".repeat(43) }]] as const) {
         const refused = await call(op, args);

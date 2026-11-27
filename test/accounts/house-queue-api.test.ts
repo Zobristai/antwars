@@ -10,6 +10,7 @@ import { startServer, type GameServer } from "../../src/server.ts";
 import { createFirestore } from "../../src/store/firestore.ts";
 import { HOUSE_MODES, houseCast, HOUSE_QUEUE_TTL_MS, type Keyed } from "../lobby/house-fixtures.ts";
 import { shortConfig, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
+import { memoryWatchStore } from "../live/watch-fixtures.ts";
 import { playable } from "../playable.ts";
 
 /**
@@ -63,10 +64,8 @@ const TRANSPORTS: readonly [string, (port: number) => Promise<Call>][] = [
 
 let counter = 0;
 
-async function serveHouse() {
+async function serveHouse(store = createFirestore({ projectId, namespace: `hqa${process.pid}-${Date.now().toString(36)}-${counter++}`, emulatorHost: host })) {
   const clock = { t: Date.UTC(2026, 9, 23, 12, 0, 0) };
-  const namespace = `hqa${process.pid}-${Date.now().toString(36)}-${counter++}`;
-  const store = createFirestore({ projectId, namespace, emulatorHost: host });
   const identities = createIdentities(store);
   const lobbies = createLobbies(store, identities, { publicSlots: 1, privateSlots: 1, now: () => clock.t });
   const stores: AccountStores = { identities, lobbies, ratings: createRatings(store) };
@@ -77,7 +76,14 @@ async function serveHouse() {
   return { clock, port: server.port, ...(await houseCast(identities, store, 2)) };
 }
 
-const NOT_HOUSE = { error: "not_house", message: "Only handles of the antwars username can join index matches." };
+const NOT_HOUSE = { error: "not_house", message: "Only handles of the antwars username can join index matches or house-quadrants." };
+
+it("refuses a non-house Free-for-all entry and lists the house queue on an unknown mode", async () => {
+  const w = await serveHouse(memoryWatchStore().store), call = http(w.port);
+  const join = (mode: string) => call("join_queue", { key: w.rivalHandle.key, mode });
+  expect(await join("house-quadrants")).toEqual({ ok: false, status: 403, body: NOT_HOUSE });
+  expect(await join("unknown")).toMatchObject({ ok: false, status: 400, body: { error: "invalid_mode", message: expect.stringContaining("house-quadrants") } });
+});
 
 describe.skipIf(!host)("house mode through the queue tools", { timeout: 120_000 }, () => {
   describe.each(TRANSPORTS)("over %s", (transport, open) => {
@@ -112,6 +118,7 @@ describe("house mode in the queue tool descriptions", () => {
     for (const name of ["join_queue", "queue_status", "leave_queue"]) {
       const description = ACCOUNT_OPERATIONS.find((op) => op.name === name)?.description ?? "";
       expect(description, name).toContain(HOUSE_QUEUE_SENTENCE);
+      expect(description, name).toContain("four distinct antwars handles join house-quadrants");
     }
   });
 });
