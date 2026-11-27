@@ -19,7 +19,7 @@ import { isWaitToken, matchedQueueWaitWrites, repointWrites, waitPath, type Wait
  * only by settleSlots with this transaction's own read. Seating follows the mode's
  * `size`, never its name: each identity holds every seat of its own colony.
  * House modes admit only handles of the antwars username (refused `not_house`
- * otherwise) and pair them with each other.
+ * otherwise) and pair them with each other. House-quadrants takes four distinct handles, one per colony.
  *
  * Quadrants is an unrated four-colony mode: a join waits until three waiting entries
  * exist whose owners differ from each other and from the joiner's, then the four become
@@ -41,8 +41,8 @@ export function queueTtl(mode: string | undefined): number {
   return isQueueMode(mode) && QUEUE_MODES[mode]?.house ? HOUSE_QUEUE_TTL_MS : QUEUE_TTL_MS;
 }
 
-/** A queue's mode: a ranked mode, or the unrated four-colony quadrants. */
-export type QueueMode = RankedMode | "quadrants";
+/** A queue's mode: a ranked mode, or a public or house four-colony queue. */
+export type QueueMode = RankedMode | "quadrants" | "house-quadrants";
 
 export const QUEUE_MODES: Partial<Record<QueueMode, { readonly size: LobbySize; readonly house: boolean; readonly colonies: 2 | 4 }>> = {
   "1v1": { size: 1, house: false, colonies: 2 },
@@ -53,6 +53,7 @@ export const QUEUE_MODES: Partial<Record<QueueMode, { readonly size: LobbySize; 
   "house-2v2": { size: 2, house: true, colonies: 2 },
   "house-3v3": { size: 3, house: true, colonies: 2 },
   "house-4v4": { size: 4, house: true, colonies: 2 },
+  "house-quadrants": { size: 1, house: true, colonies: 4 },
   quadrants: { size: 1, house: false, colonies: 4 },
 };
 
@@ -144,6 +145,7 @@ export async function joinQueueStep(
   const joinerOwner = ownerOf(joiner.id, docs.get(`identities/${joiner.id}`));
   const eligible = waiting.filter((id) => {
     const owner = ownerOf(id, candidateDocs.get(`identities/${id}`));
+    if (mode === "house-quadrants") return owner !== undefined && owner === joinerOwner && owner !== id;
     return owner !== undefined && joinerOwner !== undefined && (table.house || owner !== joinerOwner);
   });
   const listWrite = (entries: string[]): Write[] => {
@@ -153,9 +155,9 @@ export async function joinQueueStep(
   };
   const ownWrite = (fields: Fields): Write => ({ op: own ? "update" : "create", path: entryPath(joiner.id), fields });
 
-  // Quadrants needs three partners whose owners differ from each other and from the joiner's, picked in a random order.
+  // Public Free-for-all counts distinct owners; the house queue counts distinct handles of the same owner.
   const picks = table.colonies === 4
-    ? distinctOwners(shuffled(eligible, random), (id) => ownerOf(id, candidateDocs.get(`identities/${id}`))!, joinerOwner!, 3)
+    ? distinctPartners(shuffled(eligible, random), table.house ? (id) => id : (id) => ownerOf(id, candidateDocs.get(`identities/${id}`))!, table.house ? joiner.id : joinerOwner!, 3)
     : eligible.length === 0 ? [] : [eligible[Math.min(eligible.length - 1, Math.max(0, Math.floor(random() * eligible.length)))]!];
   if (picks.length < table.colonies - 1) {
     const fields = { mode, joinedAt: String(at), state: "waiting", lobbyId: "", waitToken };
@@ -207,15 +209,15 @@ function shuffled<T>(list: readonly T[], random: () => number): T[] {
   return out;
 }
 
-/** The first `count` ids, in order, whose owners differ from each other and from `taken`; fewer when there are not enough. */
-function distinctOwners(ids: readonly string[], ownerOfId: (id: string) => string, taken: string, count: number): string[] {
-  const owners = new Set([taken]);
+/** The first `count` ids, in order, whose pairing keys differ from each other and from `taken`; fewer when there are not enough. */
+function distinctPartners(ids: readonly string[], keyOf: (id: string) => string, taken: string, count: number): string[] {
+  const seen = new Set([taken]);
   const picked: string[] = [];
   for (const id of ids) {
     if (picked.length === count) break;
-    const owner = ownerOfId(id);
-    if (owners.has(owner)) continue;
-    owners.add(owner);
+    const key = keyOf(id);
+    if (seen.has(key)) continue;
+    seen.add(key);
     picked.push(id);
   }
   return picked;

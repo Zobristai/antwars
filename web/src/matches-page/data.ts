@@ -65,7 +65,8 @@ export const topMatchesList = z.object({ matches: z.array(recordingRow) });
 // it out from the seconds waited) and its rating in that mode (null where it shows none, as in unrated Quadrants).
 const waitingRow = z.object({
   displayName: z.string().min(1),
-  mode: z.enum(["1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4", "quadrants"]),
+  mode: z.enum(["1v1", "2v2", "3v3", "4v4", "house-1v1", "house-2v2", "house-3v3", "house-4v4", "quadrants", "house-quadrants"])
+    .transform(mode => mode === "house-quadrants" ? "quadrants" : mode),
   waitingSeconds: z.number().int().nonnegative(),
   since: z.number().finite().optional(),
   rating: shownRating,

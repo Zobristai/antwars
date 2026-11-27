@@ -156,16 +156,16 @@ describe("GET /watch/queue in quadrants", () => {
   const quadrantsLobby = (createdAt: number) => ({ mode: "quadrants" as const, size: 1 as const, seated: 4, createdAt, colonyNames: NAMES,
     colonies: [[seat("a-id", "ann")], [seat("b-id", "bob")], [seat("c-id", "cat")], [seat("d-id", "dan")]] });
 
-  it("sends a quadrants entry and a four-colony lobby with each colony's seated names, seats and names, and no rating", async () => {
+  it.each(["quadrants", "house-quadrants"])("sends a %s entry and a four-colony lobby without reading a team rating", async mode => {
     const now = Date.now();
-    const origin = await serve([{ displayName: "eve", mode: "quadrants", joinedAt: now - 5_000, identityId: "e-id" }], [quadrantsLobby(now - 9_000)]);
+    const origin = await serve([{ displayName: "eve", mode, joinedAt: now - 5_000, identityId: "e-id" }], [quadrantsLobby(now - 9_000)]);
     const body = await (await fetch(`${origin}/watch/queue`)).json() as { waiting: Record<string, unknown>[]; lobbies: Record<string, unknown>[] };
-    expect(body.waiting.map(({ waitingSeconds: _seconds, ...row }) => row)).toEqual([{ displayName: "eve", mode: "quadrants", since: now - 5_000, rating: null }]);
+    expect(body.waiting.map(({ waitingSeconds: _seconds, ...row }) => row)).toEqual([{ displayName: "eve", mode, since: now - 5_000, rating: null }]);
     expect(body.lobbies.map(({ waitingSeconds: _seconds, ...row }) => row)).toEqual([{
       mode: "quadrants", size: 1, seated: 4, colonies: [["ann"], ["bob"], ["cat"], ["dan"]],
       ratings: [[null], [null], [null], [null]], seats: [[1], [1], [1], [1]], since: now - 9_000, colonyNames: NAMES,
     }]);
-    // Quadrants is unrated: no rating is read for it.
+    // Free-for-all seats do not read from a team rating pool.
     expect(reads).toEqual([]);
     for (const leak of ["a-id", "e-id"]) expect(JSON.stringify(body)).not.toContain(leak);
   });

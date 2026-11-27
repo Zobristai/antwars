@@ -81,6 +81,14 @@ function stateText(dir) {
 }
 
 describe("go: queue, pair, join, stop in the nest window", () => {
+  it("queues house-quadrants as configured and joins with one seat", async () => {
+    const s = await seat({ pairAfterMs: 0 }, { setup: ["--mode", "house-quadrants"] });
+    expect(await s.cli("go")).toBe(0);
+    expect(s.fake.toolCalls("join_queue").map(call => call.args)).toEqual([{ key: KEY, mode: "house-quadrants" }]);
+    expect(s.fake.toolCalls("join")[0].args.seat).toBe(1);
+    expectStoppedInNestWindow(s);
+  });
+
   it("waits a little past the server's 12-hour queue expiry by default, so the server ends an unpaired wait", () => {
     expect(DEFAULT_MAX_WAIT_MS).toBeGreaterThan(12 * 60 * 60 * 1000);
     expect(DEFAULT_MAX_WAIT_MS).toBeLessThanOrEqual(12.5 * 60 * 60 * 1000);
