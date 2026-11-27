@@ -9,6 +9,13 @@ describe("lossless bounded MCP territory", () => {
     expect(unpackTerritory(packed)).toEqual(["#..", ".#.", "..#"]);
   });
 
+  it("packs sighted holdings under their colony numbers in the same unpadded tile order", () => {
+    const packed = packTerritory([".#.", "...", "..."], 3, 3, { 0: [0, 8], 2: [3, 7] });
+    expect(packed.data).toBe("AgA=");
+    expect(packed.enemies).toEqual({ 0: "AQE=", 2: "iAA=" });
+    expect(packTerritory(["."], 1, 1, {}).enemies).toEqual({});
+  });
+
   it.each([[1, 1], [7, 3], [64, 48], [128, 96], [256, 192], [256, 256]])("roundtrips every cell at %i×%i without mutating input", (width, height) => {
     let seed = 172;
     const randomBit = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed >>> 31; };

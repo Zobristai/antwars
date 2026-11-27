@@ -361,7 +361,7 @@ shell commands apart and sends the command.
 
 `observe` and `board` are read-only and make exactly one `observe` call each,
 sent with `map:true` because the server includes the territory map only then
-(about 2 KB more per reply on a 128x96 board, no extra call). They print the
+(about 2 KB per included colony on a 128x96 board, no extra call). They print the
 reply decoded, with nothing cut:
 
 - one JSON line of the other view fields (tick, colony, order, events, …);
@@ -375,7 +375,10 @@ reply decoded, with nothing cut:
   worker, `s` soldier, `f` flyer, `a` no caste; lowercase own, UPPERCASE enemy;
   hp in HP). A flyer, own or enemy, adds its state: `(grounded)`, `(flying)` or
   `(hovering)`. Example: `y48: 10-14f3 16Qown30:7w4,8S2.5,9F2(hovering)`;
-- `territory own`: the seat's own tiles as x ranges per row (`y48: 0-25 30`).
+- `territory own`: the seat's own tiles as x ranges per row (`y48: 0-25 30`);
+- `territory enemy colony <n>`: tiles that enemy holds within your colony’s current
+  sight, using the same row ranges and colony numbers as ants and queens. A colony
+  not listed has no visible holdings. Outside sight, enemy ownership is unknown.
 
 When the reply pages its cells, the `cells` line says `MORE CELLS FOLLOW` and
 names the `observe --cellsCursor C` that reads the next page; it never makes

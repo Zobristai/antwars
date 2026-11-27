@@ -140,10 +140,12 @@ describe("observe seat countdown and territory legibility", () => {
       if (observed.data.view) {
         const view = observed.data.view;
         expect(view.territorySharePermille).toBe(share(h.game.match!.state, view.colony));
-        expect(view).not.toHaveProperty("enemyTerritoryRows");
-        expect(view).not.toHaveProperty("enemyTerritoryTiles");
+        expect(view).not.toHaveProperty("sightedEnemyTiles");
         if (args.map === true) {
-          expect(unpackTerritory(view.territory).join("")).toMatch(/^[#.]+$/);
+          expect(Object.keys(view.territory.enemies)).toEqual([String(1 - view.colony)]);
+          const enemy = unpackTerritory({ ...view.territory, data: view.territory.enemies[1 - view.colony] }).join("");
+          expect(enemy).toContain("#");
+          expect(enemy).toContain(".");
           // territoryTiles counts original-size tile area: one fine tile is 1/physicalTileArea of it.
           expect((unpackTerritory(view.territory).join("").split("#").length - 1) / physicalTileArea(h.game.match!.state.config)).toBe(view.territoryTiles);
         } else expect(view).not.toHaveProperty("territory");
@@ -286,7 +288,7 @@ it.each(["v4", "count-marks", "redesign"] as const)("documents configured existi
     expect(text.includes(", enemy share]")).toBe(rules === "redesign");
     if (rules === "redesign") {
       expect(text).toContain("Enemy share: your tick/sight");
-      expect(text).toContain("enemy map fogged");
+      expect(text).toContain("enemies[n]=sighted tiles of colony n");
     }
   }
 });

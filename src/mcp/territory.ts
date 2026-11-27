@@ -6,9 +6,11 @@ export interface PackedTerritory {
   readonly width: number;
   readonly height: number;
   readonly data: string;
+  /** Same dimensions and bit order as data, keyed by enemy colony number. */
+  readonly enemies?: Readonly<Record<number, string>>;
 }
 
-export const TERRITORY_TEXT = "observe map:true adds territory {encoding:'base64-bitset-lsb0',width,height,data}. Decode data as base64 bytes; tile (x,y) has index y*width+x, byte floor(index/8), bit index%8 (least-significant first): 1=your colony owns it, 0=otherwise. Rows are contiguous, with no row padding; unused final bits are zero.";
+export const TERRITORY_TEXT = "map:true territory, base64-bitset-lsb0: i=y*width+x, bit i%8 of byte i>>3. data=own; enemies[n]=sighted tiles of colony n (ant/queen number); missing=none seen.";
 
 function tileCount(width: number, height: number): number {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > MAX_BOARD_SIDE_TILES || height > MAX_BOARD_SIDE_TILES) {
@@ -18,7 +20,7 @@ function tileCount(width: number, height: number): number {
 }
 
 /** Fixed size for every ownership pattern, including a checkerboard. */
-export function packTerritory(rows: readonly string[], width: number, height: number): PackedTerritory {
+export function packTerritory(rows: readonly string[], width: number, height: number, sightedEnemies?: Readonly<Record<number, readonly number[]>>): PackedTerritory {
   const count = tileCount(width, height);
   if (rows.length !== height || rows.some(row => row.length !== width || /[^#.]/.test(row))) {
     throw new Error("Invalid territory rows");
@@ -30,7 +32,15 @@ export function packTerritory(rows: readonly string[], width: number, height: nu
       bytes[index >> 3]! |= 1 << (index & 7);
     }
   }
-  return { encoding: "base64-bitset-lsb0", width, height, data: bytes.toString("base64") };
+  const territory = { encoding: "base64-bitset-lsb0" as const, width, height, data: bytes.toString("base64") };
+  if (sightedEnemies === undefined) return territory;
+  const enemies: Record<number, string> = {};
+  for (const [colony, indices] of Object.entries(sightedEnemies)) {
+    const mask = Buffer.alloc(bytes.length);
+    for (const i of indices) mask[i >> 3]! |= 1 << (i & 7);
+    enemies[Number(colony)] = mask.toString("base64");
+  }
+  return { ...territory, enemies };
 }
 
 /** Reference decoder for scripted clients and exact-ownership checks. */

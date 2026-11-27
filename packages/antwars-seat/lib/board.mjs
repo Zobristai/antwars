@@ -57,7 +57,7 @@ export function cellLines(cells, own, byColony = false) {
   return [...rows].map(([y, row]) => `y${y}: ${row.map((t) => `${t.from}${t.to === t.from ? "" : `-${t.to}`}${t.content}`).join(" ")}`);
 }
 
-/** Own territory rows as x ranges; rows with no own tile are omitted. */
+/** One ownership mask as x ranges per row; empty rows are omitted. */
 export function territoryLines(rows) {
   const lines = [];
   rows.forEach((row, y) => {
@@ -98,6 +98,13 @@ export function renderView(data) {
   if (view.territory) {
     const rows = territoryLines(unpackTerritory(view.territory));
     lines.push(`territory own (${view.territory.width}x${view.territory.height}; x ranges per row, rows without own tiles omitted):${rows.length ? "" : " none"}`, ...rows);
+    if (view.territory.enemies !== undefined) {
+      const enemies = Object.entries(view.territory.enemies);
+      if (!enemies.length) lines.push("territory enemy (in sight): none");
+      for (const [colony, data] of enemies) {
+        lines.push(`territory enemy colony ${colony} (in sight):`, ...territoryLines(unpackTerritory({ ...view.territory, data })));
+      }
+    }
   } else lines.push("territory: not in this reply (observe with map:true)");
   for (const name of ["marks", "myMarks"]) {
     if (view[name] === undefined) continue;

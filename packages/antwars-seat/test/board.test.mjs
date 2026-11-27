@@ -177,6 +177,13 @@ describe("readable view", () => {
     expect(text).toContain('myMarks (2):\n{"markId":1,"steering":3}');
   });
 
+  it("prints sighted enemy ranges under the colony number, separately from own territory", () => {
+    const view = { colony: 2, territory: packTerritory([".#.", "..."], 3, 2, { 0: [0, 4, 5], 3: [2] }) };
+    expect(renderView({ view })).toContain("y0: 1\nterritory enemy colony 0 (in sight):\ny0: 0\ny1: 1-2\nterritory enemy colony 3 (in sight):\ny0: 2");
+    expect(renderView({ view: { territory: packTerritory(["."], 1, 1, {}) } })).toContain("territory enemy (in sight): none");
+    expect(renderView({ view: { territory: packTerritory(["."], 1, 1) } })).not.toContain("territory enemy");
+  });
+
   it("prints each flyer, own or enemy, as a flyer with its state", () => {
     const data = reply([], null);
     data.view.cells = denseCells(flyerCells(), W, H, 2, true);

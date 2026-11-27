@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_OBSERVE_REPLY_BYTES, MAX_OBSERVE_TEXT_CHARS } from "../../src/mcp/replies.js";
-import { COLONY_NAMES } from "../../src/sim/config.js";
+import { COLONY_NAMES, SUB } from "../../src/sim/config.js";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { comparisonOptions } from "../../src/server.js";
 import { isRockTile, isWaterTile } from "../../src/sim/terrain.js";
@@ -151,6 +151,13 @@ describe("the shipped maps' agent terrain and ownership are exact", () => {
         expect(reply.data.view).not.toHaveProperty("territoryRows");
         expect(reply.data.view.tick).toBe(h.game.match!.state.tick);
         expect(own).toEqual(h.game.match!.state.owner.map(owner => owner === colony));
+        const current = h.game.match!.state, { territory } = reply.data.view;
+        const eyes = current.ants.filter(a => a.hp > 0 && a.colony === colony)
+          .map(a => [Math.floor(a.x / SUB), Math.floor(a.y / SUB)] as const);
+        const expected = current.owner.map((owner, i) => owner === 1 - colony && eyes.some(([x, y]) =>
+          (x - i % width) ** 2 + (y - Math.floor(i / width)) ** 2 <= current.config.sightTiles ** 2));
+        expect(expected).toContain(true);
+        expect(territoryTiles({ territory: { ...territory, data: territory.enemies[1 - colony] } }, width, height)).toEqual(expected);
         const withoutMap = await agent.call("observe");
         expect(withoutMap.isError).toBe(false);
         expect(withoutMap.data.view).not.toHaveProperty("territoryRows");

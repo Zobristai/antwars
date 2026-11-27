@@ -244,10 +244,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
     return original;
   };
   const historical = { ...current, queenKillsFirst: undefined, countMarks: { ...current.countMarks!, renewOnRelay: undefined } };
+  // All copy pins below include the sighted enemy map legend; gameplay and tool names are unchanged.
   const historicalText = briefing(historical).replace(omissionSentence, "").replace(antCap, "");
-  expect(sha(beforeVocabulary(historicalText))).toBe("3cc6e7934dfb78a13626ba4b7b10a41218061afa0718101b381e0c0972510cbe");
-  expect(sha(historicalText)).toBe("bd5389d97ecb408f1cd01c185a412577a3d96a3974e3f223bdfa565dfba5fcb9");
-  expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("231b30ed6899aa760c2e417f47dfd87464750fc413ab6fecf84b7b8243ad9447");
+  expect(sha(beforeVocabulary(historicalText))).toBe("3ce98a7d6d61e619d855c329be5fc19a7397adb193146bc8e2436b288148d25b");
+  expect(sha(historicalText)).toBe("41e0d642b748b429decb3984d38ac4bd193b901d1c94a951539c0109332c0354");
+  expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("89b44fc6c35bbc804c48865dd3ad4bce374d06661c0e65fc2b48dadf8d7f3be3");
   expect(briefing(current)).toContain("queen kills>kills>territory>ants alive>food delivered>draw");
   expect(joinBriefing(current)).toContain("queen kills, kills, territory, ants alive, food delivered, draw");
   // Restore only the previous lifetime sentence to compare all other text with its pinned contract.
@@ -255,9 +256,9 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   expect(briefing(current).split(renewal)).toHaveLength(2);
   const currentText = briefing(current).replace(renewal, "the mark keeps its original 180 s lifetime").replace(omissionSentence, "").replace(antCap, "");
   expect(currentText).not.toMatch(/steer/i);
-  expect(sha(beforeVocabulary(currentText))).toBe("693afbd0ce3c969ee3c5f62e072d1e13b7dbeb5f4679fc2a2dea5af6238e046e");
+  expect(sha(beforeVocabulary(currentText))).toBe("6232980cf5be7aabd988755fb9791a0896c186481ee496718d51071316a908ad");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d2484147640255bf46feefdededd45e1b02d8a8f34fb552bd2c53c4aaa562e60");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("e727f7b82c11ac6ae3a77708aa65443df451703357c1d8d9c428309f73fc11dd");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
@@ -291,11 +292,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   const relay = "A re-lay costs one command and restarts the mark's lifetime";
   expect(countMark.description!.split(relay)).toHaveLength(2);
   countMark.description = countMark.description!.replace(relay, "A re-lay keeps the lifetime from when the mark was first laid");
-  expect(sha(JSON.stringify(tools))).toBe("71ff27d47f90cf4cbe1233094f19c0796b7072665eaacff5de353b37124a9456");
+  expect(sha(JSON.stringify(tools))).toBe("71ef478dfba6037f15c1362aad72ee18901017a19ff04ac0ce1022e58f5f8d45");
   // Remove only the free-ant sentence to compare the rest of the tool list byte for byte.
   const observe = tools.find(tool => tool.name === "observe")!;
   const pool = " freeAntsByCaste counts your colony's available workers, soldiers and flyers at view.tick; each count mark in view.myMarks shows count requested and claimed now.";
   expect(observe.description!.split(pool)).toHaveLength(2);
   observe.description = observe.description!.replace(pool, "");
-  expect(sha(JSON.stringify(tools))).toBe("b3ececfc7f7a9ec4cc061947506b6134825e350b8c5789f0e1f901d9a3dfc09d");
+  expect(sha(JSON.stringify(tools))).toBe("b6705bba06b3a49fa498ac9af55ae94305890004ca3cfdfe9f706965d9585d33");
 });

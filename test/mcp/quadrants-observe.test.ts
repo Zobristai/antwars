@@ -1,7 +1,7 @@
 // A Quadrants seat's observe reply, through the MCP tools of a slot server's Game under the production redesign rules:
 // it names the three other colonies in colony order, shows each one's elimination (tick and reason) once it has left,
-// while play continues and after the end, shows the seat's own territory only, identifies enemy ants and queens in sight
-// by their colony, and carries no enemy territory tiles or totals. A two-colony observe reply carries none of this.
+// while play continues and after the end, identifies enemy holdings, ants and queens in sight
+// by their colony, and carries no enemy territory totals.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -203,7 +203,7 @@ describe("a Quadrants seat's observe reply", { timeout: 60_000 }, () => {
     expect(colonies.every(colony => colony.eliminated?.tick === result!.tick)).toBe(true);
   });
 
-  it("shows its own territory only, cells within its sight with each enemy ant and queen's colony, and no enemy territory tiles or totals", async () => {
+  it("identifies enemy territory, ants and queens in sight by colony, without enemy totals", async () => {
     const q = await quadrants();
     await play(q, () => [0, 1, 2, 3], () => q.game.match!.state.tick >= 60);
     // Every colony holds ground, so an enemy figure in the reply would show.
@@ -216,6 +216,11 @@ describe("a Quadrants seat's observe reply", { timeout: 60_000 }, () => {
       ant.x = queen.queenX + tiles * SUB; ant.y = queen.queenY;
     };
     place(0, 2); place(1, 1); place(2, 1);
+    // Empty tiles remain held after their visitors leave.
+    for (let i = 0; i < before.owner.length; i++) {
+      before.owner[i] = i % 5 - 1;
+      before.lastVisit[i] = before.tick;
+    }
 
     const reply = await q.sessions[0]!.call("observe", { map: true });
     expect(reply.error, reply.text).toBe(false);
@@ -230,10 +235,11 @@ describe("a Quadrants seat's observe reply", { timeout: 60_000 }, () => {
     const ownTiles = state.owner.filter(owner => owner === 0).length;
     expect(view.territoryTiles).toBe(ownTiles / physicalTileArea(config));
     expect(view.territorySharePermille).toBe(Math.trunc(ownTiles * 1000 / (config.mapWidth * config.mapHeight)));
-    // No enemy territory figure: the status carries no enemy share, and no other territory field exists anywhere.
+    // Local masks are the only enemy territory fields: no global totals or share.
     expect(reply.data.status).toHaveLength(2);
     expect(keyPaths(reply.data).filter(path => /territor/i.test(path)).sort())
-      .toEqual(["view.territory", "view.territory.data", "view.territory.encoding", "view.territory.height", "view.territory.width",
+      .toEqual(["view.territory", "view.territory.data", "view.territory.encoding", "view.territory.enemies", "view.territory.enemies.1",
+        "view.territory.enemies.2", "view.territory.enemies.3", "view.territory.height", "view.territory.width",
         "view.territorySharePermille", "view.territoryTiles"]);
     expect(reply.data.opponents.every((o: object) => Object.keys(o).every(key => ["colony", "name", "eliminated"].includes(key)))).toBe(true);
 
@@ -242,6 +248,12 @@ describe("a Quadrants seat's observe reply", { timeout: 60_000 }, () => {
     const cells = expandCells(view.cells);
     const sight = config.sightTiles ** 2;
     const eyes = state.ants.filter(ant => ant.colony === 0 && ant.hp > 0).map(ant => [Math.floor(ant.x / SUB), Math.floor(ant.y / SUB)] as const);
+    for (const colony of [1, 2, 3]) {
+      const expected = state.owner.map((owner, i) => owner === colony && eyes.some(([x, y]) =>
+        (x - i % config.mapWidth) ** 2 + (y - Math.floor(i / config.mapWidth)) ** 2 <= sight) ? "#" : ".").join("");
+      expect(expected).toContain("#");
+      expect(unpackTerritory({ ...view.territory, data: view.territory.enemies[colony] }).join("")).toBe(expected);
+    }
     for (const cell of cells) expect(eyes.some(([x, y]) => (cell.tileX - x) ** 2 + (cell.tileY - y) ** 2 <= sight)).toBe(true);
     const byId = new Map(state.ants.map(ant => [ant.id, ant]));
     const enemies = cells.flatMap(cell => cell.ants).filter(ant => ant.colony !== 0);

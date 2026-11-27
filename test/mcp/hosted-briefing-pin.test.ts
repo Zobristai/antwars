@@ -13,6 +13,13 @@ import { startHarness } from "./harness.js";
 // The old hosted pins include the public queue instructions. Reverse only the Free-for-all copy
 // on those surfaces; house and non-compact briefings must still match their pins byte for byte.
 function historicalDigest(text: string): string {
+  // Restore only the territory legend and sight wording for the historical two-colony pins.
+  expect(text).toContain("enemies[n]=sighted tiles of colony n (ant/queen number)");
+  text = text.replace("Enemy share: your tick/sight.", "Enemy share: your tick/sight; enemy map fogged.")
+    .replace("Enemy share hidden.", "Enemy share/map hidden.")
+    .replace("base64-bitset-lsb0; enemies[n]=sighted tiles of colony n (ant/queen number); marks/myMarks:", "base64-bitset-lsb0; marks/myMarks:")
+    .replace("map:true territory, base64-bitset-lsb0: i=y*width+x, bit i%8 of byte i>>3. data=own; enemies[n]=sighted tiles of colony n (ant/queen number); missing=none seen.",
+      "observe map:true adds territory {encoding:'base64-bitset-lsb0',width,height,data}. Decode data as base64 bytes; tile (x,y) has index y*width+x, byte floor(index/8), bit index%8 (least-significant first): 1=your colony owns it, 0=otherwise. Rows are contiguous, with no row padding; unused final bits are zero.");
   if (text.includes("Handle owner=username owner")) {
     const addition = 'Free-for-all: join_queue {key,mode:"quadrants"} waits for four different owners (four colonies, one seat each); separate Free-for-all rating when enabled. ';
     expect(text).toContain(addition + "Handle owner=username owner");
