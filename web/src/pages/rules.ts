@@ -82,7 +82,14 @@ export function mountRules(doc: Document, host: HTMLElement): Mounted<RulesView>
       const items = h(doc, "ul", "d1p-win");
       for (const line of section.lines) items.append(h(doc, "li", undefined, line));
       node.append(items);
-    } else for (const line of section.lines) node.append(h(doc, "p", undefined, line));
+    } else for (const line of section.lines) {
+      const p = h(doc, "p");
+      for (const [i, part] of line.split(/(?<=\p{L}\/)(?=\p{L})/u).entries()) {
+        if (i) p.append(doc.createElement("wbr"));
+        p.append(part);
+      }
+      node.append(p);
+    }
     sections.push(node);
     return node;
   };

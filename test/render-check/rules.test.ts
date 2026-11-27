@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { chromium, type Browser } from "playwright-core";
 import { RULE_LIMITS, judgePage, type PageJudgement, type RuleId } from "../../web/render-check/rules.ts";
-import { TYPEFACES, applyTextSize, drawnFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
+import { TYPEFACES, applyTextSize, drawnFonts, landingUrlFonts, fontconfigFor, rootFontSize, textSizeProblem, type TextSize } from "../../web/render-check/fonts.ts";
 import { heldFrom, judge, markdown, type HeldList, type Render } from "../../web/render-check/report.ts";
 import type { Finding } from "../../web/render-check/rules.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
@@ -32,6 +32,111 @@ async function judged(body: string, width = 400, textSize: TextSize = 16): Promi
 const rules = (j: PageJudgement): RuleId[] => j.failures.map(f => f.rule);
 
 describe("render check rules", () => {
+  it("separates the enlarged phone label rule from the address’s width-based breaks", async () => {
+    const row = (label: string, url: string, room = 120) => `<section class="fg-agent"><p class="fg-agent-label" style="width:254px;font:600 0.75rem/1rem sans-serif">${label}</p>`
+      + `<code class="aw-byoa-url" style="display:block;width:${room}px">${url}</code></section>`;
+    const label = "MCP address (Streamable HTTP)", url = "https://antwars.ai/mcp";
+    const legal = row("MCP address <br>(Streamable HTTP)", "https://<br>antwars<br>.ai<br>/mcp");
+    const page = await browser.newPage();
+    try {
+      const cdp = await page.context().newCDPSession(page);
+      const judgeLayout = async (body: string, width: number, textSize: TextSize) => {
+        await page.setViewportSize({ width, height: 600 });
+        await cdp.send("Page.setFontSizes", { fontSizes: { standard: textSize } });
+        // Navigate to a fresh document (and JS global) for every layout, including repeated fixtures.
+        const html = `<!doctype html><html><head>${BASE}</head><body>${body}</body></html>`;
+        await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+        return page.evaluate(judgePage, RULE_LIMITS);
+      };
+      expect(rules(await judgeLayout(legal, 320, 32))).not.toContain("wrap");
+      for (const width of [390, 400, 639]) expect(rules(await judgeLayout(legal, width, 32))).not.toContain("wrap");
+      // A planted separator break in an address that fits a fresh line is still a failure, even on a doubled phone.
+      for (const size of [16, 32] as const) expect(rules(await judgeLayout(row(label, "https://antwars.ai<br>/mcp", 300), 320, size))).toContain("wrap");
+      for (const bad of [row("MCP <br>address (Streamable HTTP)", url), row("MCP address (Streamable <br>HTTP)", url),
+        row(label, "https:/<br>/antwars.ai/mcp"), row(label, "https://ant<br>wars.ai/mcp"),
+        row(label, "https://antwars.<br>ai/mcp"), row(label, "https://antwars.ai/<br>mcp")]) {
+        expect(rules(await judgeLayout(bad, 320, 32))).toContain("wrap");
+      }
+      for (const [width, size] of [[320, 16], [640, 32], [1280, 32]] as const) {
+        const wraps = (await judgeLayout(legal, width, size)).failures.filter(f => f.rule === "wrap");
+        expect(wraps.some(f => f.element.endsWith("p.fg-agent-label"))).toBe(true);
+        expect(wraps.some(f => f.element.endsWith("code.aw-byoa-url"))).toBe(false);
+      }
+    } finally { await page.close(); }
+  });
+
+  it("at intermediate text size, permits label and Rules slash breaks only when the line does not fit", async () => {
+    const label = (room: number) => `<section class="fg-agent"><p class="fg-agent-label" style="width:${room}px;font:600 .75rem/1rem sans-serif">MCP address <br>(Streamable HTTP)</p></section>`;
+    const prose = (room: number) => `<section class="d1p-rule"><p style="width:${room}px;font:1rem/1.5 sans-serif">push/<br>reserved/blocked</p></section>`;
+    for (const item of [label, prose]) {
+      expect(rules(await judged(item(175), 320, 24))).not.toContain("wrap");
+      expect(rules(await judged(item(320), 320, 24))).toContain("wrap");
+    }
+  });
+
+  it("allows the large phone label’s qualifier to break only at its space and only if it cannot move whole", async () => {
+    // The same forced space break is necessary in the measured large-text row,
+    // but gratuitous at doubled text. Use the label’s font, not a glyph-count proxy.
+    const row = (qualifier: string) => `<section class="fg-agent"><p class="fg-agent-label"
+      style="width:286px;font:600 0.75rem/1rem 'Liberation Sans',sans-serif">MCP address <br>${qualifier}</p></section>`;
+    const split = row("(Streamable <br>HTTP)");
+    expect(rules(await judged(split, 320, 64))).not.toContain("wrap");
+    expect(rules(await judged(split, 320, 32))).toContain("wrap");
+    expect(rules(await judged(row("(Stream<br>able HTTP)"), 320, 64))).toContain("wrap");
+  });
+
+  it.each([160, 195])("keeps every word of the address label visible at a %i CSS px zoomed viewport", async width => {
+    const page = await browser.newPage({ viewport: { width, height: 422 } });
+    try {
+      await page.setContent(`<style>body{margin:0;font:12px/16px sans-serif}.fg-agent{margin:0 33px;overflow:hidden}</style>
+        <section class="fg-agent"><p class="fg-agent-label">MCP address <span class="fg-keep">(Streamable HTTP)</span></p></section>`);
+      await page.addStyleTag({ path: "web/src/landing-page/landing.css" });
+      const label = page.locator(".fg-agent-label");
+      const fits = await label.evaluate(el => {
+        const r = new Range(); r.selectNodeContents(el);
+        const box = el.getBoundingClientRect();
+        return [...r.getClientRects()].every(part => part.left >= box.left && part.right <= box.right);
+      });
+      expect(fits).toBe(true);
+      expect(rules(await page.evaluate(judgePage, RULE_LIMITS))).not.toContain("wrap");
+      await label.evaluate(el => { el.innerHTML = "MCP address (Stream<br>able HTTP)"; });
+      expect(rules(await page.evaluate(judgePage, RULE_LIMITS))).toContain("wrap");
+    } finally { await page.close(); }
+  });
+
+  it("permits an internal address break only when that segment is wider than the entire content row", async () => {
+    // 1ch measures the zero glyph; repeated zeroes keep the fit boundary exact even in a fallback font.
+    const address = (columns: number, rest = ".example/mcp") => `<section class="fg-agent"><code class="aw-byoa-url"
+      style="display:block;width:${columns}ch;padding:0 12px;font:16px/20px monospace">https://<br>${"0".repeat(14)}<br>${"0".repeat(7)}<br>${rest}</code></section>`;
+    expect(rules(await judged(address(20), 320, 32))).not.toContain("wrap"); // 21 glyphs into a 20-glyph row
+    expect(rules(await judged(address(21), 320, 32))).toContain("wrap"); // fits exactly on a fresh line
+    expect(rules(await judged(address(20, ".exa<br>mple/mcp"), 320, 32))).toContain("wrap"); // neighbouring part still fits
+    expect(rules(await judged(address(20), 640, 32))).not.toContain("wrap");
+    expect(rules(await judged(address(20), 320, 16))).not.toContain("wrap");
+    expect(rules(await judged(address(21), 320, 16))).toContain("wrap");
+  });
+
+  it("allows Rules prose to break after an inter-word slash only on enlarged phones", async () => {
+    const para = (words: string) => `<section class="d1p-rule"><p style="width:160px;font:1rem/1.5 sans-serif">Contact: ${words} tiles.</p></section>`;
+    const good = para("push/<br>reserved/<br>blocked");
+    for (const width of [320, 400, 639]) expect(rules(await judged(good, width, 32))).not.toContain("wrap");
+    for (const width of [319, 640]) expect(rules(await judged(good, width, 32))).toContain("wrap");
+    expect(rules(await judged(good, 390, 16))).toContain("wrap");
+    expect(rules(await judged(good, 1280, 32))).toContain("wrap");
+    expect(rules(await judged(para("push/res<br>erved/blocked"), 320, 32))).toContain("wrap");
+    expect(rules(await judged(para("push<br>/reserved/blocked"), 320, 32))).toContain("wrap");
+  });
+
+  it("rejects a fallback that actually drew the address despite its declared mono font", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<div class="fg-agent"><code class="aw-byoa-url" style="font-family: &quot;IBM Plex Mono&quot;, monospace">https://antwars.ai/mcp</code></div>');
+      const { fonts, problem } = await landingUrlFonts(page);
+      expect(Object.values(fonts).some(n => n > 0)).toBe(true);
+      expect(problem).toContain("expected IBM Plex Mono");
+    } finally { await page.close(); }
+  });
+
   it.each(["Kills", "Territory", "Ants"])("rejects a misplaced outer swatch on %s", async title => {
     const figure = (last: boolean, misplaced: boolean) => `<span class="sb-figure" style="display:flex;align-items:center;gap:4px;${last ? "justify-content:flex-end" : ""}">`
       + (last && !misplaced ? '<span class="sb-value">61</span><i class="sb-swatch"></i>' : '<i class="sb-swatch"></i><span class="sb-value">96</span>') + "</span>";
@@ -663,8 +768,10 @@ describe("render check widths and doubled text", () => {
       ["comparison-leading-total-fixture.json", [320], [32], ["1,000", "0", "0", "0"]],
       ["comparison-thousands-fixture.json", [320], [32], Array(4).fill("1,000")],
     ]);
-    expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.topBar ?? s.panelOnly, s.widths, s.textSizes]))
-      .toEqual([[true, [320], [40, 64]], ["hud", [320], [64]], ["pages", [320], [64]]]);
+    expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.topBar ?? (s.addressLabelOnly ? "landing label" : s.panelOnly), s.widths, s.textSizes]))
+      .toEqual([["landing label", [320], [64]], [true, [320], [40, 64]], ["hud", [320], [64]], ["pages", [320], [64]]]);
+    expect(SURFACES.filter(s => s.textSizes?.includes(24)).map(s => [s.url, s.widths, s.textSizes]))
+      .toEqual([["/", [320], [24]], ["/rules", [320], [24]]]);
     const markLists = SURFACES.filter(surface => surface.markList);
     expect(markLists.map(({ markList, widths, textSizes, url }) => [markList, widths, textSizes, new URL(url, "http://localhost").searchParams.get("board")]))
       .toEqual([["3d", [320, 390], [32], null], ["2d", [320, 390], [32], "2d"]]);

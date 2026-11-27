@@ -61,7 +61,7 @@ export interface Finding {
 }
 export interface PageJudgement { failures: Finding[]; tight: Finding[]; counted: { items: number; grids: number; tiles: number } }
 
-export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; topBar?: "hud" | "pages"; panelOnly?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
+export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean; topBar?: "hud" | "pages"; panelOnly?: boolean; addressLabelOnly?: boolean; markList?: boolean; comparisonColonies?: number; comparisonOnly?: boolean; expectedKills?: readonly string[] }): PageJudgement {
   const vw = document.documentElement.clientWidth;
   const failures: Finding[] = [];
   const tight: Finding[] = [];
@@ -183,11 +183,23 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     return { failures, tight, counted: { items: parts.length, grids: 0, tiles: 0 } };
   }
   // For the finished replay the open native modal, not the inert HUD behind it, is the surface.
-  const scope = limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
+  const labelSelector = ".fg-agent .fg-agent-label";
+  const scope = limits.addressLabelOnly ? document.querySelector<HTMLElement>(labelSelector)
+    : limits.resultDialog ? document.querySelector<HTMLDialogElement>(".d1-result-dialog:modal")
     : limits.topBar ? document.querySelector<HTMLElement>(limits.topBar === "hud" ? ".d1 .d1-top" : ".d1p .d1-top")
     : limits.markList ? document.querySelector<HTMLElement>(".aw-mark-list:not([hidden])")
     : limits.comparisonOnly ? document.querySelector<HTMLElement>(".sb-comparison") : document.body;
   if (!scope) throw new Error("The expected surface did not open");
+  if (limits.addressLabelOnly) {
+    const runs = textRects(scope);
+    if (!shown(scope) || text(scope) !== "MCP address (Streamable HTTP)" || !runs.length) throw new Error("The complete address label was not shown");
+    const expectedSize = parseFloat(style(document.documentElement).fontSize) * 0.75;
+    for (const { el, r } of runs) {
+      if (parseFloat(style(el).fontSize) !== expectedSize) throw new Error("The address label did not follow the browser text size");
+      const front = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+      if (!scope.contains(front)) throw new Error("The address label was obscured");
+    }
+  }
   if (limits.topBar) {
     const requirePart = (selector: string) => {
       const el = scope.querySelector(selector);
@@ -308,7 +320,8 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   // Section titles on Rules and the Watch title (docs/design-system.md, Layout rules) stay on one line even if
   // a badge or a block inside the heading moves to a second line. Other headings may be running text.
   const ONE_LINE_TITLE = 'h3.d1p-rule-title, [data-page="watch"] h1.d1p-title';
-  const ONE_LINE = `label, th, button, [role=button], p.d1p-state, ${ONE_LINE_TITLE}`;
+  const urlSelector = ".fg-agent .aw-byoa-url";
+  const ONE_LINE = `${labelSelector}, ${urlSelector}, label, th, button, [role=button], p.d1p-state, ${ONE_LINE_TITLE}`;
   const painted = (c: string) => c !== "" && c !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(c);
   /**
    * A badge (a tag, chip or pill): an inline box drawn as a unit of its own, with its own background or border. It is
@@ -356,12 +369,60 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     isItem.add(el);
     items.push(el);
   }
-  const narrowStandings = matchMedia("(320px <= width < 20em)").matches;
+  const zoomedPhone = matchMedia("(width < 320px)").matches;
+  const enlargedPhone = matchMedia("(320px <= width < 20em)").matches;
   // Exclude overlays such as an open rating tooltip, even when its text is nested inside the badge.
   const inLine = (n: Element, line: Element) => {
     for (let e: Element | null = n; e && e !== line; e = e.parentElement) if (outOfFlow(e)) return false;
     return true;
   };
+  // Judge the printed parts, not the markup offering the breaks. A planted break can be
+  // inside one text node (CSS) or between two nodes (a span or a forced <br>).
+  const partsStayWhole = (el: Element, parts: RegExp, maxUnbrokenWidth = Infinity) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const nodes: { node: Text; start: number; end: number }[] = [];
+    let end = 0;
+    for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+      nodes.push({ node: n, start: end, end: end += n.length });
+    }
+    return [...(el.textContent ?? "").matchAll(parts)].every(({ 0: part, index }) => {
+      const rects: DOMRect[] = [];
+      for (const { node, start, end } of nodes) {
+        if (end <= index || start >= index + part.length) continue;
+        const r = document.createRange();
+        r.setStart(node, Math.max(index - start, 0));
+        r.setEnd(node, Math.min(index + part.length, end) - start);
+        rects.push(...[...r.getClientRects()].filter(box => box.width > 0));
+      }
+      // Text ranges measure the glyph fragments of this part alone. If their combined
+      // width exceeds even a fresh address line, no separator-only layout can fit it.
+      return lineCount(rects) === 1 || rects.reduce((sum, r) => sum + r.width, 0) > maxUnbrokenWidth;
+    });
+  };
+  const contentWidth = (el: Element) => {
+    const cs = style(el);
+    return el.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+      - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+  };
+  // Compare the complete string, including spaces that collapse at line ends. Both
+  // the label and the paragraph use one font; the hidden probe inherits it in place.
+  const needsAnotherLine = (el: Element, part = el.textContent) => {
+    const probe = document.createElement("span");
+    probe.textContent = part;
+    probe.style.cssText = "position:fixed;visibility:hidden;white-space:nowrap;width:max-content";
+    el.append(probe);
+    const needed = probe.getBoundingClientRect().width;
+    probe.remove();
+    return needed > contentWidth(el) + 1 / 64;
+  };
+  // Normal prose wraps at spaces. A slash can also end a line on an enlarged phone
+  // if the paragraph needs another line, but the word before or after it cannot split.
+  for (const p of scope.querySelectorAll(".d1p-rule p")) {
+    if (!shown(p) || !p.textContent?.includes("/")) continue;
+    const parts = enlargedPhone && needsAnotherLine(p) ? /[\p{L}\p{N}]+\/?/gu : /[\p{L}\p{N}]+(?:\/[\p{L}\p{N}]+)*/gu;
+    if (!partsStayWhole(p, parts)) fail({ rule: "wrap", element: name(p), text: text(p),
+      measure: "break inside a Rules word", extent: lineCount(textRects(p).map(t => t.r)), box: box(p.getBoundingClientRect()) }, p);
+  }
   for (const el of items) {
     const rects = textRects(el).filter(t => inLine(t.el, el)).map(t => t.r);
     for (const m of el.querySelectorAll("img, svg")) { const r = m.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && inLine(m, el)) rects.push(r); }
@@ -373,10 +434,21 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     // or an item cut by its row is still a failure.
     const group = el.matches(".d1-result-dialog .rd-player") ? el.querySelector(":scope > .rd-badges") : null;
     const player = el.querySelector(":scope > .d1-rating-name");
-    const stacked = narrowStandings && lines === 2 && group && player
+    const stacked = enlargedPhone && lines === 2 && group && player
       && group.getBoundingClientRect().top >= player.getBoundingClientRect().bottom - 0.5
       && [player, group].every(part => lineCount(textRects(part).map(t => t.r)) === 1);
-    if (lines > 1 && !prose && !stacked) {
+
+    // No word may split. Keep each group intact when it fits a fresh line,
+    // measuring the space between its words even if layout collapsed that space.
+    const labelBreak = lines > 1 && (enlargedPhone || zoomedPhone) && el.matches(labelSelector)
+      && needsAnotherLine(el) && partsStayWhole(el, /\S+/g)
+      && [/^[^(]+?(?=\s*\()/g, /\(.*\)$/g].every(group => partsStayWhole(el, group)
+        || needsAnotherLine(el, el.textContent?.match(group)?.[0] ?? ""));
+    // The URL follows the width of its actual content box at every browser text size.
+    const fitsWidth = el.matches(urlSelector) ? contentWidth(el) + 1 / 64 : Infinity;
+    const addressBreak = lines > 1 && rects.reduce((sum, r) => sum + r.width, 0) > fitsWidth
+      && partsStayWhole(el, /^[a-z]+:\/\/|[./]?[^./]+|[./]/gi, fitsWidth);
+    if (lines > 1 && !prose && !stacked && !labelBreak && !addressBreak) {
       fail({ rule: "wrap", element: name(el), text: words, measure: `${lines} lines`, extent: lines, box: box(el.getBoundingClientRect()) }, el);
     } else if (lines === 1 && !prose && rects.length > 0) {
       const cs = style(el);
@@ -413,7 +485,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       let valid = rects.length > 0 && sameMatchLine(rects);
       if (rest.length && first.length) {
         let below = player && cardWidth < 15 * rootPx;
-        if (!player && narrowStandings && lines === 2 && groups.every(sameMatchLine)) {
+        if (!player && enlargedPhone && lines === 2 && groups.every(sameMatchLine)) {
           // Use the unbroken text runs, not the laid-out box: a block stamp can stretch across the row.
           const needed = parts.reduce((sum, part, i) => {
             const rs = groups[i]!;
@@ -473,7 +545,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     const label = row.querySelector(".aw-mark-kind"), when = row.querySelector("b"), colony = row.querySelector<HTMLElement>(".aw-mark-colony");
     const fixed = [label, when].flatMap(el => el ? textRects(el).map(t => t.r) : []);
     const names = colony ? textRects(colony).map(t => t.r) : [];
-    const below = narrowStandings && row.closest(".d1") && colony;
+    const below = enlargedPhone && row.closest(".d1") && colony;
     if (!label || !when || !shown(label) || !shown(when) || lineCount(fixed) !== 1 || (colony && lineCount(names) !== 1)
       || (below ? Math.min(...names.map(r => r.top)) < Math.max(...fixed.map(r => r.bottom)) - .5 : lineCount([...fixed, ...names]) !== 1)) {
       fail({ rule: "wrap", element: name(row), text: text(row), measure: "event, time or colony not on its expected line",
@@ -494,7 +566,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     if (!words || run.children.length || run.title !== words || run.getAttribute("aria-label") !== words
       || !run.matches('a[href], span[role="group"]') || run.closest('[aria-hidden="true"], [inert]') || run.hasAttribute("aria-labelledby")) continue;
     if (cs.whiteSpace === "nowrap" && cs.textOverflow === "ellipsis" && cs.overflowX === "hidden" && cs.display === "block"
-      && (!narrowStandings || run.scrollWidth <= run.clientWidth || run.clientWidth >= run.parentElement!.clientWidth - 1)
+      && (!enlargedPhone || run.scrollWidth <= run.clientWidth || run.clientWidth >= run.parentElement!.clientWidth - 1)
       && run.clientWidth >= 1.5 * parseFloat(cs.fontSize)) designedEnds.add(run);
   }
 
@@ -611,7 +683,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
   }
   // The dedicated top-bar cases stop at the bar's text and control checks. The
   // panel or page underneath need not fit on a single screen at this size.
-  if (limits.topBar) return { failures, tight, counted: { items: items.length, grids: 0, tiles: 0 } };
+  if (limits.topBar || limits.addressLabelOnly) return { failures, tight, counted: { items: items.length, grids: 0, tiles: 0 } };
   const pageWidth = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
   if (pageWidth > vw + 0.5) fail({ rule: "page-wider", element: "html", text: "", measure: `${pageWidth} px wide, viewport ${vw} px`, extent: Math.round(pageWidth - vw), box: null }, null);
 

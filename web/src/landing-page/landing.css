@@ -64,19 +64,47 @@
 /* The Leaderboard's and Matches' cards, one above the other, each the column's width. */
 .fg-records { display: grid; gap: 40px; margin-top: var(--fg-gap); }
 .fg-section { min-width: 0; }
+/* Register the same bundled medium face the board uses, without loading the board. */
+@font-face {
+  font-family: "Landing Plex Mono";
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
 .fg-agent { margin-top: var(--fg-gap); }
 .fg-section-title { margin-bottom: 24px; font-size: var(--aw-text-section); font-weight: 700; line-height: var(--aw-lh-section); letter-spacing: -0.02em; color: var(--aw-ink-bright); }
 .fg-agent-field { padding: 20px var(--d1p-inset); }
-.fg-agent-label { margin-bottom: 6px; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--aw-ink-2); }
+.fg-agent-label { white-space: nowrap; margin-bottom: 6px; font-size: var(--aw-text-meta); font-weight: 600; line-height: var(--aw-lh-meta); color: var(--aw-ink-2); }
 /* Today's address row (agent.ts), restyled from the HUD's one-line form (ui.css .d2 .aw-byoa-*): it wraps, and Copy is the
    pages' grey pill. */
-.fg .fg-agent .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 560px; margin: 0; }
-.fg .fg-agent .aw-byoa-url { flex: 1 1 220px; min-width: 0; min-height: var(--d2-tap); display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--aw-bg); box-shadow: inset 0 0 0 1px var(--aw-line); font: 500 13px/1.4 var(--aw-mono); color: var(--aw-ink-bright); white-space: normal; overflow-wrap: anywhere; }
+.fg .fg-agent .aw-byoa-address { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; max-width: 35rem; margin: 0; }
+.fg .fg-agent .aw-byoa-url { flex: 1 1 17em; min-width: 0; min-height: var(--d2-tap); display: flex; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--aw-bg); box-shadow: inset 0 0 0 1px var(--aw-line); font: 500 var(--aw-text-body)/1.4 "Landing Plex Mono", var(--aw-mono); color: var(--aw-ink-bright); white-space: normal; }
+.fg-address-line { width: 100%; min-width: 0; }
+/* A segment that fits a fresh line stays whole. Only longer segments wrap within themselves. */
+.fg-address-part { display: inline-block; vertical-align: top; width: max-content; max-width: 100%; overflow-wrap: anywhere; }
 .fg .fg-agent .aw-byoa-copy { min-height: var(--d2-tap); padding: 0 16px; border-radius: 999px; background: var(--aw-raise); color: var(--aw-ink); font-size: var(--aw-text-body); font-weight: 600; }
 .fg .fg-agent .aw-byoa-copy:hover { background: var(--aw-raise-hover); }
 .fg .fg-agent .aw-byoa-note:empty { display: none; }
 /* The pages' footer: their credit, Rules and the inspiration. */
-.fg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; margin-top: var(--fg-gap); padding-top: 12px; border-top: 1px solid var(--aw-line); font-size: 12px; color: var(--aw-ink-3); }
+.fg-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; margin-top: var(--fg-gap); padding-top: 12px; border-top: 1px solid var(--aw-line); font-size: var(--aw-text-meta); color: var(--aw-ink-3); }
+
+.fg-foot > .d2-credit { font-size: inherit; }
+/* Keep the qualifier on a fresh line if it fits; only wrap at its space if it doesn't. */
+@media (width < 320px), (320px <= width < 20em) {
+  .fg-agent-label { white-space: normal; }
+  .fg-agent-label .fg-keep { display: inline-block; max-width: 100%; white-space: normal; vertical-align: top; }
+}
+/* At very large text sizes, give just the label up to six em for its longest word,
+   borrowing from the field padding without moving the address or Copy button. */
+@media (320px <= width < 20em) {
+  .fg-agent-label { margin-inline: clamp(calc(0px - var(--d1p-inset)), 50% - 3em, 0px); }
+}
+@media (width < 19em) {
+  .fg .fg-foot { margin-inline: calc(var(--aw-space-2) - var(--fg-gutter)); }
+}
+@media (width < 12em) {
+  .fg .fg-foot { margin-inline: calc(var(--aw-space-1) - var(--fg-gutter)); }
+}
 
 /* ---------------------------------------------------------------- first paint */
 @keyframes fg-rise { from { opacity: 0; transform: translateY(8px); } }

@@ -17,7 +17,7 @@ export const typefaceSlug = (t: Typeface): string => t.toLowerCase().replace(/ /
 /** Browser default text sizes (px) judged on every standard surface: default (16 px) and doubled (32 px). */
 export const DEFAULT_TEXT_SIZE = 16 as const;
 export const TEXT_SIZES = [DEFAULT_TEXT_SIZE, 32] as const;
-export type TextSize = (typeof TEXT_SIZES)[number] | 40 | 64;
+export type TextSize = (typeof TEXT_SIZES)[number] | 24 | 40 | 64;
 
 const ROBOTO_DIR = resolve(import.meta.dirname, "../../node_modules/@expo-google-fonts/roboto");
 const LIBERATION_DIRS = ["/usr/share/fonts/truetype/liberation", "/usr/share/fonts/truetype/liberation2", "/usr/share/fonts/liberation"];
@@ -60,13 +60,13 @@ export async function fontconfigFor(typeface: Typeface, root?: string): Promise<
 }
 
 /** Glyph counts per platform font the page drew its text with, from the browser itself (DevTools CSS domain). */
-export async function drawnFonts(page: Page): Promise<Record<string, number>> {
+export async function drawnFonts(page: Page, selector = "body *"): Promise<Record<string, number>> {
   const cdp = await page.context().newCDPSession(page);
   try {
     await cdp.send("DOM.enable");
     await cdp.send("CSS.enable");
     const { root } = await cdp.send("DOM.getDocument", { depth: -1 });
-    const { nodeIds } = await cdp.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: "body *" });
+    const { nodeIds } = await cdp.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector });
     const fonts: Record<string, number> = {};
     for (const nodeId of nodeIds) {
       try {
@@ -79,6 +79,18 @@ export async function drawnFonts(page: Page): Promise<Record<string, number>> {
     }
     return fonts;
   } finally { await cdp.detach(); }
+}
+
+/** Every glyph of the visible landing address must come from the shipped mono face. */
+export async function landingUrlFonts(page: Page): Promise<{ fonts: Record<string, number>; problem?: string }> {
+  const selector = ".fg-agent .aw-byoa-url";
+  await page.evaluate(() => document.fonts.ready);
+  // CDP also counts glyphs of child nodes. Query the leaf boxes once so a wrapped
+  // address is measured on the same basis as a plain, single-text-node address.
+  const fonts = await drawnFonts(page, `:is(${selector}, ${selector} *):not(:has(*))`);
+  const length = (await page.locator(selector).textContent())?.length ?? 0;
+  if (length && fonts["IBM Plex Mono Medium (web font)"] === length && Object.keys(fonts).length === 1) return { fonts };
+  return { fonts, problem: `expected IBM Plex Mono for the ${length} address glyphs, got ${JSON.stringify(fonts)}` };
 }
 
 /**

@@ -466,7 +466,7 @@ td.c-model > .d1p-colony { display: block; }
    sticky under the bar, so the section marked stays in view. */
 .d1p-index { position: sticky; top: 72px; display: grid; gap: 18px; min-width: 0; padding-top: 20px; }
 .d1p-index-group { display: grid; gap: 6px; }
-.d1p-index-list a { position: relative; display: flex; align-items: center; min-height: 32px; padding: 0 14px; border-radius: 4px; font-size: 14px; color: var(--aw-ink-2); text-decoration: none; overflow: hidden; }
+.d1p-index-list a { position: relative; display: flex; align-items: center; min-height: 32px; padding: 0 14px; border-radius: 4px; font-size: var(--aw-text-lead); color: var(--aw-ink-2); text-decoration: none; overflow: hidden; }
 .d1p-index-list a:hover { color: var(--aw-ink-bright); }
 .d1p-index-list a[aria-current] { background: var(--aw-raise); font-weight: 600; color: var(--aw-ink-bright); }
 .d1p-index-list a[aria-current]::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--aw-ink-bright); }
@@ -476,7 +476,7 @@ td.c-model > .d1p-colony { display: block; }
 .d1p-rule-title { margin-bottom: 12px; font-size: var(--aw-text-title); font-weight: var(--aw-bold); line-height: var(--aw-lh-title); letter-spacing: var(--aw-track-title); text-transform: uppercase; color: var(--aw-ink-bright); }
 /* These six titles cannot hold one line on a phone at doubled text, so they keep their px size until they have their own design. */
 .d1p-rule:is(#d1-food-and-hatching, #d1-autonomous-ants, #d1-thoughts-and-marks, #d1-battle-balance, #d1-accounts-and-keys, #d1-model-index-matches) > .d1p-rule-title { font-size: 15px; line-height: 20px; }
-.d1p-rule p { max-width: 600px; font-size: 15px; line-height: 24px; color: var(--aw-ink); font-variant-numeric: tabular-nums; }
+.d1p-rule p { max-width: 600px; font-size: var(--aw-text-prose-xs); line-height: var(--aw-lh-prose-xs); color: var(--aw-ink); font-variant-numeric: tabular-nums; }
 .d1p-rule p + p { margin-top: 12px; }
 .d1p-win li { position: relative; max-width: 600px; padding-left: 18px; font-size: var(--aw-text-prose); line-height: var(--aw-lh-prose); color: var(--aw-ink-bright); }
 .d1p-win li + li { margin-top: 10px; }
@@ -546,6 +546,28 @@ td.c-model > .d1p-colony { display: block; }
   .d1p-win li::before { top: 10px; }
   .d1p-foot { gap: 0 12px; margin-top: 24px; padding: 4px var(--d1p-pad) 8px; }
   .d1p-foot .d2-link { min-height: 44px; }
+}
+
+/* Keep the marked link on one line, including its inset and heavier type. */
+@media (width < 22.5rem) {
+  .d1p-index-list { grid-template-columns: minmax(0, 1fr); }
+}
+@media (width < 12em) {
+  .d1p-index { margin-inline: calc(var(--aw-space-2) - var(--d1p-pad)); }
+}
+/* At phone zoom the active marker and the longest link need the full row. */
+@media (width < 192px) {
+  .d1p-index { margin-inline: calc(0px - var(--d1p-pad)); }
+}
+/* At phone zoom, give the reading cards the screen width. Keep their text
+   inset where possible, but not at the expense of a whole slash-joined word. */
+@media (width < 224px) {
+  .d1p-reading { margin-inline: calc(0px - var(--d1p-pad)); }
+  .d1p-rule { margin-inline: clamp(1px, (100% - 10rem) / 2, var(--d1p-inset)); }
+}
+.d1p-rule p wbr { display: none; }
+@media (320px <= width < 20em) {
+  .d1p-rule p wbr { display: inline; }
 }
 
 /* ---------------------------------------------------------------- the Leaderboard's band on a phone */

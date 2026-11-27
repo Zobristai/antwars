@@ -132,10 +132,19 @@ export function mountLandingPage(doc: Document, win: Window, options: { request?
   agent.setAttribute("aria-labelledby", agentTitle.id);
   const agentCard = h(doc, "div", "d1p-card");
   const field = h(doc, "div", "fg-agent-field");
-  const addressLabel = h(doc, "p", "fg-agent-label", AGENT_ADDRESS_LABEL);
+  const addressLabel = h(doc, "p", "fg-agent-label");
+  addressLabel.append(...keepTogether(AGENT_ADDRESS_LABEL, LANDING_COPY.addressKeep));
   addressLabel.id = "fg-address-label";
-  const address = buildAgentPanel(doc, mcpAddress(win.location.origin), win.navigator?.clipboard).querySelector<HTMLElement>(".aw-byoa-address")!;
+  const addressText = mcpAddress(win.location.origin);
+  const address = buildAgentPanel(doc, addressText, win.navigator?.clipboard).querySelector<HTMLElement>(".aw-byoa-address")!;
   address.setAttribute("role", "group"); address.setAttribute("aria-labelledby", addressLabel.id);
+  // Break opportunities belong to the visible address, not the value used by Copy.
+  const addressLine = h(doc, "span", "fg-address-line");
+  for (const [i, part] of addressText.split(/(?<=:\/\/)|(?<![:/])(?=[/.])/).entries()) {
+    if (i) addressLine.append(doc.createElement("wbr"));
+    addressLine.append(h(doc, "span", "fg-address-part", part));
+  }
+  address.querySelector(".aw-byoa-url")!.replaceChildren(addressLine);
   address.querySelector(".aw-byoa-note")?.setAttribute("role", "status");
   field.append(addressLabel, address);
   agentCard.append(field);

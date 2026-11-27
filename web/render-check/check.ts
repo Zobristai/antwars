@@ -24,7 +24,7 @@ import { rulesConfig } from "../../src/sim/config.ts";
 import { newMatchConfig } from "../../src/sim/gridScale.ts";
 import { renderRules, ruleSections, rulesAssets } from "../rules.ts";
 import { RENDER_DELAY_MS, RESULT_BEAT_MS } from "../src/buffer.ts";
-import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
+import { DEFAULT_TEXT_SIZE, TEXT_SIZES, TYPEFACES, applyTextSize, drawnFonts, landingUrlFonts, fontProblem, fontconfigFor, rootFontSize, textSizeProblem, typefaceSlug, type TextSize } from "./fonts.ts";
 import { HUD_SAMPLE_CYCLES, measureHudProbe, type HudMeasurement, type HudOnScreen, type HudProbe, type HudTriplet } from "./hud-pixels.ts";
 import { heldFrom, judge, publish, readHeld, type Render } from "./report.ts";
 import { RULE_LIMITS, judgePage, type Box, type Finding, type PageJudgement } from "./rules.ts";
@@ -62,6 +62,8 @@ export interface Surface {
   comparisonOnly?: boolean;
   /** Judge reflow inside the replay panel at above-double text. */
   panelOnly?: boolean;
+  /** Judge the landing address label at above-double text, in its actual field. */
+  addressLabelOnly?: boolean;
   /** Judge only the expected top bar, not the page or replay panel below it. */
   topBar?: "hud" | "pages";
   expectedKills?: readonly string[];
@@ -123,6 +125,9 @@ export function longClockExcerpt(source: Buffer): Buffer {
 
 export const SURFACES: readonly Surface[] = [
   { id: "landing", url: "/", hud: false, what: "the front page" },
+  { id: "landing-intermediate-text", url: "/", hud: false, widths: [320], textSizes: [24], what: "the front page at intermediate phone text" },
+  { id: "landing-label-large-text", url: "/", hud: false, widths: [320], textSizes: [64], addressLabelOnly: true,
+    what: "the front page’s address label at large phone text" },
   // Not capture=1: on Watch that also changes what the page shows with no live match.
   { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), its top matches' results hidden as a visitor first sees them" },
   { id: "watch-results-shown", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), in a browser that chose to show the top matches' results", storage: { "aw.topMatches.showResults": "true" } },
@@ -138,6 +143,7 @@ export const SURFACES: readonly Surface[] = [
   { id: "recordings-zoom-400", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 400 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], textSizes: [DEFAULT_TEXT_SIZE], zoom: 4 },
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
+  { id: "rules-intermediate-text", url: "/rules", hud: false, widths: [320], textSizes: [24], what: "Rules at intermediate phone text" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
   { id: "replay-panel-large-text", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
     panelOnly: true, widths: [320], textSizes: [40, 64], what: "The replay panel on a phone at above-double text" },
@@ -702,13 +708,14 @@ async function renderAll(o: Options): Promise<Render[]> {
           const evidence: RenderEvidence = { comparisons: [] };
           let judged: PageJudgement = { failures: [], tight: [], counted: { items: 0, grids: 0, tiles: 0 } };
           let fonts: Record<string, number> = {};
+          let urlFonts: Record<string, number> | undefined;
           let images: string[] = [];
           let failureImages: string[] = [];
           let failureInView: boolean[] = [];
           try {
             await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
             const settled = await settle(page, surface, evidence);
-            if (surface.id === "rules") {
+            if (surface.url === "/rules") {
               const missingSections = await rulesSectionsProblem(page);
               if (missingSections) invalid.push(missingSections);
             }
@@ -781,7 +788,15 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
-            const limits = { ...RULE_LIMITS, panelOnly: surface.panelOnly, topBar: surface.topBar, resultDialog: surface.resultDialog, markList: !!surface.markList,
+            if (surface.addressLabelOnly) {
+              await page.locator(".fg-agent-label").evaluate(el => el.scrollIntoView({ block: "center" }));
+            }
+            if (surface.url === "/") {
+              const address = await landingUrlFonts(page);
+              urlFonts = address.fonts;
+              if (address.problem) invalid.push(address.problem);
+            }
+            const limits = { ...RULE_LIMITS, addressLabelOnly: surface.addressLabelOnly, panelOnly: surface.panelOnly, topBar: surface.topBar, resultDialog: surface.resultDialog, markList: !!surface.markList,
               comparisonColonies: surface.comparisonColonies, comparisonOnly: surface.comparisonOnly, expectedKills: surface.expectedKills };
             judged = await page.evaluate(judgePage, limits);
             fonts = await drawnFonts(page);
@@ -821,7 +836,7 @@ async function renderAll(o: Options): Promise<Render[]> {
             invalidEvidence = await saveInvalidEvidence(o.out, `${surface.id}-${width}-${textSize}px-${typefaceSlug(typeface)}`, invalid, evidence);
           }
           console.log(`${surface.id} ${width} ${textSize}px ${typeface}: ${judged.failures.length} failures, ${judged.tight.length} tight, ${judged.counted.items} items, ${judged.counted.grids} grids${invalid.length ? `; INVALID: ${invalid.join("; ")}` : ""}`);
-          return { surface: surface.id, url: surface.url, width, textSize, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, invalid, ...(invalidEvidence ? { invalidEvidence } : {}), pageErrors, fixtures: [...served.fixturesUsed] };
+          return { surface: surface.id, url: surface.url, width, textSize, typeface, failures: judged.failures, tight: judged.tight, images, failureImages, failureInView, fonts, urlFonts, invalid, ...(invalidEvidence ? { invalidEvidence } : {}), pageErrors, fixtures: [...served.fixturesUsed] };
         } finally {
           await textSession?.detach().catch(() => undefined);
           await context.close();
