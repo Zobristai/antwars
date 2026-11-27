@@ -33,7 +33,7 @@ const rules = (j: PageJudgement): RuleId[] => j.failures.map(f => f.rule);
 
 describe("render check rules", () => {
   it("separates the enlarged phone label rule from the address’s width-based breaks", async () => {
-    const row = (label: string, url: string, room = 120) => `<section class="fg-agent"><p class="fg-agent-label">${label}</p>`
+    const row = (label: string, url: string, room = 120) => `<section class="fg-agent"><p class="fg-agent-label" style="width:254px;font:600 0.75rem/1rem sans-serif">${label}</p>`
       + `<code class="aw-byoa-url" style="display:block;width:${room}px">${url}</code></section>`;
     const label = "MCP address (Streamable HTTP)", url = "https://antwars.ai/mcp";
     const legal = row("MCP address <br>(Streamable HTTP)", "https://<br>antwars<br>.ai<br>/mcp");
@@ -46,11 +46,39 @@ describe("render check rules", () => {
       row(label, "https://antwars.<br>ai/mcp"), row(label, "https://antwars.ai/<br>mcp")]) {
       expect(rules(await judged(bad, 320, 32))).toContain("wrap");
     }
-    for (const [width, size] of [[320, 16], [319, 32], [640, 32], [1280, 32]] as const) {
+    for (const [width, size] of [[320, 16], [640, 32], [1280, 32]] as const) {
       const wraps = (await judged(legal, width, size)).failures.filter(f => f.rule === "wrap");
       expect(wraps.some(f => f.element.endsWith("p.fg-agent-label"))).toBe(true);
       expect(wraps.some(f => f.element.endsWith("code.aw-byoa-url"))).toBe(false);
     }
+  });
+
+  it("at intermediate text size, permits label and Rules slash breaks only when the line does not fit", async () => {
+    const label = (room: number) => `<section class="fg-agent"><p class="fg-agent-label" style="width:${room}px;font:600 .75rem/1rem sans-serif">MCP address <br>(Streamable HTTP)</p></section>`;
+    const prose = (room: number) => `<section class="d1p-rule"><p style="width:${room}px;font:1rem/1.5 sans-serif">push/<br>reserved/blocked</p></section>`;
+    for (const item of [label, prose]) {
+      expect(rules(await judged(item(175), 320, 24))).not.toContain("wrap");
+      expect(rules(await judged(item(320), 320, 24))).toContain("wrap");
+    }
+  });
+
+  it.each([160, 195])("keeps every word of the address label visible at a %i CSS px zoomed viewport", async width => {
+    const page = await browser.newPage({ viewport: { width, height: 422 } });
+    try {
+      await page.setContent(`<style>body{margin:0;font:12px/16px sans-serif}.fg-agent{margin:0 33px;overflow:hidden}</style>
+        <section class="fg-agent"><p class="fg-agent-label">MCP address <span class="fg-keep">(Streamable HTTP)</span></p></section>`);
+      await page.addStyleTag({ path: "web/src/landing-page/landing.css" });
+      const label = page.locator(".fg-agent-label");
+      const fits = await label.evaluate(el => {
+        const r = new Range(); r.selectNodeContents(el);
+        const box = el.getBoundingClientRect();
+        return [...r.getClientRects()].every(part => part.left >= box.left && part.right <= box.right);
+      });
+      expect(fits).toBe(true);
+      expect(rules(await page.evaluate(judgePage, RULE_LIMITS))).not.toContain("wrap");
+      await label.evaluate(el => { el.innerHTML = "MCP address (Stream<br>able HTTP)"; });
+      expect(rules(await page.evaluate(judgePage, RULE_LIMITS))).toContain("wrap");
+    } finally { await page.close(); }
   });
 
   it("permits an internal address break only when that segment is wider than the entire content row", async () => {
@@ -65,8 +93,8 @@ describe("render check rules", () => {
     expect(rules(await judged(address(21), 320, 16))).toContain("wrap");
   });
 
-  it("allows Rules prose to break after an inter-word slash only on phones at doubled text", async () => {
-    const para = (words: string) => `<section class="d1p-rule"><p>Contact: ${words} tiles.</p></section>`;
+  it("allows Rules prose to break after an inter-word slash only on enlarged phones", async () => {
+    const para = (words: string) => `<section class="d1p-rule"><p style="width:160px;font:1rem/1.5 sans-serif">Contact: ${words} tiles.</p></section>`;
     const good = para("push/<br>reserved/<br>blocked");
     for (const width of [320, 400, 639]) expect(rules(await judged(good, width, 32))).not.toContain("wrap");
     for (const width of [319, 640]) expect(rules(await judged(good, width, 32))).toContain("wrap");

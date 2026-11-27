@@ -92,6 +92,11 @@
 @media (320px <= width < 20em) {
   .fg-agent-label { white-space: normal; }
 }
+/* A phone at 200% zoom can have less room than the parenthetical itself. */
+@media (width < 320px) {
+  .fg-agent-label { white-space: normal; }
+  .fg-agent-label .fg-keep { display: inline-block; max-width: 100%; white-space: normal; vertical-align: top; }
+}
 @media (width < 19em) {
   .fg .fg-foot { margin-inline: calc(var(--aw-space-2) - var(--fg-gutter)); }
 }

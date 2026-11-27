@@ -357,6 +357,7 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     isItem.add(el);
     items.push(el);
   }
+  const zoomedPhone = matchMedia("(width < 320px)").matches;
   const enlargedPhone = matchMedia("(320px <= width < 20em)").matches;
   // Exclude overlays such as an open rating tooltip, even when its text is nested inside the badge.
   const inLine = (n: Element, line: Element) => {
@@ -391,10 +392,22 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
     return el.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
       - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
   };
-  // A slash joins words at ordinary sizes. Only on doubled phones can a line end after it.
+  // Compare the complete string, including spaces that collapse at line ends. Both
+  // the label and the paragraph use one font; the hidden probe inherits it in place.
+  const needsAnotherLine = (el: Element) => {
+    const probe = document.createElement("span");
+    probe.textContent = el.textContent;
+    probe.style.cssText = "position:fixed;visibility:hidden;white-space:nowrap;width:max-content";
+    el.append(probe);
+    const needed = probe.getBoundingClientRect().width;
+    probe.remove();
+    return needed > contentWidth(el) + 1 / 64;
+  };
+  // Normal prose wraps at spaces. A slash can also end a line on an enlarged phone
+  // if the paragraph needs another line, but the word before or after it cannot split.
   for (const p of scope.querySelectorAll(".d1p-rule p")) {
     if (!shown(p) || !p.textContent?.includes("/")) continue;
-    const parts = enlargedPhone ? /[\p{L}\p{N}]+\/?/gu : /[\p{L}\p{N}]+(?:\/[\p{L}\p{N}]+)*/gu;
+    const parts = enlargedPhone && needsAnotherLine(p) ? /[\p{L}\p{N}]+\/?/gu : /[\p{L}\p{N}]+(?:\/[\p{L}\p{N}]+)*/gu;
     if (!partsStayWhole(p, parts)) fail({ rule: "wrap", element: name(p), text: text(p),
       measure: "break inside a Rules word", extent: lineCount(textRects(p).map(t => t.r)), box: box(p.getBoundingClientRect()) }, p);
   }
@@ -413,7 +426,9 @@ export function judgePage(limits: typeof RULE_LIMITS & { resultDialog?: boolean;
       && group.getBoundingClientRect().top >= player.getBoundingClientRect().bottom - 0.5
       && [player, group].every(part => lineCount(textRects(part).map(t => t.r)) === 1);
 
-    const labelBreak = enlargedPhone && el.matches(labelSelector) && lines === 2 && partsStayWhole(el, /^[^(]+?(?=\s*\()|\(.*\)$/g);
+    const labelBreak = lines > 1 && el.matches(labelSelector) && needsAnotherLine(el) && (
+      enlargedPhone && lines === 2 && partsStayWhole(el, /^[^(]+?(?=\s*\()|\(.*\)$/g)
+      || zoomedPhone && partsStayWhole(el, /\S+/g));
     // The URL follows the width of its actual content box at every browser text size.
     const fitsWidth = el.matches(urlSelector) ? contentWidth(el) + 1 / 64 : Infinity;
     const addressBreak = lines > 1 && rects.reduce((sum, r) => sum + r.width, 0) > fitsWidth
