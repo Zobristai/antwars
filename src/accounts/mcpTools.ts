@@ -73,7 +73,9 @@ export function registerAccountTools(server: McpServer, stores: AccountStores, o
       }
       let reply: Reply;
       try {
-        reply = await op.run(stores, input, extra.requestInfo?.headers ?? {}, guard);
+        const disconnect = op.name === "leaderboard" ? session?.requestSignal?.() : undefined;
+        const signal = disconnect ? AbortSignal.any([extra.signal, disconnect]) : extra.signal;
+        reply = await op.run(stores, input, extra.requestInfo?.headers ?? {}, guard, signal);
         // A newly issued key, by verifier only, kept by the session if its reply is not delivered. A key the call
         // presented and kept (claim_username for a released account) was delivered before: it is never recorded as
         // lost, but its delivered reply still clears any pending lost key, like every key-issuing reply.

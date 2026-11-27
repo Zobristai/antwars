@@ -85,6 +85,8 @@ export type LeaderboardMode = "1v1" | "2v2" | "3v3" | "4v4" | "house-1v1" | "hou
 /** One ranking read: a mode, and for a public mode optionally only its house-owned identities. */
 export interface LeaderboardQuery { readonly mode: LeaderboardMode; readonly scope?: "house" }
 
+export class StandingsExpired extends Error {}
+
 /** Without a query the request is the original 1v1 read; a cursor is only ever resent with the query that issued it. */
 export async function loadLeaderboard(cursor?: string, signal?: AbortSignal, request: typeof fetch = fetch, query?: LeaderboardQuery): Promise<LeaderboardPage> {
   const response = await request("/api/leaderboard", {
@@ -97,6 +99,7 @@ export async function loadLeaderboard(cursor?: string, signal?: AbortSignal, req
     cache: "no-store", credentials: "same-origin", redirect: "error", referrerPolicy: "no-referrer",
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
   });
+  if (response.status === 410 && cursor !== undefined && query?.mode === "quadrants") throw new StandingsExpired();
   if (!response.ok) throw new Error("Leaderboard unavailable. Try refreshing the list.");
   const page = readLeaderboard(await response.json());
   if (!page) throw new Error("Leaderboard unavailable. Try refreshing the list.");

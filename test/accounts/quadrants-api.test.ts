@@ -45,7 +45,7 @@ const FIXTURE: MapDefinition = {
 /** A reply body, read field by field in assertions. */
 type Body = any;
 interface Reply { readonly ok: boolean; readonly status: number; readonly body: Body }
-type Call = (op: string, args?: Record<string, unknown>) => Promise<Reply>;
+type Call = (op: string, args?: Record<string, unknown>, signal?: AbortSignal) => Promise<Reply>;
 
 const closers: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => { for (const close of closers.splice(0).reverse()) await close(); });
@@ -54,17 +54,17 @@ async function mcp(port: number): Promise<Call> {
   const client = new Client({ name: "quadrants-api-test", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
   closers.push(() => client.close().catch(() => {}));
-  return async (op, args = {}) => {
-    const result = await client.callTool({ name: op, arguments: args });
+  return async (op, args = {}, signal) => {
+    const result = await client.callTool({ name: op, arguments: args }, undefined, { signal });
     const text = (result.content as { text?: string }[])[0]?.text ?? "";
     return { ok: result.isError !== true, status: 0, body: result.structuredContent ?? text };
   };
 }
 
 function http(port: number): Call {
-  return async (op, args = {}) => {
+  return async (op, args = {}, signal) => {
     const res = await fetch(`http://127.0.0.1:${port}/api/${op}`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(args),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(args), signal,
     });
     return { ok: res.status === 200, status: res.status, body: await res.json() };
   };
@@ -166,6 +166,22 @@ async function waitingView(origin: string): Promise<{ body: Body; page: { status
 }
 
 const withoutSeconds = (body: Body) => ({ ...body, waiting: body.waiting.map(({ waitingSeconds: _, ...row }: Body) => row) });
+
+it.each(TRANSPORTS)("stops the standings read when its %s caller cancels", async (_transport, open) => {
+  const w = await world("memory"), call = await open(w.port);
+  const started = Promise.withResolvers<AbortSignal>();
+  const query = w.store.query;
+  w.store.query = async (collection, options) => {
+    if (collection !== "ratings-ffa") return query(collection, options);
+    const signal = options.signal!; started.resolve(signal);
+    return new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+  };
+  const stop = new AbortController();
+  const response = call("leaderboard", { mode: "quadrants" }, stop.signal).catch(() => undefined);
+  const signal = await started.promise;
+  const stopped = new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }));
+  stop.abort(); await stopped; await response;
+});
 
 for (const backend of ["memory", "Firestore emulator"]) {
   describe.skipIf(backend === "Firestore emulator" && !host)(`the quadrants mode through the account API (${backend})`, { timeout: 120_000 }, () => {

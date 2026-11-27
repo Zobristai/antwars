@@ -128,8 +128,7 @@ export function mountLeaderboard(doc: Document, host: HTMLElement, actions: Lead
       rebuild(doc, frame.content, () => !view.enabled ? [notEnabled()]
         : view.tables.map(table => rankingCard(doc, table, shown, {
           search, more: () => { continuing = new Set([...continuing, table.id]); actions.more(table.id); },
-          // Free-for-all standings include every public scorer, including retired models.
-          retired: shown === "quadrants" ? undefined : {
+          retired: {
             shown: retiredShown.has(table.id),
             set(on) { if (on) retiredShown.add(table.id); else retiredShown.delete(table.id); if (last) mounted.update(last); },
           },

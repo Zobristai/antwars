@@ -60,7 +60,7 @@ export interface AccountOperation {
   readonly description: string;
   readonly input: z.ZodObject;
   /** args are input's parsed output. guard reaches the commit of a key-issuing operation (CommitGuard). */
-  run(stores: AccountStores, args: Record<string, unknown>, headers: RequestHeaders, guard?: CommitGuard): Promise<Reply>;
+  run(stores: AccountStores, args: Record<string, unknown>, headers: RequestHeaders, guard?: CommitGuard, signal?: AbortSignal): Promise<Reply>;
 }
 
 /** The four-colony pool's map ids, which a four-colony test lobby may name with create_lobby map. */
@@ -250,9 +250,9 @@ const inviteToken = z.string().min(1).max(200).nullish().describe("A private lob
 
 function operation<S extends z.ZodObject>(
   name: string, description: string, input: S,
-  run: (stores: AccountStores, args: z.output<S>, headers: RequestHeaders, guard?: CommitGuard) => Promise<Reply>,
+  run: (stores: AccountStores, args: z.output<S>, headers: RequestHeaders, guard?: CommitGuard, signal?: AbortSignal) => Promise<Reply>,
 ): AccountOperation {
-  return { name, description, input, run: (stores, args, headers, guard) => run(stores, args as z.output<S>, headers, guard) };
+  return { name, description, input, run: (stores, args, headers, guard, signal) => run(stores, args as z.output<S>, headers, guard, signal) };
 }
 
 /**
@@ -267,9 +267,9 @@ function leaderboardOperation(model: boolean): AccountOperation {
       limit: z.number().int().min(1).max(MAX_PAGE_SIZE).nullish().describe(`Entries per page, 1 to ${MAX_PAGE_SIZE}; default ${DEFAULT_PAGE_SIZE}.`),
       cursor: z.string().max(1000).nullish().describe("The next value from the previous page of the same mode and scope."),
     }),
-    async ({ ratings }, args) => {
+    async ({ ratings }, args, _headers, _guard, signal) => {
       const options = { limit: args.limit ?? DEFAULT_PAGE_SIZE, scope: args.scope ?? undefined, cursor: args.cursor ?? undefined };
-      const page = args.mode === "quadrants" ? await ratings.ffaLeaderboard(options) : await ratings.leaderboard({
+      const page = args.mode === "quadrants" ? await ratings.ffaLeaderboard({ ...options, signal }) : await ratings.leaderboard({
         ...options, ...(model ? { model: true } : {}), ...(args.mode == null ? {} : { mode: args.mode }),
       });
       // cursor_expired's cause is for diagnosis only and is never returned.

@@ -1,4 +1,4 @@
-import type { LeaderboardPage, LeaderboardRow, LeaderboardTally } from "../leaderboard.ts";
+import { StandingsExpired, type LeaderboardPage, type LeaderboardRow, type LeaderboardTally } from "../leaderboard.ts";
 import { houseDisplayName, isRetiredHouse } from "../../../src/rating/houseLabels.ts";
 import { C } from "./copy.ts";
 
@@ -57,7 +57,14 @@ export function loadRanking(spec: { title: string; id: string; load: PageLoader 
     if (busy || controller.signal.aborted) return;
     busy = true; emit("loading");
     try {
-      const page = await spec.load(cursor, controller.signal);
+      let page: LeaderboardPage;
+      try { page = await spec.load(cursor, controller.signal); }
+      catch (error) {
+        if (!(error instanceof StandingsExpired) || cursor === undefined || controller.signal.aborted) throw error;
+        // The old snapshot is gone. Replace it; never mix its rows with the refreshed first page.
+        rows = []; next = undefined; emit("loading");
+        page = await spec.load(undefined, controller.signal);
+      }
       if (controller.signal.aborted) return;
       rows = [...rows, ...page.entries]; next = page.next;
       emit("ready");

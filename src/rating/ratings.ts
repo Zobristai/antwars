@@ -1,5 +1,5 @@
 import { FFA_COLLECTION } from "./ffa.js";
-import { ffaPage, ffaRating } from "./ffaReads.js";
+import { createFfaPage, ffaRating } from "./ffaReads.js";
 import { joinReads } from "../store/join-reads.js";
 import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
 import type { TestRecordings } from "../replays/test-recordings.js";
@@ -184,7 +184,7 @@ export interface LeaderboardPage<Row = LeaderboardEntry> {
 export type LeaderboardOutcome<Row = LeaderboardEntry> =
   | { readonly ok: true; readonly value: LeaderboardPage<Row> }
   | { readonly ok: false; readonly reason: "invalid_cursor" }
-  | { readonly ok: false; readonly reason: "cursor_expired"; readonly cause: FirestoreError }
+  | { readonly ok: false; readonly reason: "cursor_expired"; readonly cause?: FirestoreError }
   | { readonly ok: false; readonly reason: "house_unavailable" };
 
 interface BoardOptions {
@@ -656,6 +656,7 @@ export function createRatings(
     (error: unknown) => { console.warn("antwar house rating backfill failed", error); return false; },
   );
   let houseMarked = backfill();
+  const ffaPage = createFfaPage(store, identities, publicVisibility);
   /**
    * The replay id stored for each match (watchMatches), read in one batch; a match without one is absent. With
    * withTimes, the same batch also reads each match's lobby for its match time (null when it cannot be read). With the
@@ -735,14 +736,9 @@ export function createRatings(
         try { after = { ...cursor, rating: decodeRating(cursor.ratingKey) }; }
         catch { return { ok: false, reason: "invalid_cursor" }; }
       }
-      const page = await ffaPage(store, publicVisibility, { limit, house: scope === "house", cursor: after, signal: options.signal });
+      const page = await ffaPage({ limit, house: scope === "house", cursor: after, signal: options.signal });
       if (!page.ok) return page;
-      const entries = await joinReads(page.rows.map(async row => {
-        const identity = await identities.findById(row.identityId, options.signal);
-        const displayName = identity?.displayName ?? placeholder(row.identityId);
-        const label = row.benchmark ? houseLabel(displayName) : { thinkingLevel: null, serviceTier: null };
-        return { ...row, displayName, ...label, rd: null, wins: null, losses: null, draws: null, form: [] };
-      }));
+      const entries = page.rows;
       const last = entries.at(-1);
       const next = page.more && last ? encodeCursor({ readTime: page.readTime, ratingKey: encodeRating(last.rating), identityId: last.identityId, mode, scope }) : undefined;
       return { ok: true, value: { entries, ...(next ? { next } : {}) } };
