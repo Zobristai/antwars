@@ -210,6 +210,7 @@ async function readStreamSave(save: HubSave, state: SimState): Promise<{ access:
   const full = board.full;
   return { access, resume: {
     identity: identity!, startedAt: startedAt!, delaySeconds: delaySeconds!, nextStartMs: nextStartMs ?? null,
+    waitingForDelayedFrame: meta.waitingForDelayedFrame === true,
     released: released ? new SpectatorState(full, board.tick, board.ants, board.events) : null,
     queue,
     recorder: { setup: full.setup, agents, ants: queue.at(-1)?.record.ants ?? board.ants,
@@ -273,6 +274,8 @@ interface StreamSaveMeta {
   readonly tick: number;
   /** False while no record has been released: the saved board is then the match's starting board. */
   readonly released: boolean;
+  /** An older index board is kept for applying deltas, but is not an attach snapshot yet. */
+  readonly waitingForDelayedFrame?: true;
   /** The release rule: how far playback runs behind the match. */
   readonly delaySeconds: number;
   readonly nextStartMs: number | null;
@@ -286,6 +289,7 @@ interface StreamResume {
   readonly delaySeconds: number;
   readonly nextStartMs: number | null;
   readonly released: SpectatorState | null;
+  readonly waitingForDelayedFrame: boolean;
   /** Not-yet-released records in tick order, each with its wall-clock release time when the stream has access. */
   readonly queue: readonly { readonly record: TickRecord; readonly releaseAt: number | undefined }[];
   readonly recorder: RecorderResume;
@@ -306,6 +310,7 @@ class MatchStream {
   private readonly recording: ReplayRecording | null;
   /** Board at the delayed playback position; null until the first record is released. */
   private released: SpectatorState | null = null;
+  private waitingForDelayedFrame = false;
   /** Records not yet released, in tick order. Releasing one writes it. */
   private readonly queue: TickRecord[] = [];
   private readonly delaySeconds: number;
@@ -361,9 +366,10 @@ class MatchStream {
           : id => hub.beforeRecordingPublication!(this.access!, id),
         handoff: hub.recordHandoff, lobbyId: this.access?.visibility === "private" ? this.access.lobbyId : null,
         ...(hub.captureMatchLogs ? { logHeader: headerLine(state.seed, state.config) } : {}), resume: recording });
-    // A resumed stream keeps the delay it was saved with.
-    const delay = resume?.delaySeconds ?? (this.access === undefined ? hub.config.delaySeconds
-      : Math.max(hub.config.delaySeconds, spectatorDelaySeconds(this.access)));
+    const floor = this.access ? spectatorDelaySeconds(this.access) : 0;
+    // Keep saved timing unless an older index stream needs the current minimum.
+    const raiseDelay = resume !== undefined && this.access !== undefined && isHouseMatch(this.access) && resume.delaySeconds < floor;
+    const delay = resume && !raiseDelay ? resume.delaySeconds : Math.max(hub.config.delaySeconds, floor);
     this.delaySeconds = delay;
     this.delayTicks = Math.round(delay * state.config.ticksPerSecond);
     this.delayMs = Math.max(delay * 1000, this.delayTicks * (hub.playoutMs ?? 1000 / state.config.ticksPerSecond));
@@ -371,10 +377,15 @@ class MatchStream {
     this.latestTick = state.tick;
     if (resume !== undefined) {
       this.released = resume.released;
+      this.waitingForDelayedFrame = this.released !== null && (raiseDelay || resume.waitingForDelayedFrame);
+      // Old queued records have no guaranteed age. Start their wall-clock minimum here;
+      // a further handover keeps these deadlines and the attach guard.
+      const notBefore = raiseDelay ? hub.clock.now() + floor * 1000 : undefined;
       this.nextStartMs = resume.nextStartMs;
       for (const { record, releaseAt } of resume.queue) {
         this.queue.push(record);
-        if (releaseAt !== undefined) this.releaseAt.set(record, releaseAt);
+        const at = notBefore === undefined ? releaseAt : Math.max(notBefore, releaseAt ?? notBefore);
+        if (at !== undefined) this.releaseAt.set(record, at);
       }
     } else {
       const initial = this.recorder.initial();
@@ -511,6 +522,7 @@ class MatchStream {
     } else {
       this.released.apply(record);
     }
+    this.waitingForDelayedFrame = false;
     if (this.access) this.hub.recordReleased(this.access, this.released.full.agents);
     let full: string | null = null;
     const olderFulls = new Map<string, string>(), olderDeltas = new Map<string, string>();
@@ -575,7 +587,7 @@ class MatchStream {
 
   attach(s: Spectator): void {
     this.spectators.add(s);
-    if (this.released !== null) {
+    if (this.released !== null && !this.waitingForDelayedFrame) {
       this.hub.write(s, this.fullFrame(this.released, s));
       if (this.released.full.result !== null && this.spectators.has(s)) this.hub.flushFinal(s);
       s.needsFull = false;
@@ -592,6 +604,7 @@ class MatchStream {
     if (this.timer !== null) this.hub.clock.clearTimeout(this.timer);
     this.timer = null;
     const meta: StreamSaveMeta = { format: 1, identity: this.identity, startedAt: this.startedAt, tick: this.latestTick,
+      ...(this.waitingForDelayedFrame ? { waitingForDelayedFrame: true } : {}),
       released: this.released !== null, delaySeconds: this.delaySeconds, nextStartMs: this.nextStartMs, access: this.access ?? null };
     // Unreleased, the queue's head is the starting record and the board is the starting board.
     const board = this.released?.savedMessage() ?? { ...this.queue[0]!, full: this.recorder.initialFull(), events: [] };
