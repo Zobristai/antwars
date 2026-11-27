@@ -1,3 +1,4 @@
+import type { Place, PlaceRecord } from "./ffaRecord.js";
 import { FFA_COLLECTION } from "./ffa.js";
 import { createFfaPage, ffaRating } from "./ffaReads.js";
 import { joinReads } from "../store/join-reads.js";
@@ -190,7 +191,10 @@ export type LeaderboardOutcome<Row = LeaderboardEntry> =
 interface BoardOptions {
   readonly scope?: LeaderboardScope; readonly limit?: number; readonly cursor?: string; readonly signal?: AbortSignal;
 }
-type FfaEntry = Omit<LeaderboardEntry, "rd"> & ReturnType<typeof ffaRating> & { readonly rd: null };
+type FfaEntry = Omit<LeaderboardEntry, "rd" | "form"> & {
+  readonly places: PlaceRecord["places"] | null;
+  readonly form: readonly { readonly place: Place; readonly replayId: string | null }[];
+} & ReturnType<typeof ffaRating> & { readonly rd: null };
 
 export interface Ratings {
   /** The rating, RD and rated-match count in one mode, 1v1 when omitted; 1500, 350 and 0 before the identity's first rated result there. */
@@ -738,7 +742,9 @@ export function createRatings(
       }
       const page = await ffaPage({ limit, house: scope === "house", cursor: after, signal: options.signal });
       if (!page.ok) return page;
-      const entries = page.rows;
+      // Resolve only the returned page, against current visibility even when its ranking is cached.
+      const { replayIds } = await storedFormFacts(page.rows.flatMap(row => row.form.map(v => v.matchId)), false, options.signal);
+      const entries = page.rows.map(row => ({ ...row, form: row.form.map(({ place, matchId }) => ({ place, replayId: replayIds.get(matchId) ?? null })) }));
       const last = entries.at(-1);
       const next = page.more && last ? encodeCursor({ readTime: page.readTime, ratingKey: encodeRating(last.rating), identityId: last.identityId, mode, scope }) : undefined;
       return { ok: true, value: { entries, ...(next ? { next } : {}) } };

@@ -149,3 +149,26 @@ it("uses the current owner's retained name without exposing a released or purged
     "seat-claimed": "Meadow/ant", "seat-released": "account:released/ant", "seat-purged": "account:seat-purged",
   });
 });
+
+it("keeps places without linking hidden, test or missing recordings, including on a cached board", async () => {
+  const { docs, store } = memoryWatchStore();
+  const id = "00000000-0000-4000-8000-000000000001", hidden = "00000000-0000-4000-8000-000000000002";
+  const games = ["visible", "hidden", "test", "missing"];
+  const replays = games.map((_, i) => `2026-11-27T10-00-00-000Z-${i + 1}`);
+  docs.set(`identities/${id}`, { kind: "username", displayName: "Meadow", claimedAt: String(Date.now()) });
+  docs.set(`ratings-ffa/${id}`, { estimator: FFA_ESTIMATOR, mu: "28", sigma: "3", ratedMatches: "4", places: "[1,1,1,1]",
+    form: JSON.stringify(games.map((matchId, i) => ({ matchId, place: i + 1 }))) });
+  for (const [i, game] of games.entries()) {
+    docs.set(`lobbies/${game}`, { seats: JSON.stringify([{ id: game === "hidden" ? hidden : id }]) });
+    if (game !== "missing") docs.set(`watchMatches/${game}`, { replayId: replays[i] });
+  }
+  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [hidden]);
+  const tests = new Set([replays[2]]);
+  const ratings = createRatings(store, undefined, visibility, { marked: async () => tests, mark: async () => {} });
+  for (const replay of [replays[0], null]) {
+    const page = await ratings.ffaLeaderboard();
+    if (!page.ok) throw new Error(page.reason);
+    expect(page.value.entries[0].form).toEqual([replay, null, null, null].map((replayId, i) => ({ place: i + 1, replayId })));
+    tests.add(replays[0]);
+  }
+});

@@ -97,3 +97,13 @@ describe.skipIf(!host)("Free-for-all Firestore transactions", () => {
     for (const id of participants) expect((await store.get(`${FFA_COLLECTION}/${id}`))?.ratedMatches).toBe("1");
   }, 30_000);
 });
+
+it("records the rated order, even for a non-territory time-up finish, and keeps only five recent places", async () => {
+  const w = world(), [legacy, fresh] = w.result.participants;
+  w.docs.set(`${FFA_COLLECTION}/${legacy}`, { estimator: "openskill-5.0.1/plackett-luce-v1", mu: "25", sigma: "8", ratedMatches: "1" });
+  for (let i = 0; i < 6; i++) await applyFfaResult(w.store, { ...w.result, matchId: `game-${i}` });
+  const fields = w.docs.get(`${FFA_COLLECTION}/${fresh}`)!;
+  expect(JSON.parse(fields.places!)).toEqual([0, 6, 0, 0]);
+  expect(JSON.parse(fields.form!)).toEqual([5, 4, 3, 2, 1].map(i => ({ place: 2, matchId: `game-${i}` })));
+  expect(w.docs.get(`${FFA_COLLECTION}/${legacy}`)).not.toHaveProperty("places");
+});

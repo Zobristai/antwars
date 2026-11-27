@@ -3,6 +3,8 @@ import { plackettLuce } from "openskill/models";
 import { parseFfaFinish, type FfaFinish } from "../sim/ffaFinish.js";
 import type { Store, TransactionRead, TransactionStep, Write } from "../store/firestore.js";
 
+import { addPlace, emptyPlaces, ffaPlace, placeFields, readPlaces } from "./ffaRecord.js";
+
 export const FFA_ESTIMATOR = "openskill-5.0.1/plackett-luce-v1";
 export const FFA_INITIAL: Readonly<Rating> = Object.freeze({ mu: 25, sigma: 25 / 3 });
 export const FFA_COLLECTION = "ratings-ffa";
@@ -68,20 +70,26 @@ export async function ffaRatingWrites(read: TransactionRead, result: FfaResult):
   const current = participants.map(id => {
     if (!docs.get(`identities/${id}`)) throw new Error("unknown Free-for-all identity");
     const fields = docs.get(`${FFA_COLLECTION}/${id}`);
-    if (!fields) return { rating: { ...FFA_INITIAL }, count: 0, exists: false };
+    if (!fields) return { rating: { ...FFA_INITIAL }, count: 0, exists: false, record: emptyPlaces() };
     if (fields.estimator !== FFA_ESTIMATOR || !fields.mu?.trim() || !fields.sigma?.trim() || !fields.ratedMatches?.trim()) {
       throw new Error("invalid stored Free-for-all rating");
     }
     const rating = { mu: Number(fields.mu), sigma: Number(fields.sigma) }, count = Number(fields.ratedMatches);
     validRating(rating);
     if (!Number.isSafeInteger(count) || count < 0 || count >= Number.MAX_SAFE_INTEGER) throw new Error("invalid Free-for-all match count");
-    return { rating, count, exists: true };
+    return { rating, count, exists: true, record: readPlaces(fields, count) };
   });
   const after = rateFfa(current.map(p => p.rating), finish);
   const changes = participants.map((identityId, colony): FfaChange => ({ identityId, place: finish.order.indexOf(colony) + 1,
     before: current[colony]!.rating, after: after[colony]! }));
+  for (const [colony, change] of changes.entries()) {
+    // An unreconciled legacy row stays blank until the manual fill, never a partial tally.
+    const record = current[colony]!.record;
+    if (record) addPlace(record, ffaPlace.parse(change.place), result.matchId);
+  }
   const writes: Write[] = participants.map((id, colony) => ({ op: current[colony]!.exists ? "update" : "create", path: `${FFA_COLLECTION}/${id}`,
-    fields: { mu: String(after[colony]!.mu), sigma: String(after[colony]!.sigma), ratedMatches: String(current[colony]!.count + 1), estimator: FFA_ESTIMATOR } }));
+    fields: { ...(current[colony]!.record ? placeFields(current[colony]!.record!) : {}),
+      mu: String(after[colony]!.mu), sigma: String(after[colony]!.sigma), ratedMatches: String(current[colony]!.count + 1), estimator: FFA_ESTIMATOR } }));
   writes.push({ op: "create", path: marker, fields: { input, changes: JSON.stringify(changes) } });
   return { result: { status: "applied", changes }, writes };
 }

@@ -68,3 +68,12 @@ describe("leaderboard record and form", () => {
     expect(readLeaderboard({ entries: [{ ...rated, ...change }] })).toBeNull();
   });
 });
+
+it("accepts a four-place record only on quadrants, rejecting partial counts, impossible form or unsafe links", () => {
+  const ranked = { displayName: "model", rating: -1, ratedMatches: 1, places: [0, 0, 1, 0], form: [{ place: 3, replayId: null }] };
+  const parse = (change: object) => readLeaderboard({ entries: [{ ...ranked, ...change }] }, "quadrants");
+  expect(parse({})?.entries[0].placeRecord).toEqual({ places: ranked.places, form: ranked.form });
+  for (const change of [{ places: [0, 0, 0, 0] }, { places: [0, 1, 0, 0] }, { form: [] }, { form: [{ place: 5, replayId: null }] },
+    { form: [{ place: 3, replayId: "invalid" }] }, { wins: 1, losses: 0, draws: 0 }]) expect(parse(change)).toBeNull();
+  expect(readLeaderboard({ entries: [ranked] }, "1v1")).toBeNull();
+});

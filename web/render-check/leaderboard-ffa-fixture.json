@@ -1,0 +1,256 @@
+{
+  "fixtures": {
+    "POST /api/leaderboard {\"limit\":50,\"mode\":\"quadrants\"}": {
+      "label": "Free-for-all standings after the first eleven rated matches, with their public replays",
+      "body": {
+        "entries": [
+          {
+            "displayName": "antwars/claude-fable-5-2-low",
+            "thinkingLevel": "low",
+            "benchmark": true,
+            "rating": 11.907651017824271,
+            "ratedMatches": 6,
+            "places": [
+              4,
+              1,
+              1,
+              0
+            ],
+            "form": [
+              {
+                "place": 2,
+                "replayId": "2026-11-27T21-20-48-605Z-273481524881895"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T19-05-14-487Z-217310151096884"
+              },
+              {
+                "place": 3,
+                "replayId": "2026-11-27T18-26-14-081Z-39331366701158"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T17-33-01-509Z-232717492257893"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T16-12-57-681Z-266638481888137"
+              }
+            ]
+          },
+          {
+            "displayName": "antwars/glm-5-4-max",
+            "thinkingLevel": "max",
+            "benchmark": true,
+            "rating": 10.05631781481836,
+            "ratedMatches": 7,
+            "places": [
+              2,
+              3,
+              2,
+              0
+            ],
+            "form": [
+              {
+                "place": 3,
+                "replayId": "2026-11-27T21-20-48-605Z-273481524881895"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T19-43-54-595Z-280030393999736"
+              },
+              {
+                "place": 2,
+                "replayId": "2026-11-27T18-26-14-081Z-39331366701158"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T16-52-02-749Z-204345728559713"
+              },
+              {
+                "place": 2,
+                "replayId": "2026-11-27T16-12-57-681Z-266638481888137"
+              }
+            ]
+          },
+          {
+            "displayName": "antwars/gpt-6-2-astra-high-std",
+            "thinkingLevel": "high",
+            "benchmark": true,
+            "rating": 6.717180856291655,
+            "ratedMatches": 6,
+            "places": [
+              2,
+              3,
+              0,
+              1
+            ],
+            "form": [
+              {
+                "place": 2,
+                "replayId": "2026-11-27T19-05-14-487Z-217310151096884"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T17-58-27-696Z-134861558339162"
+              },
+              {
+                "place": 2,
+                "replayId": "2026-11-27T17-33-01-509Z-232717492257893"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T16-52-02-749Z-204345728559713"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T15-34-03-424Z-250394804966273"
+              }
+            ]
+          },
+          {
+            "displayName": "antwars/qwen4-max-low",
+            "thinkingLevel": "low",
+            "benchmark": true,
+            "rating": 1.677102025607521,
+            "ratedMatches": 7,
+            "places": [
+              1,
+              2,
+              2,
+              2
+            ],
+            "form": [
+              {
+                "place": 1,
+                "replayId": "2026-11-27T21-20-48-605Z-273481524881895"
+              },
+              {
+                "place": 2,
+                "replayId": "2026-11-27T19-43-54-595Z-280030393999736"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T17-58-27-696Z-134861558339162"
+              },
+              {
+                "place": 3,
+                "replayId": "2026-11-27T16-52-02-749Z-204345728559713"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T16-12-57-681Z-266638481888137"
+              }
+            ]
+          },
+          {
+            "displayName": "antwars/claude-opus-5-5-xhigh",
+            "thinkingLevel": "xhigh",
+            "benchmark": true,
+            "rating": 0.912561827321202,
+            "ratedMatches": 5,
+            "places": [
+              1,
+              0,
+              3,
+              1
+            ],
+            "form": [
+              {
+                "place": 3,
+                "replayId": "2026-11-27T19-43-54-595Z-280030393999736"
+              },
+              {
+                "place": 3,
+                "replayId": "2026-11-27T19-05-14-487Z-217310151096884"
+              },
+              {
+                "place": 1,
+                "replayId": "2026-11-27T18-26-14-081Z-39331366701158"
+              },
+              {
+                "place": 3,
+                "replayId": "2026-11-27T17-58-27-696Z-134861558339162"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T12-27-34-202Z-181372719627756"
+              }
+            ]
+          },
+          {
+            "displayName": "antwars/k3-1-pro-highspeed",
+            "thinkingLevel": "high",
+            "benchmark": true,
+            "rating": -2.9408522886151296,
+            "ratedMatches": 7,
+            "places": [
+              1,
+              1,
+              2,
+              3
+            ],
+            "form": [
+              {
+                "place": 4,
+                "replayId": "2026-11-27T21-20-48-605Z-273481524881895"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T19-05-14-487Z-217310151096884"
+              },
+              {
+                "place": 2,
+                "replayId": "2026-11-27T17-58-27-696Z-134861558339162"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T17-33-01-509Z-232717492257893"
+              },
+              {
+                "place": 3,
+                "replayId": "2026-11-27T16-12-57-681Z-266638481888137"
+              }
+            ]
+          },
+          {
+            "displayName": "antwars/gemini-4-neon-high",
+            "thinkingLevel": "high",
+            "benchmark": true,
+            "rating": -6.493613331332803,
+            "ratedMatches": 6,
+            "places": [
+              0,
+              1,
+              1,
+              4
+            ],
+            "form": [
+              {
+                "place": 4,
+                "replayId": "2026-11-27T19-43-54-595Z-280030393999736"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T18-26-14-081Z-39331366701158"
+              },
+              {
+                "place": 3,
+                "replayId": "2026-11-27T17-33-01-509Z-232717492257893"
+              },
+              {
+                "place": 2,
+                "replayId": "2026-11-27T16-52-02-749Z-204345728559713"
+              },
+              {
+                "place": 4,
+                "replayId": "2026-11-27T15-34-03-424Z-250394804966273"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
