@@ -33,7 +33,21 @@ const browser = await launchBrowser();
 try {
   const stored = storedRecording(scale2Packets(90));
   const { page, url, errors } = await servePage(browser, { replay: true, stored, recording: "", width: 390, height: 844, tilt: false });
-  await page.goto(`${url}#board`);
+  // Enter through the default board on a browser whose WebGL2 probe fails. Keep the
+  // renderer itself unmodified so we can compare its actual pixels after a restore.
+  await page.addInitScript(() => {
+    const canvas = HTMLCanvasElement.prototype;
+    canvas.getContext = new Proxy(canvas.getContext, {
+      apply(getContext, receiver, args) {
+        if (args[0] === "webgl2" && args.length === 1 && !new URLSearchParams(location.search).has("board")) return null;
+        return Reflect.apply(getContext, receiver, args);
+      },
+    });
+  });
+  const entry = new URL(url);
+  entry.searchParams.delete("board");
+  entry.hash = "board";
+  await page.goto(entry.href);
   await ready(page);
   await frame(page);
   for (let i = 0; i < 12; i++) { await page.clock.runFor(200); await frame(page); }
@@ -51,13 +65,21 @@ try {
   const beforeReload = await frame(page);
   assert(beforeReload.playbackTick > reached.playbackTick);
 
+  const reloadLost = () => Promise.all([page.waitForEvent("load"), page.clock.fastForward(RESTORE_WAIT_MS)]);
+  // Leave the next document waiting on replay discovery, after it has taken the position
+  // but before it has a recording. Lose that canvas too, then let its replacement load.
+  const discovery = Promise.withResolvers<void>();
+  await page.route("**/matches", () => { discovery.resolve(); }, { times: 1 });
   await lose(page);
-  await Promise.all([page.waitForEvent("load"), page.clock.fastForward(RESTORE_WAIT_MS)]);
+  await reloadLost();
+  await discovery.promise;
+  await lose(page);
+  await reloadLost();
   assert.equal(page.url(), `${url}#board`);
   await ready(page);
   await waitFor(page, "the replay to resume", async () => (await frame(page)).playbackTick === beforeReload.playbackTick, 5000);
   assert.deepEqual(errors.filter(e => e.startsWith("page error:")), []);
-  console.log(`Replay: identical pixels after restore; reloaded at tick ${beforeReload.playbackTick}.`);
+  console.log(`Replay: identical pixels after restore; automatic 2D and interrupted recovery reloads resumed at tick ${beforeReload.playbackTick}.`);
   await page.context().close();
 
   const server = new LiveServer({ ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });

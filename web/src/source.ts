@@ -55,7 +55,7 @@ function rememberReplayPosition(view: Window | null, params: URLSearchParams, po
   if (!view || !(positionMs > 0)) return;
   try {
     view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({
-      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), ...(recover2d && { recover2d: true }), positionMs, at: wallClockNow(),
+      route: fallbackRoute(params, view.location.pathname), board: recover2d ? "2d" : boardMode(params), ...(recover2d && { recover2d: true }), positionMs, at: wallClockNow(),
     } satisfies ReplayPosition));
   } catch { /* Storage is optional: without it the other board starts the replay from its beginning. */ }
 }
@@ -121,7 +121,7 @@ export interface SpectatorSource {
   now(realMs: number): number;
   /** After the displayed result, automatic Watch chooses again; explicit links stay pinned. */
   nextMatch(): void;
-  /** Preserve the replay position or live selection for an imminent recovery reload as 2D. */
+  /** Preserve the live selection for an imminent recovery reload as 2D. */
   prepareFallback(): void;
   close(): void;
 }
@@ -269,7 +269,12 @@ export const LOBBY_SCREENS: LobbyScreens = {
   },
 };
 
-export async function openSource(params: URLSearchParams, clock: { now(): number }, doc: Document, reject: (error: Error) => void, liveOptions: Parameters<typeof openPreparedFeed>[3] = {}, screens: LobbyScreens = LOBBY_SCREENS): Promise<SpectatorSource | null> {
+type SourceOptions = NonNullable<Parameters<typeof openPreparedFeed>[3]> & {
+  /** The active 2D renderer is replacing this document after context loss, even if discovery is still pending. */
+  isRecoveryReload?: () => boolean;
+};
+
+export async function openSource(params: URLSearchParams, clock: { now(): number }, doc: Document, reject: (error: Error) => void, { isRecoveryReload, ...liveOptions }: SourceOptions = {}, screens: LobbyScreens = LOBBY_SCREENS): Promise<SpectatorSource | null> {
   const replay = params.has("replay");
   let storedId = replay ? params.get("replay") || null : null;
   const name = replay ? null : params.get("recording");
@@ -280,7 +285,6 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const view = doc.defaultView;
   const rendererHandover = consumeRendererHandover(view, params);
   let resumeAt = replay ? consumeReplayPosition(view, params) : null;
-  let recover2d = false;
   let resumeGeneration: number | null = null;
   let feed: PreparedFeed | null = null;
   let recording: Recording | null = null;
@@ -357,7 +361,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   // Leaving an explicit replay keeps its position for a board switch or a recovery reload;
   // a position not yet resumed is passed on as it was.
   view?.addEventListener("pagehide", () => {
-    if (replay && recording) rememberReplayPosition(view, params, resumeAt ?? recording.position, recover2d);
+    if (replay) rememberReplayPosition(view, params, resumeAt ?? recording?.position ?? 0, isRecoveryReload?.() ?? false);
     close();
   }, { once: true });
   setFallback(null);
@@ -561,7 +565,6 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       now: realMs => recording?.time ?? realMs,
       nextMatch: () => reload(),
       prepareFallback() {
-        recover2d = replay && boardMode(params) === "2d";
         if (replay || legacy || fallback || !liveLobbyId || abort.signal.aborted) return;
         try {
           view?.sessionStorage.setItem(FALLBACK_HANDOVER_KEY, JSON.stringify({

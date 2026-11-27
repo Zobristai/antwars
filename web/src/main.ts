@@ -314,9 +314,11 @@ async function start(): Promise<void> {
   document.body.appendChild(app.canvas);
   const renderer = app.renderer as WebGLRenderer;
   let restoreTextures: (() => void) | undefined;
+  let reloading2d = false;
   let prepareReload: (() => void) | undefined;
   // Pixi's own restore listener runs first, rebuilding the GL resources but not their baked contents.
   const context = watchContext(app.canvas, () => restoreTextures?.(), () => {
+    reloading2d = true;
     prepareReload?.();
     location.reload(); // Already on the 2D URL; replace() with a fragment could stay in this document.
   });
@@ -328,7 +330,7 @@ async function start(): Promise<void> {
 
   // Messages arrive from the stream or the recording (openSource); the first is always a full snapshot.
   // Until the first frame draws, web/index.html's waiting panel explains the delay.
-  const input = await openSource(params, clock, document, rejectReady);
+  const input = await openSource(params, clock, document, rejectReady, { isRecoveryReload: () => reloading2d });
   if (!input) { context.close(); return; }
   prepareReload = () => input.prepareFallback();
   // A loss while loading the source must not leave the first atlas bake using a lost context.
