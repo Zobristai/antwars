@@ -1,4 +1,4 @@
-import { unpackTerritory } from "../../src/mcp/territory.js";
+import { unpackEnemyTiles, unpackTerritory } from "../../src/mcp/territory.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { briefing, IDLE_COUNTDOWN_TEXT, joinBriefing } from "../../src/mcp/briefing.js";
 import { DEFAULT_MCP_CONFIG, houseIdleSecondsOf } from "../../src/mcp/config.js";
@@ -143,9 +143,9 @@ describe("observe seat countdown and territory legibility", () => {
         expect(view).not.toHaveProperty("sightedEnemyTiles");
         if (args.map === true) {
           expect(Object.keys(view.territory.enemies)).toEqual([String(1 - view.colony)]);
-          const enemy = unpackTerritory({ ...view.territory, data: view.territory.enemies[1 - view.colony] }).join("");
-          expect(enemy).toContain("#");
-          expect(enemy).toContain(".");
+          const enemy = unpackEnemyTiles(view.territory, 1 - view.colony);
+          expect(enemy.length).toBeGreaterThan(0);
+          expect(enemy.length).toBeLessThan(view.territory.width * view.territory.height);
           // territoryTiles counts original-size tile area: one fine tile is 1/physicalTileArea of it.
           expect((unpackTerritory(view.territory).join("").split("#").length - 1) / physicalTileArea(h.game.match!.state.config)).toBe(view.territoryTiles);
         } else expect(view).not.toHaveProperty("territory");

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { packTerritory, unpackTerritory, type PackedTerritory } from "../../src/mcp/territory.js";
+import { deflateSync, inflateSync } from "node:zlib";
+import { unpackEnemyTiles, packTerritory, unpackTerritory, type PackedTerritory } from "../../src/mcp/territory.js";
 
 describe("lossless bounded MCP territory", () => {
   it("pins row-major, least-significant-first bytes independently of the decoder", () => {
@@ -12,8 +13,30 @@ describe("lossless bounded MCP territory", () => {
   it("packs sighted holdings under their colony numbers in the same unpadded tile order", () => {
     const packed = packTerritory([".#.", "...", "..."], 3, 3, { 0: [0, 8], 2: [3, 7] });
     expect(packed.data).toBe("AgA=");
-    expect(packed.enemies).toEqual({ 0: "AQE=", 2: "iAA=" });
+    const gaps = (colony: number) => [...inflateSync(Buffer.from(packed.enemies![colony]!, "base64"))];
+    expect(gaps(0)).toEqual([0, 0, 8, 0]);
+    expect(gaps(2)).toEqual([3, 0, 4, 0]);
+    expect(unpackEnemyTiles(packed, 0)).toEqual([0, 8]);
+    expect(unpackEnemyTiles(packed, 2)).toEqual([3, 7]);
+    expect(unpackEnemyTiles(packed, 3)).toEqual([]);
     expect(packTerritory(["."], 1, 1, {}).enemies).toEqual({});
+  });
+
+  it("roundtrips the largest tile index and fragmented holdings across the largest board", () => {
+    const side = 256, count = side ** 2;
+    const rows = Array(side).fill(".".repeat(side));
+    const alternating = Array.from({ length: count / 2 }, (_, i) => i * 2);
+    const packed = packTerritory(rows, side, side, { 1: [count - 1], 2: alternating });
+    expect(unpackEnemyTiles(packed, 1)).toEqual([65535]);
+    expect(unpackEnemyTiles(packed, 2)).toEqual(alternating);
+  });
+
+  it("refuses truncated deltas, duplicate tiles, out-of-board indices and oversized streams", () => {
+    const packed = packTerritory([".."], 2, 1);
+    for (const bytes of [[], [0], [1, 0, 0, 0], [2, 0], [0, 0, 1, 0, 1, 0]]) {
+      const enemies = { 1: deflateSync(Buffer.from(bytes)).toString("base64") };
+      expect(() => unpackEnemyTiles({ ...packed, enemies }, 1)).toThrow();
+    }
   });
 
   it.each([[1, 1], [7, 3], [64, 48], [128, 96], [256, 192], [256, 256]])("roundtrips every cell at %i×%i without mutating input", (width, height) => {

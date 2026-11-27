@@ -1,3 +1,4 @@
+import { unpackEnemyTiles } from "../../src/mcp/territory.js";
 import { describe, expect, it } from "vitest";
 import { MAX_OBSERVE_REPLY_BYTES, MAX_OBSERVE_TEXT_CHARS } from "../../src/mcp/replies.js";
 import { COLONY_NAMES, SUB } from "../../src/sim/config.js";
@@ -157,7 +158,7 @@ describe("the shipped maps' agent terrain and ownership are exact", () => {
         const expected = current.owner.map((owner, i) => owner === 1 - colony && eyes.some(([x, y]) =>
           (x - i % width) ** 2 + (y - Math.floor(i / width)) ** 2 <= current.config.sightTiles ** 2));
         expect(expected).toContain(true);
-        expect(territoryTiles({ territory: { ...territory, data: territory.enemies[1 - colony] } }, width, height)).toEqual(expected);
+        expect(unpackEnemyTiles(territory, 1 - colony)).toEqual(expected.flatMap((held, i) => held ? [i] : []));
         const withoutMap = await agent.call("observe");
         expect(withoutMap.isError).toBe(false);
         expect(withoutMap.data.view).not.toHaveProperty("territoryRows");

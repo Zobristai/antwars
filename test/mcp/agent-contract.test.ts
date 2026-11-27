@@ -248,7 +248,7 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   const historicalText = briefing(historical).replace(omissionSentence, "").replace(antCap, "");
   expect(sha(beforeVocabulary(historicalText))).toBe("3ce98a7d6d61e619d855c329be5fc19a7397adb193146bc8e2436b288148d25b");
   expect(sha(historicalText)).toBe("41e0d642b748b429decb3984d38ac4bd193b901d1c94a951539c0109332c0354");
-  expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("89b44fc6c35bbc804c48865dd3ad4bce374d06661c0e65fc2b48dadf8d7f3be3");
+  expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("f1c283a90c0bd0ee97758a1e35dc554ad4933a68bf69925344a0c7eefb0a1ac8");
   expect(briefing(current)).toContain("queen kills>kills>territory>ants alive>food delivered>draw");
   expect(joinBriefing(current)).toContain("queen kills, kills, territory, ants alive, food delivered, draw");
   // Restore only the previous lifetime sentence to compare all other text with its pinned contract.
@@ -258,7 +258,7 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   expect(currentText).not.toMatch(/steer/i);
   expect(sha(beforeVocabulary(currentText))).toBe("6232980cf5be7aabd988755fb9791a0896c186481ee496718d51071316a908ad");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("e727f7b82c11ac6ae3a77708aa65443df451703357c1d8d9c428309f73fc11dd");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("b7ad7ac696dd8510b290f554896c1b8993c59ddccaecafe73eac9f7d0a4dfcad");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.
@@ -292,11 +292,11 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   const relay = "A re-lay costs one command and restarts the mark's lifetime";
   expect(countMark.description!.split(relay)).toHaveLength(2);
   countMark.description = countMark.description!.replace(relay, "A re-lay keeps the lifetime from when the mark was first laid");
-  expect(sha(JSON.stringify(tools))).toBe("71ef478dfba6037f15c1362aad72ee18901017a19ff04ac0ce1022e58f5f8d45");
+  expect(sha(JSON.stringify(tools))).toBe("87f87760014c138dcaa7d7099987b3fe8ddd1c3b88dcdbcce07120d9d0088586");
   // Remove only the free-ant sentence to compare the rest of the tool list byte for byte.
   const observe = tools.find(tool => tool.name === "observe")!;
   const pool = " freeAntsByCaste counts your colony's available workers, soldiers and flyers at view.tick; each count mark in view.myMarks shows count requested and claimed now.";
   expect(observe.description!.split(pool)).toHaveLength(2);
   observe.description = observe.description!.replace(pool, "");
-  expect(sha(JSON.stringify(tools))).toBe("b6705bba06b3a49fa498ac9af55ae94305890004ca3cfdfe9f706965d9585d33");
+  expect(sha(JSON.stringify(tools))).toBe("ed75fd14bbc166ce6a9024d28e03e274209fe83a16d36966d10522c15889dfa2");
 });

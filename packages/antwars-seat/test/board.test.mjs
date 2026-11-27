@@ -127,7 +127,7 @@ function blobTerritory(share) {
   return Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => (Math.hypot(x - 16, y - 48) < Math.sqrt((share * W * H) / Math.PI) ? "#" : ".")).join(""));
 }
 
-function reply(cells, territoryRows, { more = false } = {}) {
+function reply(cells, territoryRows, { more = false, enemyTiles } = {}) {
   return { view: {
     tick: 4200, agentId: "agent-1", colony: 0, colonyName: "red", idle: false, ticksLeft: 13800, secondsLeft: 1380,
     squad: Array.from({ length: 6 }, (_, i) => ({ antId: i + 1, x: 30500 + i * 1000, y: 48500, tileX: 30 + i, tileY: 48, hp: 4000, carrying: i % 2 === 0, caste: "worker" })),
@@ -137,21 +137,21 @@ function reply(cells, territoryRows, { more = false } = {}) {
     marks: packMarks(Array.from({ length: 5 }, (_, i) => ({ markId: i + 1, words: ["food"], tileX: 40 + i, tileY: 48, ticksLeft: 300, mine: i < 2 }))),
     myMarks: [{ markId: 1, steering: 3 }, { markId: 2, steering: 0 }],
     territoryTiles: 0, territorySharePermille: 250, result: null,
-    ...(territoryRows ? { territory: packTerritory(territoryRows, W, H) } : {}),
+    ...(territoryRows ? { territory: packTerritory(territoryRows, W, H, enemyTiles) } : {}),
     cells: denseCells(cells, W, H), cellsTick: 4200, cellsMore: more, cellsCursor: more ? "snap-1:300" : null,
     events: [], eventsMode: "current", eventCursor: 12, eventsMore: false, priorityEventsMore: false,
   } };
 }
 
 /** Largest prefix of cells whose raw reply text fits the server's observe page (49,000 chars). */
-function fullPage(cells, territoryRows) {
+function fullPage(cells, territoryRows, enemyTiles) {
   let low = 1, high = cells.length;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    if (JSON.stringify(reply(cells.slice(0, mid), territoryRows, { more: true })).length <= MAX_OBSERVE_TEXT_CHARS) low = mid;
+    if (JSON.stringify(reply(cells.slice(0, mid), territoryRows, { more: true, enemyTiles })).length <= MAX_OBSERVE_TEXT_CHARS) low = mid;
     else high = mid - 1;
   }
-  return reply(cells.slice(0, low), territoryRows, { more: low < cells.length });
+  return reply(cells.slice(0, low), territoryRows, { more: low < cells.length, enemyTiles });
 }
 
 function measure(data) {
@@ -217,6 +217,19 @@ describe("readable view", () => {
     expect(SIZES.worstCells.printed).toBeLessThan(SIZES.worstCells.raw * 1.5);
     expect(SIZES.worst.printed).toBeLessThan(SIZES.worst.raw * 1.8);
     expect(worst.view.cellsMore).toBe(true);
+
+    // Measure the same cell scenes with sighted enemy claims included in the raw and readable maps.
+    const front = { 1: Array.from({ length: 60 }, (_, i) => (48 + Math.floor(i / 10)) * W + 84 + i % 10) };
+    const scattered = { 1: checker.join("").split("").flatMap((c, i) => c === "." ? [i] : []) };
+    const enemySizes = {
+      typical: measure(reply(scene(rng(11), { own: 120, enemy: 25, food: 300, idBase: 200 }).cells, blobTerritory(0.25), { enemyTiles: front })),
+      late: measure(reply(scene(rng(12), { own: 500, enemy: 450, food: 400, idBase: 1500 }).cells, blobTerritory(0.45), { enemyTiles: front })),
+      checkerboard: measure(fullPage(crowd, checker, scattered)),
+    };
+    console.log("observe sizes including enemy territory:", JSON.stringify(enemySizes));
+    expect(enemySizes.checkerboard.raw).toBeLessThanOrEqual(MAX_OBSERVE_TEXT_CHARS);
+    expect(enemySizes.checkerboard.printed).toBeGreaterThan(SIZES.worst.printed);
+
   });
 
   it("prints every water and rock rectangle of a real map, in the view and the nest selection", () => {

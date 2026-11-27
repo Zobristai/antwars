@@ -18,7 +18,7 @@ function historicalDigest(text: string): string {
   text = text.replace("Enemy share: your tick/sight.", "Enemy share: your tick/sight; enemy map fogged.")
     .replace("Enemy share hidden.", "Enemy share/map hidden.")
     .replace("base64-bitset-lsb0; enemies[n]=sighted tiles of colony n (ant/queen number); marks/myMarks:", "base64-bitset-lsb0; marks/myMarks:")
-    .replace("map:true territory, base64-bitset-lsb0: i=y*width+x, bit i%8 of byte i>>3. data=own; enemies[n]=sighted tiles of colony n (ant/queen number); missing=none seen.",
+    .replace("map:true territory.data=own base64-bitset-lsb0 (i=y*width+x). enemies[n]=sighted tiles of colony n (ant/queen number): base64, inflate zlib, sum uint16LE deltas from 0.",
       "observe map:true adds territory {encoding:'base64-bitset-lsb0',width,height,data}. Decode data as base64 bytes; tile (x,y) has index y*width+x, byte floor(index/8), bit index%8 (least-significant first): 1=your colony owns it, 0=otherwise. Rows are contiguous, with no row padding; unused final bits are zero.");
   if (text.includes("Handle owner=username owner")) {
     const addition = 'Free-for-all: join_queue {key,mode:"quadrants"} waits for four different owners (four colonies, one seat each); separate Free-for-all rating when enabled. ';

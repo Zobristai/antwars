@@ -8,11 +8,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_MCP_CONFIG } from "../../src/mcp/config.js";
 import { Game, type LobbySeat } from "../../src/mcp/game.js";
-import { unpackTerritory } from "../../src/mcp/territory.js";
+import { unpackEnemyTiles, unpackTerritory } from "../../src/mcp/territory.js";
 import { registerTools } from "../../src/mcp/tools.js";
 import { rulesConfig, SUB, type MapDefinition } from "../../src/sim/config.js";
 import { newMatchConfig, physicalTileArea } from "../../src/sim/gridScale.js";
-import { expandCells } from "../../src/sim/view.js";
+import { addAnt } from "../sim/fixtures.js";
+import { buildGrid } from "../../src/sim/map.js";
+import { pagedView, OBSERVE_REPLY_LIMITS } from "../../src/mcp/replies.js";
+import { expandCells, expandFlyers, takeView } from "../../src/sim/view.js";
 
 /** Test-only quadrant geometry, not a production map. */
 const FIXTURE: MapDefinition = {
@@ -37,9 +40,9 @@ afterEach(async () => {
 });
 
 /** A slot Game seating one lobby; its match advances only through tick() and the calls answer() waits for. */
-function slotGame(seats: readonly LobbySeat[], mode: "quadrants" | null) {
+function slotGame(seats: readonly LobbySeat[], mode: "quadrants" | null, map = FIXTURE) {
   let now = 1000, queued = false;
-  const game = new Game({ simConfig: LIVE, quadrantMaps: [FIXTURE], startPickWindowMs: 50, now: () => now,
+  const game = new Game({ simConfig: LIVE, quadrantMaps: [map], startPickWindowMs: 50, now: () => now,
     mcpConfig: { ...DEFAULT_MCP_CONFIG, callsPerSecond: 1000, houseIdleSeconds: IDLE_SECONDS },
     onInputQueued: () => { queued = true; },
     slot: { identityOf: async key => key.endsWith("-key") ? key.slice(0, -"-key".length) : undefined, locate: async () => undefined } });
@@ -76,9 +79,9 @@ async function connect(w: World) {
 }
 
 /** Four seats, one per colony, joined through MCP in the pick window; the window closes and tick 0 runs. */
-async function quadrants() {
+async function quadrants(map = FIXTURE) {
   const seats = [0, 1, 2, 3].map(colony => ({ identityId: `id-${colony}`, displayName: `Seat ${colony}`, colony }));
-  const w = slotGame(seats, "quadrants");
+  const w = slotGame(seats, "quadrants", map);
   const closesAt = w.game.beginLobbyStart(SEED);
   const sessions = [];
   const agents = new Map<number, string>();
@@ -127,6 +130,33 @@ function keyPaths(value: unknown, prefix = ""): string[] {
 }
 
 describe("a Quadrants seat's observe reply", { timeout: 60_000 }, () => {
+  it("fits the complete 256×256 territory map alongside 300 hovering flyers", async () => {
+    const q = await quadrants({ ...FIXTURE, quadrant: { ...FIXTURE.quadrant!, referenceWidth: 128, referenceHeight: 128 } });
+    const state = q.game.match!.state, { config } = state;
+    expect([config.mapWidth, config.mapHeight, state.colonies.length]).toEqual([256, 256, 4]);
+    // Freeze a tick: the production reply builder measures mandatory metadata before paging cells.
+    state.nextAntId = 20_000;
+    for (let i = 0; i < 300; i++) {
+      const x = 200 + i % 20, y = 200 + Math.floor(i / 20);
+      addAnt(state, 0, x, y, { flyer: true, air: { destX: x * SUB + SUB / 2, destY: y * SUB + SUB / 2, hovering: true, released: false } });
+    }
+    state.owner.fill(-1);
+    const anchor = 200 * 256 + 200;
+    for (let colony = 0; colony < 4; colony++) state.owner[anchor + colony] = colony;
+    const id = q.agents.get(0)!;
+    const snapshot = takeView(state, buildGrid(state), state.agents.find(a => a.id === id)!);
+    const result = pagedView(q.game, config, snapshot, true, {}, undefined, OBSERVE_REPLY_LIMITS);
+    expect(result.isError, JSON.stringify(result.structuredContent?.error)).not.toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text.length).toBeLessThanOrEqual(49_000);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(102_380);
+    const { view } = JSON.parse(text);
+    expect(expandFlyers(view.flyers).filter(f => f.state === "hovering")).toHaveLength(300);
+    expect(unpackTerritory(view.territory).join("")).toBe(".".repeat(anchor) + "#" + ".".repeat(256 ** 2 - anchor - 1));
+    expect(Object.keys(view.territory.enemies)).toEqual(["1", "2", "3"]);
+    for (const colony of [1, 2, 3]) expect(unpackEnemyTiles(view.territory, colony)).toEqual([anchor + colony]);
+  });
+
   it("names the three other colonies by name, in colony order, as colony 0 and colony 3 see them", async () => {
     const q = await quadrants();
     const fromFirst = await q.sessions[0]!.call("observe");
@@ -252,7 +282,7 @@ describe("a Quadrants seat's observe reply", { timeout: 60_000 }, () => {
       const expected = state.owner.map((owner, i) => owner === colony && eyes.some(([x, y]) =>
         (x - i % config.mapWidth) ** 2 + (y - Math.floor(i / config.mapWidth)) ** 2 <= sight) ? "#" : ".").join("");
       expect(expected).toContain("#");
-      expect(unpackTerritory({ ...view.territory, data: view.territory.enemies[colony] }).join("")).toBe(expected);
+      expect(unpackEnemyTiles(view.territory, colony)).toEqual([...expected.matchAll(/#/g)].map(m => m.index));
     }
     for (const cell of cells) expect(eyes.some(([x, y]) => (cell.tileX - x) ** 2 + (cell.tileY - y) ** 2 <= sight)).toBe(true);
     const byId = new Map(state.ants.map(ant => [ant.id, ant]));
