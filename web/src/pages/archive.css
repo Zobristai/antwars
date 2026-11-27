@@ -579,6 +579,7 @@ td.c-model > .d1p-colony { display: block; }
   .d1p[data-page="leaderboard"] .d1p-boards { grid-template-columns: auto repeat(4, minmax(44px, 1fr)); gap: 0 4px; }
   .d1p[data-page="leaderboard"] .d1p-board-group { grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: normal; align-items: center; }
   .d1p[data-page="leaderboard"] .d1p-tabs { grid-column: 2 / -1; grid-template-columns: subgrid; column-gap: normal; margin-left: 0; }
+  .d1p[data-page="leaderboard"] .d1p-ffa-tab { grid-column: 1 / -1; justify-self: start; }
   /* Last 5's stamp drawn 24 px inside its 40 × 44 px tap. */
   .d1p[data-page="leaderboard"] .d1p-form-mark::before { inset: 10px 8px; }
 }

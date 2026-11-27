@@ -61,7 +61,7 @@ export type Size = typeof SIZES[number];
 /** The board choice, the Antwars Model Index first; the internal house-* mode ids stay. */
 export const BOARD_GROUPS: readonly { readonly label: string; readonly modes: readonly LeaderboardMode[] }[] = [
   { label: "Antwars Model Index", modes: SIZES.map(size => `house-${size}` as const) },
-  { label: "Ranked", modes: SIZES },
+  { label: "Ranked", modes: [...SIZES, "quadrants"] },
 ];
 /** The page opens here. */
 export const OPENING_MODE: LeaderboardMode = "house-1v1";

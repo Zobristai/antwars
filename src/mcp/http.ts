@@ -78,7 +78,15 @@ interface Hold {
 }
 
 /** The hold of the HTTP request whose handling is running, so a call can check its own hold and no other. */
-const requestHold = new AsyncLocalStorage<Hold | undefined>();
+const requestCall = new AsyncLocalStorage<{ hold?: Hold; signal?: AbortSignal }>();
+
+/** The response stays open after the POST body is consumed, until delivery or disconnect. */
+export function responseSignal(res: ServerResponse): AbortSignal {
+  const controller = new AbortController();
+  if (res.destroyed) controller.abort(); else res.once("close", () => controller.abort());
+  return controller.signal;
+}
+const LEADERBOARD_TOOL = new Set(["leaderboard"]);
 
 /** What a key-issuing call checks as the last step before its commit. */
 export interface KeyIssuingHold {
@@ -143,6 +151,8 @@ export interface SessionAccess {
    * resolving the key's identity when nothing could come of it.
    */
   mayProtect(): boolean;
+  /** Socket disconnect for this tool call, in addition to MCP cancellation. */
+  requestSignal?(): AbortSignal | undefined;
   /**
    * Mark the session protected for the account identity id one of its calls
    * proved. Granted only when mayProtect() and while that identity protects
@@ -428,6 +438,7 @@ export function createMcpHandler(
         sessions.get(transport.sessionId) === stored && mayShield(stored);
       options.extraTools?.(server, {
         mayProtect,
+        requestSignal: () => requestCall.getStore()?.signal,
         protect(identityId) {
           // Never past one identity's share either, counted by identity so rotating a key does not reset it.
           if (mayProtect() && protectedFor(identityId) < game.mcpConfig.maxProtectedSessionsPerIdentity) stored!.protectedBy = identityId;
@@ -440,7 +451,7 @@ export function createMcpHandler(
         keyIssuingHold() {
           const session = stored;
           if (session === undefined) return undefined;
-          const own = requestHold.getStore();
+          const own = requestCall.getStore()?.hold;
           // A request that began joined took no place; if its session has since stopped playing (a replaced key
           // ended the binding), it takes one now under the same rule as an unjoined session's call.
           if (own !== undefined && !own.ended && session.state.agentId === null && !session.holds.has(own) && mayShield(session)) session.holds.add(own);
@@ -536,7 +547,8 @@ export function createMcpHandler(
           const taken = callsTool(body, held) ? holdForCall(session, res) : undefined;
           try {
             // The request's own hold travels with its handling, so its calls check that hold and no other.
-            await requestHold.run(taken?.hold, () => session.transport.handleRequest(req, res, body));
+            const signal = callsTool(body, LEADERBOARD_TOOL) ? responseSignal(res) : undefined;
+            await requestCall.run({ hold: taken?.hold, signal }, () => session.transport.handleRequest(req, res, body));
           } catch (err) {
             taken?.release();
             throw err;

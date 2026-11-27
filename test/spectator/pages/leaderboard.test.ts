@@ -149,6 +149,36 @@ describe("touch targets", () => {
   });
 });
 
+it("ranks Free-for-all scores in both positions of the Show retired switch", async () => {
+  const p = page();
+  p.choose("Ranked Free-for-all");
+  await p.answer("quadrants", new Response(JSON.stringify({ entries: [
+    { displayName: "antwars/claude-fable-5-1", rating: 8.5, ratedMatches: 5, benchmark: true },
+    { displayName: "Bee", rating: 5.75, ratedMatches: 5 }, { displayName: "Ann", rating: -2.25, ratedMatches: 1 },
+  ] })));
+  const toggle = p.root.all().find(node => node.getAttribute("role") === "switch")!;
+  expect((toggle as unknown as HTMLInputElement).checked).toBe(false);
+  expect(leaderboardCards(p.root)[0]!.cells.map(row => row.slice(0, 3))).toEqual([["1", "Bee", "5.75"], ["2", "Ann", "-2.25"]]);
+  (toggle as unknown as HTMLInputElement).checked = true;
+  toggle.fire("change");
+  const cards = leaderboardCards(p.root);
+  expect(cards.map(card => card.title)).toEqual(["Free-for-all"]);
+  expect(cards[0]!.names).toEqual(["Claude Fable 5.1", "Bee", "Ann"]);
+  expect(cards[0]!.named[0]).toContain("[retired]");
+  expect(cards[0]!.cells.map(([rank, , rating]) => [rank, rating])).toEqual([["1", "8.50"], ["2", "5.75"], ["3", "-2.25"]]);
+  expect(p.root.byClass("d1p-narrow")[0]!.byClass("d1p-elo-badge").map(node => node.textContent)).toEqual(["8.50", "5.75", "-2.25"]);
+  p.dispose();
+});
+
+it("replaces an expired Free-for-all continuation with a fresh first page", async () => {
+  const p = page(); p.choose("Ranked Free-for-all");
+  await p.answer("quadrants", reply(["Old"], "next")); p.more();
+  await p.answer("quadrants", new Response(null, { status: 410 }), "next", false);
+  await vi.waitFor(async () => p.answer("quadrants", reply(["New"])));
+  expect(leaderboardCards(p.root)[0]!.names).toEqual(["New"]);
+  p.dispose();
+});
+
 describe("badges", () => {
   it("holds a name's two badges in one group, in the table and in the stacked rows", async () => {
     const p = page();
@@ -171,8 +201,8 @@ describe("the band and its cyan Refresh", () => {
     const band = p.root.byClass("d1p-band")[0]!;
     expect(band.byClass("d1p-title")).toHaveLength(1);
     expect(band.byClass("d1p-loaded")).toHaveLength(1);
-    // Both ranking groups' four sizes, and nothing else.
-    expect(band.byClass("d1p-tab")).toHaveLength(8);
+    // Four sizes in both groups, plus the ranked Free-for-all.
+    expect(band.byClass("d1p-tab")).toHaveLength(9);
     expect(p.root.byClass("d1p-rail")).toHaveLength(0);
     expect(p.root.byClass("d1p-refresh").map(node => node.textContent)).toEqual([PAGE_WORDS.refresh]);
     expect(band.all().includes(p.root.byClass("d1p-refresh")[0]!)).toBe(true);

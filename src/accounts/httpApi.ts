@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { DEFAULT_MCP_CONFIG } from "../mcp/config.js";
-import { BodyTimeoutError, readBody } from "../mcp/http.js";
+import { BodyTimeoutError, readBody, responseSignal } from "../mcp/http.js";
 import { createAdmissionCap } from "../net/admission.js";
 import { clientSource } from "../server/clientSource.js";
 import { ACCOUNT_OPERATIONS, WEB_LEADERBOARD, type AccountStores } from "./service.js";
@@ -89,8 +89,13 @@ export function createAccountApi(stores: AccountStores, options: AccountApiOptio
       const fields = [...new Set(parsed.error.issues.map((issue) => issue.path.join(".") || "body"))].join(", ");
       return reply(res, 400, { error: "bad_arguments", message: `Invalid arguments: ${fields}.` });
     }
-    const result = await op.run(stores, parsed.data, req.headers);
-    reply(res, result.ok ? 200 : result.status, result.body);
+    const signal = op.name === "leaderboard" && parsed.data.mode === "quadrants" ? responseSignal(res) : undefined;
+    try {
+      const result = await op.run(stores, parsed.data, req.headers, undefined, signal);
+      if (!signal?.aborted) reply(res, result.ok ? 200 : result.status, result.body);
+    } catch (error) {
+      if (!signal?.aborted) throw error;
+    }
   };
   return Object.defineProperty(handle, "bodyReads", { get: () => bodyReads.open }) as AccountApi;
 }
