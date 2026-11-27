@@ -86,6 +86,7 @@ function crumbSpots(n: number): [number, number][] {
 }
 
 export class FoodPiles {
+  readonly restoreTexture: () => void;
   readonly layer: ParticleContainer;
   /** Index k - 1 holds the pile of k crumbs. */
   private textures: Texture[];
@@ -112,6 +113,7 @@ export class FoodPiles {
     const holder = new Container();
     holder.addChild(g);
     const atlas = renderer.generateTexture({ target: holder, frame: new Rectangle(0, 0, CELL * MAX_CRUMBS, CELL), resolution: 2 * renderer.resolution, antialias: true });
+    this.restoreTexture = () => renderer.render({ container: holder, target: atlas, clear: true, clearColor: [0, 0, 0, 0] });
     atlas.source.scaleMode = "linear";
     this.textures = Array.from({ length: MAX_CRUMBS }, (_, i) => new Texture({ source: atlas.source, frame: new Rectangle(i * CELL, 0, CELL, CELL) }));
     this.layer = new ParticleContainer({

@@ -290,6 +290,7 @@ function channel(a: number, b: number, shift: number): number {
 }
 
 export class Ants {
+  readonly restoreTexture: () => void;
   readonly corpseLayer: ParticleContainer;
   /** Airborne flyers' shadows, on the ground beneath the ants. */
   readonly shadowLayer: ParticleContainer;
@@ -371,6 +372,7 @@ export class Ants {
       resolution: (antPx / CELL_W) * renderer.resolution,
       antialias: true,
     });
+    this.restoreTexture = () => renderer.render({ container: holder, target: atlas, clear: true, clearColor: [0, 0, 0, 0] });
     atlas.source.scaleMode = "linear";
     const cell = (i: number, row: number) => new Texture({ source: atlas.source, frame: new Rectangle(i * CELL_W, row * CELL_H, CELL_W, CELL_H) });
     const soldierCell = (i: number, colony: number) =>

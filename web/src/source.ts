@@ -48,24 +48,25 @@ function consumeRendererHandover(view: Window | null, params: URLSearchParams): 
   } catch { return null; }
 }
 
-/** One board change, not a fresh visit: a replay reopened on the other board resumes where it had reached. */
+/** Carry a replay position across a board switch or an explicit 2D recovery reload, not an ordinary refresh. */
 export const REPLAY_POSITION_KEY = "antwar-replay-position";
-interface ReplayPosition { route: string; board: BoardMode; positionMs: number; at: number }
-function rememberReplayPosition(view: Window | null, params: URLSearchParams, positionMs: number): void {
+interface ReplayPosition { recover2d?: true; route: string; board: BoardMode; positionMs: number; at: number }
+function rememberReplayPosition(view: Window | null, params: URLSearchParams, positionMs: number, recover2d: boolean): void {
   if (!view || !(positionMs > 0)) return;
   try {
     view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({
-      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), positionMs, at: wallClockNow(),
+      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), ...(recover2d && { recover2d: true }), positionMs, at: wallClockNow(),
     } satisfies ReplayPosition));
   } catch { /* Storage is optional: without it the other board starts the replay from its beginning. */ }
 }
-/** The stored position this page would resume: this replay, saved on the other board, recently, past the start. */
+/** The stored position this page would resume: this replay, recent and past the start, from a board switch or recovery. */
 function pendingReplayPosition(raw: string | null | undefined, view: Window | null, params: URLSearchParams): ReplayPosition | null {
   if (!raw) return null;
   const value: unknown = JSON.parse(raw);
   if (typeof value !== "object" || value === null ||
     !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
-    !("board" in value) || (value.board !== "2d" && value.board !== "3d") || value.board === boardMode(params) ||
+    !("board" in value) || (value.board !== "2d" && value.board !== "3d") ||
+    (value.board === boardMode(params) && !(value.board === "2d" && "recover2d" in value && value.recover2d === true)) ||
     !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
     wallClockNow() < value.at || wallClockNow() - value.at > FALLBACK_HANDOVER_MS ||
     !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs <= 0) return null;
@@ -120,7 +121,7 @@ export interface SpectatorSource {
   now(realMs: number): number;
   /** After the displayed result, automatic Watch chooses again; explicit links stay pinned. */
   nextMatch(): void;
-  /** Preserve this live selection for the imminent 3D-to-2D reload only. */
+  /** Preserve the replay position or live selection for an imminent recovery reload as 2D. */
   prepareFallback(): void;
   close(): void;
 }
@@ -279,6 +280,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const view = doc.defaultView;
   const rendererHandover = consumeRendererHandover(view, params);
   let resumeAt = replay ? consumeReplayPosition(view, params) : null;
+  let recover2d = false;
   let resumeGeneration: number | null = null;
   let feed: PreparedFeed | null = null;
   let recording: Recording | null = null;
@@ -352,10 +354,10 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       return null;
     }
   };
-  // Leaving an explicit replay (its board control, or the 3D board's fallback to 2D) keeps its position for the other board;
+  // Leaving an explicit replay keeps its position for a board switch or a recovery reload;
   // a position not yet resumed is passed on as it was.
   view?.addEventListener("pagehide", () => {
-    if (replay && recording) rememberReplayPosition(view, params, resumeAt ?? recording.position);
+    if (replay && recording) rememberReplayPosition(view, params, resumeAt ?? recording.position, recover2d);
     close();
   }, { once: true });
   setFallback(null);
@@ -559,6 +561,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       now: realMs => recording?.time ?? realMs,
       nextMatch: () => reload(),
       prepareFallback() {
+        recover2d = replay && boardMode(params) === "2d";
         if (replay || legacy || fallback || !liveLobbyId || abort.signal.aborted) return;
         try {
           view?.sessionStorage.setItem(FALLBACK_HANDOVER_KEY, JSON.stringify({

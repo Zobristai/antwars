@@ -93,6 +93,7 @@ interface Drawn {
 }
 
 export class Squads {
+  readonly restoreTexture: () => void;
   /** Badges in screen space, above the words' layer. */
   readonly layer = new Container();
   private readonly badgeG = new Graphics();
@@ -128,7 +129,9 @@ export class Squads {
     const g = new Graphics().circle(32, 32, 26).stroke({ width: 7, color: 0xffffff });
     const holder = new Container();
     holder.addChild(g);
-    this.ringTexture = renderer.generateTexture({ target: holder, frame: new Rectangle(0, 0, 64, 64), antialias: true });
+    const ringTexture = renderer.generateTexture({ target: holder, frame: new Rectangle(0, 0, 64, 64), antialias: true });
+    this.ringTexture = ringTexture;
+    this.restoreTexture = () => renderer.render({ container: holder, target: ringTexture, clear: true, clearColor: [0, 0, 0, 0] });
     this.rings = new ParticleContainer({ dynamicProperties: { position: true, color: true, rotation: false, uvs: false, vertex: true }, texture: this.ringTexture });
   }
 
