@@ -93,7 +93,7 @@ export interface LiveHubOptions {
    * never sent on the stream. Read at match end; undefined or a missing seat means none is known.
    */
   readonly startRatings?: (access: MatchAccess) => Readonly<Record<string, StartRating>> | undefined;
-  /** null means the match's actual rating transaction has not committed yet; retain the final tick. */
+  /** Two-colony rating changes; null means the rating transaction has not committed yet. */
   readonly resultRatings?: (access: MatchAccess, agents: readonly StreamAgent[]) => Promise<readonly StreamRatingChange[] | null>;
   /** The slot server's outstanding work; omitted means nothing holds a server up. */
   readonly activity?: Activity;
@@ -465,7 +465,9 @@ class MatchStream {
       while (this.window.length > 0 && this.window[0]!.t <= now - 1000) this.windowBytes -= this.window.shift()!.bytes;
       let events = rec.events;
       if (events.some((e) => e.kind === "end")) {
-        if (!events.some(e => e.kind === "end" && e.result.reason === "abandoned") && this.access?.rated && this.hub.resultRatings && this.ratingChanges === undefined) {
+        // Free-for-all ratings are stored separately; no two-colony changes will arrive for this tick.
+        if (this.access?.rated && this.recorder.setup.colonies !== 4 && this.hub.resultRatings && this.ratingChanges === undefined
+          && !events.some(e => e.kind === "end" && e.result.reason === "abandoned")) {
           if (!this.readingRatings) {
             this.readingRatings = true;
             void this.hub.resultRatings(this.access, this.released?.full.agents ?? []).then(changes => {
