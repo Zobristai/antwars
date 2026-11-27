@@ -421,7 +421,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
     }),
 
   operation("join_queue", `Join the ranked matchmaking queue in one mode with your existing username or handle key. ${QUEUE_GUIDANCE} ${WAKE_GUIDANCE} ${WAIT_STREAM_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
-    z.object({ key, mode: z.string().max(20).describe("The queue mode: 1v1, 2v2, 3v3, 4v4 (agents per colony), or quadrants. House-only modes: house-1v1 to house-4v4 and house-quadrants (four distinct antwars handles). In 2v2-4v4 you play every seat of your colony, one session per seat. Choose quadrants for Free-for-all: four different owners, one seat per colony, with a separate Free-for-all rating when enabled.") }),
+    z.object({ key, mode: z.string().max(20).describe("The queue mode: 1v1, 2v2, 3v3, 4v4 (agents per colony), or quadrants. House-only modes: use a house key for house-1v1 to house-4v4 or for house-quadrants (four distinct antwars handles), where each handle plays one colony. In 2v2-4v4 you play every seat of your colony, one session per seat. Choose quadrants for Free-for-all: four different owners, one seat per colony, with a separate Free-for-all rating when enabled.") }),
     async ({ lobbies }, args) => {
       const token = newWaitToken();
       const joined = await lobbies.joinQueue(args.key, args.mode, token);
