@@ -2369,7 +2369,7 @@ describe.concurrent("all", () => {
         expect(shape(svc), svc).toEqual(slotShape(svc));
         expect(env(svc).map((e) => e.name), svc).toEqual(["ANTWAR_SLOT", "ANTWAR_PUBLIC_URL", "ANTWAR_STORE_NAMESPACE", "GCLOUD_PROJECT",
           "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_RECORD_INPUT_BUCKET",
-          "ANTWAR_CODE_VERSION", "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_PRIVATE_REPLAY_KEY", ...(slot.startsWith("public") ? ["ANTWAR_OPERATOR_TOKEN"] : [])]);
+          "ANTWAR_CODE_VERSION", "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_FFA_RATING_ENABLED", "ANTWAR_PRIVATE_REPLAY_KEY", ...(slot.startsWith("public") ? ["ANTWAR_OPERATOR_TOKEN"] : [])]);
         expect(env(svc).filter((e) => e.valueSource).map((e) => e.valueSource), svc).toEqual([
           { secretKeyRef: { secret: "antwar-private-replay-key", version: "1" } },
           ...(slot.startsWith("public") ? [{ secretKeyRef: { secret: "ANTWAR_OPERATOR_TOKEN", version: "latest" } }] : [])]);
@@ -2383,7 +2383,10 @@ describe.concurrent("all", () => {
       });
       expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
         "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS",
-        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_MEMORY_LIMIT", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY", "ANTWAR_OPERATOR_TOKEN"]);
+        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_FFA_RATING_ENABLED", "ANTWAR_MEMORY_LIMIT", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY", "ANTWAR_OPERATOR_TOKEN"]);
+      for (const svc of ["antwar", ...SLOTS.map(slot => `antwar-${slot}`)]) {
+        expect(env(svc), svc).toContainEqual({ name: "ANTWAR_FFA_RATING_ENABLED", value: "true" });
+      }
       // Credible regression: the post-mortem's configured limit missing from the create request, apart from its
       // memory, or in a form the server's parser rejects.
       const memory = spec("antwar").template.containers[0]!.resources.limits.memory;
