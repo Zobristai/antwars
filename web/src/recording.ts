@@ -91,6 +91,8 @@ export interface Recording {
   readonly duration: number | null;
   readonly durationError: string | null;
   readonly position: number;
+  /** The scrubber stays here while position follows the batches rebuilding playback. */
+  readonly seekTarget: number | null;
   readonly rate: PlaybackRate;
   readonly seeking: boolean;
   /** The scrubber's marks (replay-events.ts), from one read of the whole recording; null until that read has
@@ -483,6 +485,7 @@ export function openRecording(url: string, onError: (error: Error) => void = () 
     get durationError() { return durationError; },
     get events() { return events; },
     get position() { return Math.min(duration() ?? Infinity, Math.max(0, time - RENDER_DELAY_MS)); },
+    get seekTarget() { return seekTo === null ? null : seekTo - RENDER_DELAY_MS; },
     get rate() { return rate; },
     get seeking() { return seekTo !== null; },
     get generation() { return generation; },

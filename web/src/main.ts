@@ -21,7 +21,8 @@ import { mountIconDom } from "./icons/dom.ts";
 import { Application, Container, isWebGLSupported, type WebGLRenderer } from "pixi.js";
 import { streamQueens } from "../../src/live/format.ts";
 import { openingBounds, openingPhase } from "./start-framing.ts";
-import { Frame, Playback, QUEEN_FRAME_TILES, fallWindow, fallenNests, fallenQueenBox } from "./buffer.ts";
+import { ReplayFrames } from "./replay-frame.ts";
+import { Playback, QUEEN_FRAME_TILES, fallWindow, fallenNests, fallenQueenBox } from "./buffer.ts";
 import { createClock } from "./clock.ts";
 import { gpuReadback, realTimeSource, type RealNow } from "./timing.ts";
 import { bakeSoil } from "./soil.ts";
@@ -258,23 +259,20 @@ async function startWithoutBoard(message: HTMLElement | null): Promise<void> {
   message?.querySelector(".aw-byoa")?.remove();
   unlinkNeedsWebGLHome(document);
   let playback = new Playback({ live: !input.recorded });
-  let replayGeneration = input.recording?.generation ?? 0;
-  let frame = new Frame();
+  const frames = new ReplayFrames();
+  let frame = frames.frame;
   let resultShownAt: number | null = null;
   const step = () => {
     const realMs = clock.now();
-    controls?.update();
-    if (input.recording && input.recording.generation !== replayGeneration) {
-      replayGeneration = input.recording.generation;
-      playback = new Playback();
-      frame = new Frame();
-    }
     for (const arrival of input.take(realMs)) {
+      if (input.recording && frames.restart(input.recording.generation)) playback = new Playback();
       if (arrival.kind === "prepared") playback.pushPrepared(arrival.prepared, arrival.at);
       else playback.push(arrival.m, arrival.at);
     }
     const now = input.now(realMs);
-    playback.sample(now, frame);
+    frames.sample(playback, now, input.recording?.seeking ?? false);
+    frame = frames.frame;
+    controls?.update();
     const board = frame.board;
     if (board) {
       const ended = replay && excerptEnded(frame.tick, input.lastTick);
@@ -327,7 +325,7 @@ async function start(): Promise<void> {
   // The page's one match: its colonies' colours, before anything draws them.
   setMatchColonies(colonyNamesOf(head.full!.setup), document);
   let playback = new Playback({ live: !input.recorded });
-  let replayGeneration = input.recording?.generation ?? 0;
+  const frames = new ReplayFrames();
   const W = head.full!.setup.mapW;
   const H = head.full!.setup.mapH;
   const scale = gridScale(head.full!.setup);
@@ -464,7 +462,7 @@ async function start(): Promise<void> {
     ants.setFit(antLengthPx(camera.fit.tilePx * scale), camera.fit.tilePx);
   };
 
-  let frame = new Frame();
+  let frame = frames.frame;
   /** The frame the board draws: the playback frame, or one colony's view of it (team-view.ts); the HUD reads frame. */
   let shown = frame;
   const waiting = new Waiting(document.getElementById("aw-waiting"), document.querySelector(".aw-wait-state"));
@@ -594,22 +592,8 @@ async function start(): Promise<void> {
     const t0 = realNow?.() ?? 0;
     let workerMs = 0;
     let deliveryMs = 0;
-    controls?.update();
-    if (input.recording && input.recording.generation !== replayGeneration) {
-      replayGeneration = input.recording.generation;
-      playback = new Playback();
-      frame = new Frame();
-      overlays.select(null);
-      overlays.selectAgent(-1);
-      words.clearFocus();
-      squads.focused = squads.hovered = -1;
-      endedAt = resultShownAt = null;
-      fallTurned = false;
-      fallMove = null;
-      matchSeen = 0;
-      camera.reset();
-    }
     for (const arrival of input.take(realMs)) {
+      if (input.recording && frames.restart(input.recording.generation)) playback = new Playback();
       if (arrival.kind === "prepared") {
         playback.pushPrepared(arrival.prepared, arrival.at);
         workerMs += arrival.workerMs;
@@ -627,7 +611,21 @@ async function start(): Promise<void> {
       phases[name] = t - mark;
       mark = t;
     };
-    const drew = playback.sample(now, frame);
+    const seeking = input.recording?.seeking ?? false;
+    const drew = frames.sample(playback, now, seeking);
+    frame = frames.frame;
+    controls?.update();
+    if (frames.landed) {
+      overlays.select(null);
+      overlays.selectAgent(-1);
+      words.clearFocus();
+      squads.focused = squads.hovered = -1;
+      endedAt = resultShownAt = null;
+      fallTurned = false;
+      fallMove = null;
+      matchSeen = 0;
+      camera.reset();
+    }
     shown = teamView.apply(frame);
     lap("sample");
     const board = frame.board;
@@ -638,7 +636,7 @@ async function start(): Promise<void> {
     // its beat; at no other time does the camera move by itself, and the next match opens on the fight again. The
     // turn is a short eased move on the playback clock, a cut for a
     // viewer who prefers reduced motion.
-    if (board && playback.matches !== matchSeen) {
+    if (board && !seeking && playback.matches !== matchSeen) {
       if (matchSeen > 0) camera.resize(w, h, overlays.boardArea(w, h));
       matchSeen = playback.matches;
     }
@@ -650,16 +648,16 @@ async function start(): Promise<void> {
       fallTurned = true;
       const to = camera.fallView(nests, fallenQueenBox(board!) ?? undefined);
       if (reducedMotion()) camera.set(to);
-      else fallMove = { from: { ...camera.view }, to, startedAt: now };
+      else fallMove = { from: { ...camera.view }, to, startedAt: frames.time };
     }
     if (fallMove !== null) {
-      const t = (now - fallMove.startedAt) / FALL_MOVE_MS;
+      const t = (frames.time - fallMove.startedAt) / FALL_MOVE_MS;
       camera.set(lerpView(fallMove.from, fallMove.to, easeInOut(t)));
       if (t >= 1) fallMove = null;
     }
     // The selected squad: hovered in the roster, else pointed at or tapped on the board.
     const selected = squads.selected;
-    territory.update(shown, now);
+    territory.update(shown, frames.time);
     fog.update(shown);
     startBoxes.update(shown);
     queens.update(shown, undefined, camera.toScreen);
@@ -691,9 +689,9 @@ async function start(): Promise<void> {
     cues.drawLabels(cueRects.length && squads.layer.visible ? [...words.badges.values()] : [], words.layer.visible ? words.chipObstacles : []);
     lap("tags");
     // The finale: once playback has the result, the board's text and badges fade out under it, and the tooltips go.
-    if (board?.result) endedAt ??= now;
+    if (board?.result) endedAt ??= frames.time;
     else endedAt = null;
-    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = cues.aboveBadges.alpha = endedAt === null ? 1 : Math.max(0, 1 - (now - endedAt) / FINALE_FADE_MS);
+    words.layer.alpha = squads.layer.alpha = cues.layer.alpha = cues.aboveBadges.alpha = endedAt === null ? 1 : Math.max(0, 1 - (frames.time - endedAt) / FINALE_FADE_MS);
     // Hover and tap details: the focused marker's and squad's tooltips, in the page's type above every panel.
     const tipsOn = overlaysOn && wordsOn && endedAt === null;
     const markTip = tipsOn ? words.tipContent() : null;
@@ -723,9 +721,9 @@ async function start(): Promise<void> {
 
     // After the result, look for the next match now and then (public catalog selection, not a reopened finished feed).
     if (board?.result) {
-      resultShownAt ??= now;
-      if (now - resultShownAt >= NEXT_MATCH_POLL_MS) {
-        resultShownAt = now;
+      resultShownAt ??= frames.time;
+      if (frames.time - resultShownAt >= NEXT_MATCH_POLL_MS) {
+        resultShownAt = frames.time;
         input.nextMatch();
       }
     } else resultShownAt = null;
