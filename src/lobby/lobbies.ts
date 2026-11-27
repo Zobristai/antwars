@@ -879,10 +879,13 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
 
   async function queuedMatchWrites(
     read: TransactionRead,
-    { mode, colonies }: { readonly mode: QueueMode; readonly colonies: readonly (readonly Seat[])[] },
+    { mode: queue, colonies }: { readonly mode: QueueMode; readonly colonies: readonly (readonly Seat[])[] },
     at: number,
   ): Promise<{ readonly writes: readonly Write[]; readonly lobby: Lobby }> {
+    // House admission changes who can pair, not the match the slot plays or its rating pool.
+    const mode = queue === "house-quadrants" ? QUADRANTS : queue;
     const quadrants = mode === QUADRANTS;
+    const rated = !quadrants || settings.ffaLiveEnabled === true;
     const size = colonies[0]?.length ?? 0;
     if (quadrants) {
       if (colonies.length !== 4 || colonies.some((colony) => colony.length !== 1)) throw new Error("a quadrants match needs four colonies of one seat each");
@@ -892,7 +895,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       colony.map((seat) => ({ id: seat.id, displayName: seat.displayName, colony: index as SeatColony })));
     const fields: Fields = {
       kind: "public", size: String(size), creatorId: colonies[0]![0]!.id, createdAt: String(at), state: "open",
-      rated: String(!quadrants || settings.ffaLiveEnabled === true), slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode,
+      rated: String(rated), slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode,
       ...(quadrants ? { colonyNames: JSON.stringify(quadrantColonyNames()) } : {}),
     };
     // settleSlots writes the starting lobby once, as an update holding or waiting (and

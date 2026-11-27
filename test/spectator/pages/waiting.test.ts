@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { mountMatches } from "../../../web/src/pages/matches.ts";
 import { lobbyKind, waitingPlayers, waitingType } from "../../../web/src/pages/waiting.ts";
-import type { MatchesView, WaitingAgent, WaitingLobby } from "../../../web/src/matches-page/data.ts";
+import { createMatchesData, type MatchesView, type WaitingAgent, type WaitingLobby } from "../../../web/src/matches-page/data.ts";
 import { colonyColours, colonyNameNote, colourCss } from "../../../src/sim/colonyNames.ts";
 import { dom, type ElementPort } from "./dom.ts";
 
@@ -128,6 +128,19 @@ describe("the Waiting card's lobby rows", () => {
       ["dt:Very Large Colony", "omp-dolphin|omp-dolphin/spar", "dt:Lake Hodges Colony", "coffee-ant1540 ± 80|seat open"]]);
     expect(p.card().byClass("d1p-narrow")[0]!.textContent).not.toMatch(/no opponent yet|not joined yet/);
     p.mounted.destroy();
+  });
+
+  it("reads a waiting house Free-for-all seat and renders the existing Free-for-all row", async () => {
+    const request: typeof fetch = async path => Response.json(path === "/watch/queue" ? {
+      waiting: [{ displayName: "antwars/test", mode: "house-quadrants", waitingSeconds: 5, rating: null }],
+    } : { matches: [], nextPageToken: null });
+    const p = page(), data = createMatchesData(request, v => p.mounted.update(v), { waiting: true });
+    data.refresh();
+    await expect.poll(() => data.view.waiting.status).toBe("ready");
+    expect(p.card().textContent).toContain("Free-for-all: 1");
+    expect(tableRows(p.card())[0]).toContain("Free-for-all");
+    expect(p.card().textContent).not.toContain("no opponent yet");
+    data.destroy(); p.mounted.destroy();
   });
 
   it("tells every lobby's kind by the server's rule for a recording's lobby, Unranked for a public or invite-only lobby", () => {

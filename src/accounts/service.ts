@@ -92,9 +92,9 @@ const REFUSALS = {
   cursor_expired: [410, "That cursor has expired; start again from the first page."],
   house_unavailable: [503, "These rankings are not available yet; try again shortly."],
   no_such_identity: [404, "No identity has that display name."],
-  invalid_mode: [400, "The ranked queue's modes are 1v1, 2v2, 3v3, 4v4, house-1v1, house-2v2, house-3v3 and house-4v4."],
+  invalid_mode: [400, "The ranked queue's modes are 1v1, 2v2, 3v3, 4v4, house-1v1, house-2v2, house-3v3, house-4v4, quadrants and house-quadrants."],
   already_queued: [409, "This identity is already waiting in the ranked queue. Check queue_status, or leave_queue first."],
-  not_house: [403, "Only handles of the antwars username can join index matches."],
+  not_house: [403, "Only handles of the antwars username can join index matches or house-quadrants."],
   no_quadrant_map: [409, "No Quadrants map is available yet, so the quadrants mode cannot be joined."],
   test_only: [400, "A four-colony lobby (mode quadrants) is created only as a test match: pass test: true and size 1. Otherwise four-colony matches come from the quadrants queue."],
   map_test_only: [400, "Only a four-colony test lobby (mode quadrants, test: true, size 1) can name its map; every other lobby's map is drawn. Omit map."],
@@ -206,7 +206,7 @@ const FREE_FOR_ALL_QUEUE_GUIDANCE = 'For a Free-for-all, call join_queue {key, m
 // The ranked queue's pairing and team-mode seating, shared by the three queue operations.
 const QUEUE_GUIDANCE = `Rated games come only from the ranked queue; lobby games are unrated. Public modes are 1v1, 2v2, 3v3, 4v4 and quadrants, each a separate queue. ${FREE_FOR_ALL_QUEUE_GUIDANCE} In 1v1 through 4v4 a join is paired at random with a waiting entry of the same mode whose owner differs from yours, never one of your own username or handles; otherwise it waits, and expires 12 hours after joining; nothing renews it. One entry per identity across all modes; a join while your entry waits is refused. In the two-colony modes, a pairing starts a rated public match: follow read_lobby, then locate_match, and join the match server with your key. In ranked 2v2, 3v3 and 4v4 your one identity plays every seat of its colony, one session per seat: from N agents per colony, connect N sessions to the match's mcpUrl and call join in each with this same key and its own seat, 1 to N; the same key and seat rejoins that seat.`;
 /** The house-mode sentence each queue tool description carries. */
-const HOUSE_QUEUE_GUIDANCE = "Index matches (house-1v1, house-2v2, house-3v3 and house-4v4) admit only handles of the antwars username, pair them with each other at the same size, and give each index-match size its own Antwars Model Index rating. An unpaired index-match entry expires 15 minutes after joining.";
+const HOUSE_QUEUE_GUIDANCE = "Index matches (house-1v1, house-2v2, house-3v3 and house-4v4) admit only handles of the antwars username, pair them with each other at the same size, and give each index-match size its own Antwars Model Index rating. An unpaired index-match entry expires 15 minutes after joining. For a Free-for-all, four distinct antwars handles join house-quadrants, one seat per colony. The same expiry applies; when Free-for-all rating is enabled the match counts toward Free-for-all ratings, not the Model Index.";
 
 /**
  * The public wait stream (src/accounts/waitStream.ts), carried by join_queue, join_lobby and request_challenge. Polling
@@ -424,7 +424,7 @@ export const ACCOUNT_OPERATIONS: readonly AccountOperation[] = [
     }),
 
   operation("join_queue", `Join the ranked matchmaking queue in one mode with your existing username or handle key. ${QUEUE_GUIDANCE} ${WAKE_GUIDANCE} ${WAIT_STREAM_GUIDANCE} ${HOUSE_QUEUE_GUIDANCE}`,
-    z.object({ key, mode: z.string().max(20).describe("The queue mode: 1v1, 2v2, 3v3, 4v4 (agents per colony), or house-1v1 to house-4v4 for antwars handles, or quadrants. In 2v2-4v4 you play every seat of your colony, one session per seat. Choose quadrants for Free-for-all: four different owners, one seat per colony, with a separate Free-for-all rating when enabled.") }),
+    z.object({ key, mode: z.string().max(20).describe("The queue mode: 1v1, 2v2, 3v3, 4v4 (agents per colony), or quadrants. House-only modes: house-1v1 to house-4v4 and house-quadrants (four distinct antwars handles). In 2v2-4v4 you play every seat of your colony, one session per seat. Choose quadrants for Free-for-all: four different owners, one seat per colony, with a separate Free-for-all rating when enabled.") }),
     async ({ lobbies }, args) => {
       const token = newWaitToken();
       const joined = await lobbies.joinQueue(args.key, args.mode, token);

@@ -166,6 +166,7 @@ describe("account guidance without issuing identities", () => {
     for (const name of ["join_queue", "queue_status", "leave_queue"]) expectFreeForAllInstructions(description(name));
     const mode = ACCOUNT_OPERATIONS.find(op => op.name === "join_queue")!.input.shape.mode!.description;
     expect(mode).toMatch(/quadrants for Free-for-all/i);
+    expect(mode).toMatch(/house-only modes:.*house-quadrants \(four distinct antwars handles\)/i);
     expect(mode).toMatch(/separate Free-for-all rating when enabled/i);
   });
 

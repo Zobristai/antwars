@@ -15,7 +15,7 @@ const BIN = fileURLToPath(new URL("../bin/antwars-seat", import.meta.url));
 
 export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-seat/state/)
 
-  setup --handle <antwars/handle> --key-name <KEY_NAME> --mode <house-1v1..house-4v4>
+  setup --handle <antwars/handle> --key-name <KEY_NAME> --mode <house-1v1..house-4v4|house-quadrants>
         --model-label <label> --thinking-level <level> [--seat N] [--service-tier fast]
         [--queuing | --no-queuing]          seat 1 queues by default; seats 2..N do not
         [--parallel]                        queuing seat may queue while another run of its handle plays
