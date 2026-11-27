@@ -4,7 +4,7 @@ import type { Page } from "playwright-core";
 import { DEFAULT_LIVE_CONFIG } from "../../src/live/config.ts";
 import { launchBrowser, servePage } from "../capture/browser.ts";
 import { LiveServer, scripts, waitFor } from "../capture/live-check.ts";
-import { scale2Packets, storedRecording } from "../capture/scale2-recording.ts";
+import { scale2Packets, storedHistory, storedRecording } from "../capture/scale2-recording.ts";
 import { RESTORE_WAIT_MS } from "./context-recovery.ts";
 
 async function lose(page: Page) {
@@ -66,17 +66,24 @@ try {
   assert(beforeReload.playbackTick > reached.playbackTick);
 
   const reloadLost = () => Promise.all([page.waitForEvent("load"), page.clock.fastForward(RESTORE_WAIT_MS)]);
-  // Leave the next document waiting on replay discovery, after it has taken the position
-  // but before it has a recording. Lose that canvas too, then let its replacement load.
-  const discovery = Promise.withResolvers<void>();
-  await page.route("**/matches", () => { discovery.resolve(); }, { times: 1 });
+  // A new result tops the history while the bare replay URL is playing the previous match.
+  const newer = { ...stored, id: stored.id.replace(/-1$/, "-2") };
+  await page.route("**/matches", route => route.fulfill({ json: { matches: [{ id: newer.id }, { id: stored.id }], nextPageToken: null } }));
+  await page.route(`**/${newer.id}`, route => {
+    const reply = storedHistory(new URL(route.request().url()).pathname, newer);
+    if (!reply) return route.fallback();
+    return route.fulfill({ contentType: reply.type, body: Buffer.from(reply.body) });
+  });
+  // Interrupt the first recording read in the recovering document as well.
+  const loading = Promise.withResolvers<void>();
+  await page.route("**/replays/*", () => { loading.resolve(); }, { times: 1 });
   await lose(page);
   await reloadLost();
-  await discovery.promise;
+  await loading.promise;
   await lose(page);
   await reloadLost();
   assert.equal(page.url(), `${url}#board`);
-  await ready(page);
+  assert.equal((await ready(page)).source, `replay /replays/${stored.id}`, "recovery must keep the original match");
   await waitFor(page, "the replay to resume", async () => (await frame(page)).playbackTick === beforeReload.playbackTick, 5000);
   // Stall a viewer's seek while its playback buffer is being rebuilt from the beginning.
   const rebuilding = Promise.withResolvers<void>();
@@ -98,6 +105,8 @@ try {
   console.log(`Replay: interrupted seek resumed at ${seekMs} ms.`);
   assert.deepEqual(errors.filter(e => e.startsWith("page error:")), []);
   console.log(`Replay: identical pixels after restore; automatic 2D and interrupted recovery reloads resumed at tick ${beforeReload.playbackTick}.`);
+  await page.reload();
+  assert.equal((await ready(page)).source, `replay /replays/${newer.id}`, "an ordinary refresh should discover the newest match");
   await page.context().close();
 
   const server = new LiveServer({ ...DEFAULT_LIVE_CONFIG, delaySeconds: 0 });
