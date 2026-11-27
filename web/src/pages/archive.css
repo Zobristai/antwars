@@ -796,8 +796,7 @@ td.c-model > .d1p-colony { display: block; }
 .d1p :is(.d1p-ffa-table, .d1p-ffa-narrow) [data-result="1"] { color: var(--aw-ink-2); }
 :is(.d1p-ffa-table, .d1p-ffa-narrow) [data-result="1"]::before { background: var(--aw-raise); box-shadow: none; }
 .d1p .d1p-ffa-table .d1p-form-mark::before { inset: 0 1px; }
-.d1p-ffa-narrow .d1p-lb-head { display: none; }
-.d1p-ffa-narrow .d1p-lb-rows > li { grid-template-columns: auto minmax(0, 1fr) auto; padding-block: var(--aw-space-3); row-gap: var(--aw-space-2); }
+.d1p-ffa-narrow .d1p-lb-rows > li { padding-block: var(--aw-space-3); row-gap: var(--aw-space-2); }
 .d1p-ffa-narrow .d1p-lb-stats { grid-column: 1 / -1; justify-content: space-between; gap: var(--aw-space-2); }
 .d1p-ffa-narrow .d1p-stat { display: inline-flex; align-items: center; gap: var(--aw-space-2); }
 .d1p-ffa-narrow .d1p-stat > .d1p-kicker { font: inherit; letter-spacing: normal; text-transform: none; margin: 0; color: var(--aw-ink-3); }

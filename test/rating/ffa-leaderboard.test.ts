@@ -161,8 +161,9 @@ it("keeps the places when a replay is private, unprovable, absent or marked test
   docs.set(`ratings-ffa/${id}`, { estimator: FFA_ESTIMATOR, mu: "28", sigma: "3", ratedMatches: "5", places: "[2,1,1,1]",
     form: JSON.stringify(games.map((_, i) => ({ matchId: lobby(i), place: places[i] }))) });
   for (const [i, game] of games.entries()) {
+    if (game === "missing") continue; // Neither a lobby nor a replay: this place is still returned.
     docs.set(`lobbies/${lobby(i)}`, { seats: "[]" });
-    if (game !== "missing") docs.set(`watchMatches/${lobby(i)}`, { replayId: replays[i] });
+    docs.set(`watchMatches/${lobby(i)}`, { replayId: replays[i] });
     if (game !== "unproven") docs.set(`replayOwnership/${replays[i]}`, { version: "1", lobbyId: lobby(i), ownerIds: JSON.stringify([game === "excluded" ? hidden : id]) });
   }
   const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "found", lobbyId: lobby(2) }) }, [hidden]);

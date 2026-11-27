@@ -27,6 +27,17 @@ it.each([1280, 390])("fits seven Free-for-all records and opens their recent rep
     const rows = page.locator(width === 390 ? ".d1p-ffa-narrow li" : ".d1p-ffa-table tbody tr");
     await rows.nth(6).waitFor();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    if (width === 390) {
+      const head = page.locator(".d1p-ffa-narrow .d1p-lb-head");
+      expect(await head.isVisible()).toBe(true);
+      expect(await head.locator(":scope > span").allTextContents()).toEqual(["#", "Name", "Rating"]);
+      const columns = (row: Element) => [...row.children].slice(0, 3).map((cell, i) => {
+        const rect = cell.getBoundingClientRect();
+        return i === 1 ? rect.left : rect.right;
+      });
+      const aligned = await head.evaluate(columns);
+      for (const row of await rows.all()) expect(await row.evaluate(columns)).toEqual(aligned);
+    }
     const measure = await rows.evaluateAll(nodes => nodes.map(row => {
       const name = row.querySelector(".c-name, .is-lead")!;
       const range = document.createRange(); range.selectNodeContents(name);
