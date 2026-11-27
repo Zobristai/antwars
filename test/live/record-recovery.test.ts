@@ -19,6 +19,7 @@ import { ReplayCreateError, type ReplayStore } from "../../src/replays/store.ts"
 import { rulesConfig } from "../../src/sim/config.ts";
 import { tickLine } from "../../src/sim/log.ts";
 import { createMatch } from "../../src/sim/map.ts";
+import { quadrantMapConfig } from "../../src/sim/quadrantMaps.ts";
 import { step } from "../../src/sim/step.ts";
 import { ManualClock } from "./helpers.ts";
 
@@ -27,7 +28,7 @@ import { createOnlyRecords } from "../records/create-only-records.js";
 const close: (() => void)[] = [];
 afterEach(() => { close.splice(0).forEach(fn => fn()); vi.restoreAllMocks(); });
 
-function pipeline(options: { rated?: boolean; ratings?: () => Promise<readonly StreamRatingChange[] | null>; pace?: number; private?: boolean;
+function pipeline(options: { quadrants?: boolean; rated?: boolean; ratings?: () => Promise<readonly StreamRatingChange[] | null>; pace?: number; private?: boolean;
   startRatings?: LiveHubOptions["startRatings"]; beforePublication?: LiveHubOptions["beforeRecordingPublication"]; lobbyId?: string } = {}) {
   const clock = new ManualClock(), pending = new Map<string, Uint8Array>(), published = new Map<string, Uint8Array>();
   const privateObjects = new Map<string, Uint8Array>();
@@ -56,7 +57,8 @@ function pipeline(options: { rated?: boolean; ratings?: () => Promise<readonly S
   const deps: RecordServiceDeps = { inputs, records: createOnlyRecords(publicStore, archive), replays, codeVersion: "a".repeat(40), now: () => clock.now(), log: line => logs.push(line) };
   const service = (extra: Partial<RecordServiceDeps> = {}) => createRecordService({ ...deps, ...extra });
   function play(seq = 1) {
-    let state = createMatch(6006, playable({ ...rulesConfig("redesign"), matchTicks: 4 }));
+    const config = playable({ ...rulesConfig("redesign"), matchTicks: 4 });
+    let state = createMatch(6006, options.quadrants ? quadrantMapConfig("strait", config) : config);
     hub.startMatch(seq, state, { lobbyId: options.lobbyId ?? "test-lobby", visibility: options.private ? "private" : "public", rated: options.rated ?? false });
     while (state.result === null) {
       const commands = state.tick === 0 ? [{ type: "join" as const, agentId: "secret-agent", modelLabel: "test-agent" }] : [];
@@ -166,6 +168,18 @@ describe("durable match-end recording recovery", () => {
     expect(p.record(input.id).unavailable).not.toContain(RATINGS_UNAVAILABLE);
     expect(p.attempts()).toBe(1);
     expect([...p.published.keys()]).toHaveLength(2);
+  });
+
+  it("publishes a rated Free-for-all recording without a missing-ratings note", async () => {
+    const p = pipeline({ rated: true, quadrants: true }), input = await ended(p);
+    expect(input.rated).toBe(true);
+    p.clock.advance(input.publishAfter! - p.clock.now());
+    await vi.waitFor(() => expect(p.published.has(`${input.id}.bin`)).toBe(true));
+    await p.service().sweep();
+    const record = p.record(input.id);
+    expect(record).toMatchObject({ status: "complete", setup: { colonies: 4 } });
+    expect(record.result).not.toHaveProperty("ratingChanges");
+    expect(record.unavailable).not.toContain(RATINGS_UNAVAILABLE);
   });
 
   it.each([false, true])("publishes a rated fallback with ratings explicitly unavailable after grace (server stopped: %s)", async stopped => {
