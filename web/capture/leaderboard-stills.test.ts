@@ -29,7 +29,7 @@ describe("strict fake-only leaderboard captures", () => {
     expect(source).toContain("(touch && box.height < 44) || offScreen || !hit || !node.contains(hit)");
   });
   it("expects the page's own board choices, opening board and table headings", () => {
-    expect(MODE_LABELS).toEqual(BOARD_GROUPS.flatMap(group => group.modes.map(mode => `${group.label} ${sizeOf(mode)}`)));
+    expect(MODE_LABELS).toEqual(BOARD_GROUPS.flatMap(group => group.modes.map(mode => `${group.label} ${mode === "quadrants" ? "Free-for-all" : sizeOf(mode)}`)));
     const opening = BOARD_GROUPS.find(group => group.modes.includes(OPENING_MODE))!;
     expect(expectedView("populated")).toMatchObject({ headings: tableTitle({ id: "aw-house-mode-ranking", title: "" }, OPENING_MODE), pressed: `${opening.label} ${sizeOf(OPENING_MODE)}` });
     expect(expectedView("house-mode").headings).toBe(tableTitle({ id: "aw-house-mode-ranking", title: "" }, "house-2v2"));

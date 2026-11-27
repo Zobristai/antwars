@@ -10,6 +10,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterEach, describe, expect, it } from "vitest";
 import type { AccountStores } from "../../src/accounts/service.ts";
 import { createIdentities } from "../../src/identity/identities.ts";
+import { FFA_ESTIMATOR } from "../../src/rating/ffa.ts";
+import { memoryWatchStore } from "../live/watch-fixtures.ts";
 import { LiveHub } from "../../src/live/hub.ts";
 import type { WatchRegistry } from "../../src/live/watch-registry.ts";
 import { watchRoutes } from "../../src/live/watch-routes.ts";
@@ -17,7 +19,7 @@ import { createLobbies } from "../../src/lobby/lobbies.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { startServer } from "../../src/server.ts";
 import type { MapDefinition } from "../../src/sim/config.ts";
-import { createFirestore, type Fields, type Store, type Write } from "../../src/store/firestore.ts";
+import { createFirestore, type Store, type Write } from "../../src/store/firestore.ts";
 import { createMatchesData } from "../../web/src/matches-page/data.ts";
 import { waitingType } from "../../web/src/pages/waiting.ts";
 import { shortConfig, tempDir, TEST_MCP_CONFIG } from "../server/helpers.ts";
@@ -43,7 +45,7 @@ const FIXTURE: MapDefinition = {
 /** A reply body, read field by field in assertions. */
 type Body = any;
 interface Reply { readonly ok: boolean; readonly status: number; readonly body: Body }
-type Call = (op: string, args?: Record<string, unknown>) => Promise<Reply>;
+type Call = (op: string, args?: Record<string, unknown>, signal?: AbortSignal) => Promise<Reply>;
 
 const closers: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => { for (const close of closers.splice(0).reverse()) await close(); });
@@ -52,17 +54,17 @@ async function mcp(port: number): Promise<Call> {
   const client = new Client({ name: "quadrants-api-test", version: "0.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
   closers.push(() => client.close().catch(() => {}));
-  return async (op, args = {}) => {
-    const result = await client.callTool({ name: op, arguments: args });
+  return async (op, args = {}, signal) => {
+    const result = await client.callTool({ name: op, arguments: args }, undefined, { signal });
     const text = (result.content as { text?: string }[])[0]?.text ?? "";
     return { ok: result.isError !== true, status: 0, body: result.structuredContent ?? text };
   };
 }
 
 function http(port: number): Call {
-  return async (op, args = {}) => {
+  return async (op, args = {}, signal) => {
     const res = await fetch(`http://127.0.0.1:${port}/api/${op}`, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(args),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(args), signal,
     });
     return { ok: res.status === 200, status: res.status, body: await res.json() };
   };
@@ -72,7 +74,7 @@ const TRANSPORTS: readonly [string, (port: number) => Promise<Call>][] = [["MCP"
 
 /** Sequential transactions; a create of an existing document fails, as Firestore's does. */
 function memoryStore(): Store {
-  const docs = new Map<string, Fields>();
+  const { docs, store } = memoryWatchStore();
   return {
     namespace: "quadrants-api-test",
     async get(path) { return docs.get(path) ?? null; },
@@ -87,7 +89,7 @@ function memoryStore(): Store {
       }
       return next.result;
     },
-    async query() { throw new Error("the memory store does not query collections"); },
+    query: store.query,
   };
 }
 
@@ -114,7 +116,7 @@ async function world(backend: string, quadrantMaps: readonly MapDefinition[] | "
   await new Promise<void>(resolve => watch.listen(0, "127.0.0.1", resolve));
   closers.push(() => new Promise<void>(resolve => { watch.closeAllConnections(); watch.close(() => resolve()); }));
   const watchOrigin = `http://127.0.0.1:${(watch.address() as AddressInfo).port}`;
-  return { clock, port: server.port, watchOrigin, store, lobbies };
+  return { clock, port: server.port, watchOrigin, store, lobbies, ratings: accounts.ratings };
 }
 
 async function ok(call: Call, op: string, args: Record<string, unknown>): Promise<Body> {
@@ -165,6 +167,28 @@ async function waitingView(origin: string): Promise<{ body: Body; page: { status
 
 const withoutSeconds = (body: Body) => ({ ...body, waiting: body.waiting.map(({ waitingSeconds: _, ...row }: Body) => row) });
 
+it.each(TRANSPORTS)("detaches the %s page reader on cancellation without stopping the shared build", async (_transport, open) => {
+  const w = await world("memory"), call = await open(w.port);
+  const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>(), detached = Promise.withResolvers<void>();
+  const query = w.store.query, page = w.ratings.ffaLeaderboard.bind(w.ratings);
+  let scans = 0;
+  w.store.query = async (collection, options) => {
+    if (collection === "ratings-ffa") { scans++; started.resolve(); await finish.promise; }
+    return query(collection, options);
+  };
+  w.ratings.ffaLeaderboard = async options => {
+    try { return await page(options); }
+    finally { if (options?.signal?.aborted) detached.resolve(); }
+  };
+  const stop = new AbortController();
+  const response = call("leaderboard", { mode: "quadrants" }, stop.signal).catch(() => undefined);
+  try {
+    await started.promise; stop.abort(); await detached.promise; await response;
+  } finally { finish.resolve(); }
+  expect(await ok(call, "leaderboard", { mode: "quadrants" })).toEqual({ entries: [] });
+  expect(scans).toBe(1);
+});
+
 for (const backend of ["memory", "Firestore emulator"]) {
   describe.skipIf(backend === "Firestore emulator" && !host)(`the quadrants mode through the account API (${backend})`, { timeout: 120_000 }, () => {
     describe.each(TRANSPORTS)("over %s", (transport, open) => {
@@ -198,7 +222,7 @@ for (const backend of ["memory", "Firestore emulator"]) {
         expect(lobby).not.toHaveProperty("result");
       });
 
-      it("refuses quadrants with its reason while the rotation is empty, writing no entry, and refuses a quadrants rating", async () => {
+      it("refuses quadrants with its reason while the rotation is empty, writing no entry, without requiring a map to read an unrated identity", async () => {
         const w = await world(backend, []);
         const call = await open(w.port);
         const ann = await claim(call, "Ann");
@@ -207,8 +231,23 @@ for (const backend of ["memory", "Firestore emulator"]) {
         if (transport === "HTTP") expect(refused.status).toBe(409);
         expect(await ok(call, "queue_status", { key: ann.key })).toEqual({ queue: { state: "none" } });
         const rating = await call("rating", { displayName: "Ann", mode: "quadrants" });
-        expect(rating.ok).toBe(false);
-        if (transport === "HTTP") expect(rating.status).toBe(400);
+        expect(rating.ok).toBe(true);
+        expect(rating.body).toMatchObject({ displayName: "Ann", rating: 0, ratedMatches: 0 });
+      });
+
+      it("serves Free-for-all standings and the same individual score without a key", async () => {
+        const w = await world(backend);
+        const call = await open(w.port);
+        const ann = await claim(call, "Ann"), bee = await claim(call, "Bee");
+        const rows = [[ann.id, "30", "6"], [bee.id, "26", "3"]] as const;
+        await w.store.transaction(async () => ({ result: null, writes: rows.map(([id, mu, sigma]) => ({
+          op: "create", path: `ratings-ffa/${id}`, fields: { mu, sigma, ratedMatches: "2", estimator: FFA_ESTIMATOR },
+        })) }));
+        const board = await ok(call, "leaderboard", { mode: "quadrants" });
+        expect(board.entries.map((row: Body) => [row.displayName, row.rating])).toEqual([["Bee", 17], ["Ann", 12]]);
+        expect(await ok(call, "rating", { displayName: "Bee", mode: "quadrants" })).toEqual({
+          identityId: bee.id, displayName: "Bee", mu: 26, sigma: 3, rating: 17, ratedMatches: 2,
+        });
       });
 
       it("admits a quadrants join on the shipped pool", async () => {

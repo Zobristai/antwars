@@ -62,7 +62,7 @@ describe("leaderboard page mode choice", () => {
   it("opens on the Antwars Model Index 1v1, offers both groups 1v1 to 4v4, and reads each ranked mode's house and everyone rankings separately", async () => {
     const request = server({ ...emptyIndex, ...publicReads(SIZES, mode => [row(`antwars/${mode}-model`, 1600)], mode => [row(`${mode}-player`, 1700), row(`antwars/${mode}-model`, 1600)]) });
     const p = mount(request);
-    expect(p.modes()).toEqual([...SIZES.map(size => `Antwars Model Index ${size}`), ...SIZES.map(size => `Ranked ${size}`)]);
+    expect(p.modes()).toEqual([...SIZES.map(size => `Antwars Model Index ${size}`), ...SIZES.map(size => `Ranked ${size}`), "Ranked Free-for-all"]);
     expect(p.pressed()).toEqual(["Antwars Model Index 1v1"]);
     await p.settled();
     expect(sent(request)).toEqual(['{"limit":50,"mode":"house-1v1"}']);

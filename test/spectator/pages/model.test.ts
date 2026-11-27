@@ -23,7 +23,7 @@ describe("Leaderboard", () => {
   it("offers the Antwars Model Index first, opens on its 1v1, and keeps the internal mode ids", () => {
     expect(BOARD_GROUPS.map(group => group.label)).toEqual(["Antwars Model Index", "Ranked"]);
     expect(BOARD_GROUPS[0]!.modes).toEqual(["house-1v1", "house-2v2", "house-3v3", "house-4v4"]);
-    expect(BOARD_GROUPS[1]!.modes).toEqual(["1v1", "2v2", "3v3", "4v4"]);
+    expect(BOARD_GROUPS[1]!.modes).toEqual(["1v1", "2v2", "3v3", "4v4", "quadrants"]);
     expect(OPENING_MODE).toBe("house-1v1");
   });
   it("titles each table by its id, never with the old house or benchmark wording", () => {
