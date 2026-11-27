@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -22,12 +23,14 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 
 // Exercises the controller, captured policy, real rating service, registry round-trip,
 // discovery and HTTP streams together; it never starts a match server or accesses production.
-describe("house spectator zero-delay wiring", () => {
-  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("%s stays live through its committed final result under default settings", async mode => {
+describe("house spectator delay", () => {
+  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("%s remains listed through delayed playback of its committed final result under default settings", async mode => {
     const size = Number(mode[6]);
     const { docs, store } = memoryWatchStore();
-    docs.set("identities/a", { displayName: "antwars/alice" });
-    docs.set("identities/b", { displayName: "antwars/bob" });
+    const [a, b] = [randomUUID(), randomUUID()] as const;
+    docs.set(`identities/${a}`, { kind: "username", displayName: "antwars/alice" });
+    docs.set(`identities/${b}`, { kind: "username", displayName: "antwars/bob" });
+    docs.set(`lobbies/${lobbyId}`, { seats: JSON.stringify([{ id: a }, { id: b }]) });
     holdMatch(docs, lobbyId, "run");
     const ratings = createRatings(store), registry = createWatchRegistry(store);
     let ended = false;
@@ -35,12 +38,12 @@ describe("house spectator zero-delay wiring", () => {
       readLobby: async () => ({ ok: true, value: {
         id: lobbyId, kind: "public", rated: true, mode, size, slot: "public-0", state: ended ? "ended" : "holding",
         outcome: ended ? "draw" : null,
-        colonies: [Array.from({ length: size }, () => ({ id: "a", displayName: "antwars/alice" })), Array.from({ length: size }, () => ({ id: "b", displayName: "antwars/bob" }))],
+        colonies: [Array.from({ length: size }, () => ({ id: a, displayName: "antwars/alice" })), Array.from({ length: size }, () => ({ id: b, displayName: "antwars/bob" }))],
       } }),
       resolveSlot: async () => ({ runId: "run" }), listPublic: async () => [], isInviteCurrent: async () => false,
     } } as unknown as AccountStores;
     const controller = createWatchController({ accounts, registry, slot: "public-0", origin: "http://127.0.0.1:9001" });
-    const clock = new ManualClock(), hub = new LiveHub({ clock, config: DEFAULT_LIVE_CONFIG, ...controller.hubOptions });
+    const clock = new ManualClock(), hub = new LiveHub({ clock, config: DEFAULT_LIVE_CONFIG, replayStore: { create: async () => {} }, ...controller.hubOptions });
     const streams = new RecordedServer(hub, clock);
     cleanup.push(() => { hub.close(); controller.close(); });
     await streams.listen(); cleanup.push(() => streams.close());
@@ -52,15 +55,15 @@ describe("house spectator zero-delay wiring", () => {
     const origin = `http://127.0.0.1:${(gateway.address() as AddressInfo).port}`;
     const abort = new AbortController(); cleanup.push(() => abort.abort());
 
-    const seats = (["a", "b"] as const).flatMap((identityId, colony) => Array.from({ length: size }, (_, index) => ({
-      identityId, displayName: identityId === "a" ? "antwars/alice" : "antwars/bob", colony: colony as 0 | 1, seat: index + 1,
+    const seats = ([a, b] as const).flatMap((identityId, colony) => Array.from({ length: size }, (_, index) => ({
+      identityId, displayName: identityId === a ? "antwars/alice" : "antwars/bob", colony: colony as 0 | 1, seat: index + 1,
     })));
     await controller.prepare(lobbyId, seats);
     let state = step(createMatch(417, playable({ ...rulesConfig("redesign"), matchTicks: 3 })), seats.map(seat => ({
-      type: "join" as const, agentId: `${seat.identityId}-${seat.seat}`, placement: seat.colony,
+      type: "join" as const, agentId: `${seat.identityId}:${seat.seat}`, placement: seat.colony,
     }))).state;
     const live = { agentInfo: (agentId: string) => {
-      const [identityId, seat] = agentId.split("-");
+      const [identityId, seat] = agentId.split(":");
       return { seatKey: seat === "1" ? identityId : `${identityId}#${seat}` };
     } } as unknown as LiveGame;
     controller.started(1, state, live, hub);
@@ -69,38 +72,43 @@ describe("house spectator zero-delay wiring", () => {
     // Each seat by its stream name, with no model label (its agent reported none), and its unrated-yet figures in the house mode.
     const colony = (name: string) => Array.from({ length: size }, (_, index) => ({ displayName: size > 1 ? `${name} #${index + 1}` : name, modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1500, rd: 350, ratedMatches: 0 }));
     // A Model Index match also carries its harness phase by its start (here time 0, before every boundary).
-    expect(catalog.matches).toEqual([{ lobbyId, startedAt: 0, rated: true, delaySeconds: 0, colonies: [colony("antwars/alice"), colony("antwars/bob")],
+    expect(catalog.matches).toEqual([{ lobbyId, startedAt: 0, rated: true, delaySeconds: 300, colonies: [colony("antwars/alice"), colony("antwars/bob")],
       matchType: { kind: "index", size }, harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } }]);
     expect(await (await fetch(`${origin}/watch/status/${lobbyId}`, { signal: abort.signal })).json()).toMatchObject({
-      lobbyId, started: true, playbackFinished: false, delaySeconds: 0,
+      lobbyId, started: true, playbackFinished: false, delaySeconds: 300,
     });
     for (const path of ["/live/1", `/watch/live/${lobbyId}`]) {
       const response = await fetch(streams.url(path), { signal: abort.signal });
       expect(response.status).toBe(200);
       const data = streams.responses.find(row => row.path === path)!.writes.filter(write => write.text.startsWith("data:"));
-      expect(data).toHaveLength(1); expect(data[0]!.t).toBe(0);
+      expect(data).toHaveLength(0);
     }
     while (!state.result) {
       const out = step(state, []); clock.advance(100);
       if (out.state.result) {
-        await ratings.applyResult({ matchId: lobbyId, mode, teams: [["a"], ["b"]], winner: "draw" });
+        await ratings.applyResult({ matchId: lobbyId, mode, teams: [[a], [b]], winner: "draw" });
         ended = true;
       }
       hub.pushTick(1, out); state = out.state;
     }
     const matchEnd = clock.now();
+    clock.advance(299_999);
+    expect(hub.watchStatus(lobbyId)?.playbackFinished).toBe(false);
+    expect((await (await fetch(`${origin}/watch/catalog`)).json()).matches).toHaveLength(1);
+    const recording = async () => (await (await fetch(`${origin}/watch/recording/${lobbyId}`)).json()).replayId;
+    expect(await recording()).toBeNull();
+    clock.advance(1);
     await vi.waitFor(() => expect(hub.watchStatus(lobbyId)?.playbackFinished).toBe(true));
-    // No clock advance for delayed playback: asynchronous rating reads alone may settle.
-    expect(clock.now()).toBe(matchEnd);
     for (const path of ["/live/1", `/watch/live/${lobbyId}`]) {
       const data = streams.responses.find(row => row.path === path)!.writes.filter(write => write.text.startsWith("data:"));
       const final = decodeData(data.at(-1)!.text.slice(6).trim()).events.find(event => event.kind === "end");
       expect(final?.kind).toBe("end");
       if (final?.kind !== "end") throw new Error("Missing final result");
       expect(final.result.ratingChanges).toHaveLength(2 * size);
-      expect(data.at(-1)!.t).toBe(matchEnd);
+      expect(data.at(-1)!.t).toBe(matchEnd + 300_000);
     }
     await vi.waitFor(async () => expect((await registry.read(lobbyId))?.playbackFinished).toBe(true));
     expect((await (await fetch(`${origin}/watch/catalog`, { signal: abort.signal })).json()).matches).toEqual([]);
+    await vi.waitFor(async () => expect(await recording()).toEqual(expect.any(String)));
   });
 });

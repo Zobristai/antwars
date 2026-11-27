@@ -13,7 +13,7 @@ describe("per-match spectator admission", () => {
     input.rated = false;
     input.mode = "1v1";
     expect(captured).toEqual({ lobbyId: "first", visibility: "private", rated: true, mode: "house-2v2" });
-    expect(spectatorDelaySeconds(captured)).toBe(0);
+    expect(spectatorDelaySeconds(captured)).toBe(300);
     expect(Object.isFrozen(captured)).toBe(true);
   });
 
@@ -24,15 +24,15 @@ describe("per-match spectator admission", () => {
     }
   });
 
-  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("%s has no delay regardless of rating or visibility", mode => {
+  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("%s has the rated delay regardless of rating or visibility", mode => {
     for (const visibility of ["private", "public"] as const) for (const rated of [true, false]) {
-      expect(spectatorDelaySeconds({ lobbyId: "match", visibility, rated, mode })).toBe(0);
+      expect(spectatorDelaySeconds({ lobbyId: "match", visibility, rated, mode })).toBe(300);
     }
   });
 
-  it("rejects invented house modes rather than treating a prefix as permission for zero delay", () => {
-    const invalid = { lobbyId: "match", visibility: "public" as const, rated: true, mode: "house-5v5" as RankedMode };
-    expect(spectatorDelaySeconds(invalid)).toBe(300);
+  it("rejects invented house modes rather than treating a prefix as an index match", () => {
+    const invalid = { lobbyId: "match", visibility: "public" as const, rated: false, mode: "house-5v5" as RankedMode };
+    expect(spectatorDelaySeconds(invalid)).toBe(60);
     expect(() => captureMatchAccess(invalid)).toThrow("Invalid spectator match access policy");
   });
 

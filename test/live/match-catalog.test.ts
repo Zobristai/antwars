@@ -78,7 +78,7 @@ describe("public spectator catalog projection", () => {
       { ...publicMatch, lobbyId: "lobby", mode: null, rated: false, startedAt: beforePin + 2 },
     ], [], new Map(), new Map(), new Map([["lobby", drawColonyNames("lobby")]]));
     expect(result.matches).toEqual([
-      { lobbyId: "index", startedAt: beforePin, rated: true, delaySeconds: 0, colonies: [[], []], matchType: null,
+      { lobbyId: "index", startedAt: beforePin, rated: true, delaySeconds: 300, colonies: [[], []], matchType: null,
         harnessPhase: { phase: "rounds 26-30", possibleEffortMismatch: false } },
       { lobbyId: "ranked", startedAt: beforePin + 1, rated: true, delaySeconds: 300, colonies: [[], []], matchType: null },
       { lobbyId: "lobby", startedAt: beforePin + 2, rated: false, delaySeconds: 60, colonies: [[], []], matchType: null, colonyNames: drawColonyNames("lobby") },

@@ -289,23 +289,23 @@ describe("shared spectator HTTP routes", () => {
     expect((await request(f.gatewayOrigin, path, "current")).status).toBe(404);
   }, 60_000);
 
-  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("reports zero delay for a %s lobby before registration and after playback finishes", async mode => {
+  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("reports the rated delay for a %s lobby before registration and after playback finishes", async mode => {
     const f = await fixture("public");
     f.lobbies.set(second, { ...lobby(second, "public"), mode });
     expect(await (await request(f.gatewayOrigin, `/watch/status/${second}`)).json()).toEqual({
-      lobbyId: second, started: false, playbackFinished: false, delaySeconds: 0,
+      lobbyId: second, started: false, playbackFinished: false, delaySeconds: 300,
     });
     await f.registry.register({ lobbyId: second, visibility: "public", rated: true, mode, startedAt: 0,
       origin: f.ownerOrigin, slot: "public-0", runId: "run" });
     const catalog = await (await request(f.gatewayOrigin, "/watch/catalog")).json();
     // Each seat with its rating, RD and rated-match count in the match's mode, and the Model Index match's harness phase
     // by its start (here time 0, before every boundary).
-    expect(catalog.matches).toContainEqual({ lobbyId: second, rated: true, startedAt: 0, delaySeconds: 0, colonies: [
+    expect(catalog.matches).toContainEqual({ lobbyId: second, rated: true, startedAt: 0, delaySeconds: 300, colonies: [
       [{ displayName: "alice", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1612.4, rd: 80, ratedMatches: 12 }], [{ displayName: "bob", modelLabel: null, thinkingLevel: null, serviceTier: null, rating: 1490, rd: 80, ratedMatches: 12 }],
     ], matchType: { kind: "index", size: 1 }, harnessPhase: { phase: "rounds 1-7", possibleEffortMismatch: true } });
     await f.registry.playbackFinished(second, "run");
     expect(await (await request(f.gatewayOrigin, `/watch/status/${second}`)).json()).toEqual({
-      lobbyId: second, started: true, playbackFinished: true, delaySeconds: 0,
+      lobbyId: second, started: true, playbackFinished: true, delaySeconds: 300,
     });
   });
 
