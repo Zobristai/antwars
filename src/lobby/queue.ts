@@ -21,7 +21,7 @@ import { isWaitToken, matchedQueueWaitWrites, repointWrites, waitPath, type Wait
  * House modes admit only handles of the antwars username (refused `not_house`
  * otherwise) and pair them with each other.
  *
- * Quadrants is an unrated four-colony mode: a join waits until three waiting entries
+ * Free-for-all (quadrants) has its own rating when enabled: a join waits until three waiting entries
  * exist whose owners differ from each other and from the joiner's, then the four become
  * one public lobby of four one-seat colonies. It is refused `no_quadrant_map` while its
  * map rotation holds no quadrant map.
@@ -41,7 +41,7 @@ export function queueTtl(mode: string | undefined): number {
   return isQueueMode(mode) && QUEUE_MODES[mode]?.house ? HOUSE_QUEUE_TTL_MS : QUEUE_TTL_MS;
 }
 
-/** A queue's mode: a ranked mode, or the unrated four-colony quadrants. */
+/** A queue's mode: a ranked mode, or the four-colony Free-for-all. */
 export type QueueMode = RankedMode | "quadrants";
 
 export const QUEUE_MODES: Partial<Record<QueueMode, { readonly size: LobbySize; readonly house: boolean; readonly colonies: 2 | 4 }>> = {

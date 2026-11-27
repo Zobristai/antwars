@@ -726,7 +726,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     PRIVATE_SLOTS="$LIVE_PRIVATE_SLOTS"
     # Recorded matches are handed to the record service at this commit; username
     # claims are counted per client source (src/accounts/caller.ts).
-    EXTRA_ENV=",ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET,ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET,ANTWAR_CODE_VERSION=$1,ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client"
+    EXTRA_ENV=",ANTWAR_REPLAY_BUCKET=$REPLAY_BUCKET,ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET,ANTWAR_CODE_VERSION=$1,ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client,ANTWAR_FFA_RATING_ENABLED=true"
   }
 
   # Sets RECORDS_FLAGS, the record service's whole shape at commit $1. The
@@ -1656,7 +1656,7 @@ if [[ "${1:-}" == preview || "${1:-}" == preview-remove || "${1:-}" == slots || 
     # public slots' operator token secret.
     # ANTWAR_MEMORY_LIMIT is --memory's own value (GAME_MEMORY): the post-mortem's re-run limit where the control groups set
     # none. The post-mortem still needs cgroup v2 to read its memory, hence --execution-environment gen2 (game only).
-    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY"
+    GAME_ENV="^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_FFA_RATING_ENABLED=true;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY"
     GAME_SECRETS="ANTWAR_PRIVATE_REPLAY_KEY=antwar-private-replay-key:1"
     GAME_REMOVE_SECRETS=()
     if [[ "$PUBLIC_EXCLUDED_OWNER_IDS_SECRET_VERSION" == disable ]]; then GAME_REMOVE_SECRETS=(--remove-secrets ANTWARS_PUBLIC_EXCLUDED_OWNER_IDS)
@@ -2046,7 +2046,7 @@ GAME_MEMORY=4Gi
 # live slot settings (ANTWAR_PUBLIC_SLOTS, ANTWAR_PRIVATE_SLOTS,
 # ANTWAR_SLOT_URL_TEMPLATE), ANTWAR_LOAD_BALANCER_ADDRESS (the antwars.ai
 # forwarding-rule addresses, read at deploy time) and the username claim limit's rule
-# (ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client), and ANTWAR_MEMORY_LIMIT, --memory's own value, the post-mortem's re-run
+# (ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client), the Free-for-all rating switch, and ANTWAR_MEMORY_LIMIT, --memory's own value, the post-mortem's re-run
 # limit where the control groups set none (it still needs cgroup v2, hence gen2); variables set outside this script are kept.
 # Its ^;^ prefix makes ; the separator, so the address list's commas stay inside one value.
 
@@ -2103,7 +2103,7 @@ CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud builds submit "$WORK/source.tgz" \
 stamp gcloud run deploy antwar --image "$IMAGE" --no-traffic ...
 deploy_named antwar \
   --image "$IMAGE" "${PUBLIC_SECRET_FLAGS[@]}" \
-  --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY" \
+  --update-env-vars "^;^GCLOUD_PROJECT=$PROJECT;ANTWAR_RECORD_INPUT_BUCKET=$RECORD_INPUT_BUCKET;ANTWAR_CODE_VERSION=$SHA;ANTWAR_PUBLIC_SLOTS=$LIVE_PUBLIC_SLOTS;ANTWAR_PRIVATE_SLOTS=$LIVE_PRIVATE_SLOTS;ANTWAR_SLOT_URL_TEMPLATE=$SLOT_URL_TEMPLATE;ANTWAR_LOAD_BALANCER_ADDRESS=$LB_ADDRESSES;ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client;ANTWAR_FFA_RATING_ENABLED=true;ANTWAR_MEMORY_LIMIT=$GAME_MEMORY" \
   --service-account "$RUN_SA" \
   --min-instances 1 --max-instances 1 \
   --max 1 \

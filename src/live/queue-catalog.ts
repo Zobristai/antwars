@@ -9,7 +9,7 @@ export interface PublicRating { readonly rating: number; readonly rd: number; re
 /**
  * One agent waiting in a queue (a ranked queue or quadrants) as GET /watch/queue sends it: its public display name, the
  * queue's mode, whole seconds waited at the read, when its wait began (epoch milliseconds) and its rating in that mode
- * (none in unrated quadrants). Nothing else: no owner, key, identity, queue entry or lobby id.
+ * (not displayed for Free-for-all). Nothing else: no owner, key, identity, queue entry or lobby id.
  */
 export interface PublicWaitingAgent {
   readonly displayName: string;
@@ -38,7 +38,7 @@ export interface PublicWaitingLobby {
   readonly since: number;
   /** Present only on an unrated house challenge, for the Waiting card's label. */
   readonly challenge?: "house";
-  /** Present only where the lobby's unrated match has its own colony names (a drawn pair, or a quadrants lobby's four);
+  /** Present only where the lobby has its own colony names (a drawn pair, or a quadrants lobby's four);
    * absent means the rated names. */
   readonly colonyNames?: readonly string[];
 }

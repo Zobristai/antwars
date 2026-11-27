@@ -310,7 +310,7 @@ export interface Lobbies {
    * lobby is rated in the same transaction, in the lobby's mode ("1v1" when it has
    * none), teams by colony with each identity once; nothing else is rated. An abandoned
    * house challenge whose absentColonies (the colonies whose seat never joined) include its
-   * held colony records heldAbsent; no other lobby records absentColonies. A quadrants lobby, never rated, also stores
+   * held colony records heldAbsent; no other lobby records absentColonies. A quadrants lobby also stores
    * result when given; no other lobby stores it. A malformed Free-for-all finish releases the slot all the same,
    * omitting result and leaving the lobby unrated with resultFailure recorded (skipping rating). A rated Free-for-all
    * result its rating step refuses (anything
@@ -359,10 +359,10 @@ export interface Lobbies {
   listPublic(): Promise<readonly Lobby[]>;
   /**
    * A queue pairing's match, inside the caller's transaction on this store: creates
-   * a public, rated lobby of that mode with the seats as given (size is the colony
+   * a public lobby of that mode with the seats as given (size is the colony
    * length; the creator is the first colony-0 seat) and starts it through
    * settleSlots, holding a free public slot or waiting for one. It is not listed in
-   * listings/public. A quadrants match is four one-seat colonies, unrated, carrying its four colony names.
+   * listings/public. A quadrants match has four named one-seat colonies and is rated only with ffaLiveEnabled; other queue matches are rated.
    */
   queuedMatchWrites(
     read: TransactionRead,
@@ -443,7 +443,7 @@ export interface UnstartedLobby {
 }
 
 export interface LobbySettings {
-  /** Default off. Also requires an explicitly rated match; this does not enable the unrated quadrants queue. */
+  /** Rate public Free-for-all queue matches at pairing and apply ratings on release. Default off. */
   readonly ffaLiveEnabled?: boolean;
   /** Match slots per kind; the launch cap is one of each. */
   readonly publicSlots?: number;
@@ -892,7 +892,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
       colony.map((seat) => ({ id: seat.id, displayName: seat.displayName, colony: index as SeatColony })));
     const fields: Fields = {
       kind: "public", size: String(size), creatorId: colonies[0]![0]!.id, createdAt: String(at), state: "open",
-      rated: quadrants ? "false" : "true", slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode,
+      rated: String(!quadrants || settings.ffaLiveEnabled === true), slot: "", seats: JSON.stringify(seats), inviteVerifier: "", startsAt: "", matchRunId: "", outcome: "", mode,
       ...(quadrants ? { colonyNames: JSON.stringify(quadrantColonyNames()) } : {}),
     };
     // settleSlots writes the starting lobby once, as an update holding or waiting (and
