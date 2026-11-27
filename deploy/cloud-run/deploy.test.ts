@@ -27,6 +27,7 @@ const CONFIG = {
   GAME_SERVICE_URL: "https://antwar-123456789.australia-southeast1.run.app",
 };
 // The username claim limit's rule every live game and slot server gets.
+const FFA_RATING_ENV = "ANTWAR_FFA_RATING_ENABLED=true";
 const CLIENT_SOURCE_ENV = "ANTWAR_USERNAME_CLAIM_LIMIT_RULE=client";
 type Setting = keyof typeof CONFIG;
 // The line probe.mjs prints for an empty-catalog skip; probe.test.ts checks the real one matches.
@@ -742,7 +743,7 @@ describe("existing deploy paths are unchanged", () => {
         // The record handoff settings; the slot allocator's 8 public and 8 private
         // live slots and the address it wakes them at; the load balancer's addresses.
         // Variables set outside the script are kept. ANTWAR_MEMORY_LIMIT is --memory's own value.
-        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
+        "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};${FFA_RATING_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
         "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
         "--max", "1", "--no-cpu-throttling", "--cpu", "1", "--memory", "4Gi", "--execution-environment", "gen2", "--timeout", "3600", "--concurrency", "1000",
         "--ingress", "all", "--no-invoker-iam-check", "--labels", `app=antwar,commit=${SHA}`, "--no-traffic", ...ACCOUNT, ...REGION],
@@ -830,7 +831,7 @@ describe("slots live declaration", () => {
     // 8 public and 8 private, each at most one instance and none while idle.
     const counts = "ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8";
     // Each recorded match is handed to the record service at the deployed commit.
-    const live = `,ANTWAR_REPLAY_BUCKET=example-replays,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},${CLIENT_SOURCE_ENV}`;
+    const live = `,ANTWAR_REPLAY_BUCKET=example-replays,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},${CLIENT_SOURCE_ENV},${FFA_RATING_ENV}`;
     const slots = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => `public-${n}`).concat([0, 1, 2, 3, 4, 5, 6, 7].map((n) => `private-${n}`));
     expect(deploys(r.gcloud)).toEqual(slots.map((slot) => last(slotDeploy(`antwar-${slot}`, slot, "live", SERVER_REPO, counts, live))));
     // Each slot's traffic moves to the revision its deploy created, by name.
@@ -1251,8 +1252,8 @@ describe("load balancer addresses", () => {
   const ADDRESSES = ["192.0.2.10", "2001:db8::a", "198.51.100.7", "203.0.113.", "fe80::1"];
   const printed = (r: { stdout: string; stderr: string }) => ADDRESSES.filter((a) => (r.stdout + r.stderr).includes(a));
   // antwar's variables before ANTWAR_LOAD_BALANCER_ADDRESS, as the live path and `all` gave them, with the client-source
-  // claim rule and the memory limit.
-  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV},ANTWAR_MEMORY_LIMIT=4Gi`]);
+  // claim rule, Free-for-all rating switch and memory limit.
+  const before = envOf(["--update-env-vars", `GCLOUD_PROJECT=example-project,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8,ANTWAR_SLOT_URL_TEMPLATE=${slotUrlTemplate("antwar-")},${CLIENT_SOURCE_ENV},${FFA_RATING_ENV},ANTWAR_MEMORY_LIMIT=4Gi`]);
   const gameDeploy = (r: { gcloud: string[][] }) => deploys(r.gcloud).find((c) => c[2] === "antwar")!;
 
   it("the live path adds only ANTWAR_LOAD_BALANCER_ADDRESS to antwar's variables, read before the build, and prints no address", () => {
@@ -1516,7 +1517,7 @@ describe.concurrent("all", () => {
     const records = run(["records", SHA]);
     expect(deploys(r.gcloud)[0]).toEqual(deploys(records.gcloud)[0]);
     const counts = "ANTWAR_PUBLIC_SLOTS=8,ANTWAR_PRIVATE_SLOTS=8";
-    const liveEnv = `,ANTWAR_REPLAY_BUCKET=example-replays,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},${CLIENT_SOURCE_ENV}`;
+    const liveEnv = `,ANTWAR_REPLAY_BUCKET=example-replays,ANTWAR_RECORD_INPUT_BUCKET=example-record-inputs,ANTWAR_CODE_VERSION=${SHA},${CLIENT_SOURCE_ENV},${FFA_RATING_ENV}`;
     for (const [i, slot] of SLOTS.entries()) {
       const expected = last(slotDeploy(`antwar-${slot}`, slot, "live", SERVER_REPO, counts, liveEnv));
       if (slot.startsWith("public")) expected[expected.indexOf(KEY)] = `${KEY},${TOKEN}`;
@@ -1530,7 +1531,7 @@ describe.concurrent("all", () => {
     expect(r.gcloud.findIndex((c) => c[0] === "compute")).toBeLessThan(r.gcloud.findIndex((c) => c[0] === "artifacts"));
     for (const address of ["192.0.2.10", "2001:db8::a"]) expect(r.stdout + r.stderr).not.toContain(address);
     expect(deploys(r.gcloud)[17]).toEqual(["run", "deploy", "antwar", "--image", IMAGE,
-      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
+      "--update-env-vars", `${GAME_ENV_FLAG};${CLIENT_SOURCE_ENV};${FFA_RATING_ENV};ANTWAR_MEMORY_LIMIT=4Gi`,
       "--update-secrets", KEY,
       "--service-account", "antwar-run@example-project.iam.gserviceaccount.com", "--min-instances", "1", "--max-instances", "1",
       "--max", "1", "--no-cpu-throttling", "--cpu", "2", "--memory", "4Gi", "--execution-environment", "gen2", "--timeout", "3600", "--concurrency", "1000",
@@ -2368,7 +2369,7 @@ describe.concurrent("all", () => {
         expect(shape(svc), svc).toEqual(slotShape(svc));
         expect(env(svc).map((e) => e.name), svc).toEqual(["ANTWAR_SLOT", "ANTWAR_PUBLIC_URL", "ANTWAR_STORE_NAMESPACE", "GCLOUD_PROJECT",
           "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_RECORD_INPUT_BUCKET",
-          "ANTWAR_CODE_VERSION", "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_PRIVATE_REPLAY_KEY", ...(slot.startsWith("public") ? ["ANTWAR_OPERATOR_TOKEN"] : [])]);
+          "ANTWAR_CODE_VERSION", "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_FFA_RATING_ENABLED", "ANTWAR_PRIVATE_REPLAY_KEY", ...(slot.startsWith("public") ? ["ANTWAR_OPERATOR_TOKEN"] : [])]);
         expect(env(svc).filter((e) => e.valueSource).map((e) => e.valueSource), svc).toEqual([
           { secretKeyRef: { secret: "antwar-private-replay-key", version: "1" } },
           ...(slot.startsWith("public") ? [{ secretKeyRef: { secret: "ANTWAR_OPERATOR_TOKEN", version: "latest" } }] : [])]);
@@ -2382,7 +2383,10 @@ describe.concurrent("all", () => {
       });
       expect(env("antwar").map((e) => e.name)).toEqual(["GCLOUD_PROJECT", "ANTWAR_RECORD_INPUT_BUCKET", "ANTWAR_CODE_VERSION",
         "ANTWAR_PUBLIC_SLOTS", "ANTWAR_PRIVATE_SLOTS", "ANTWAR_SLOT_URL_TEMPLATE", "ANTWAR_LOAD_BALANCER_ADDRESS",
-        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_MEMORY_LIMIT", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY", "ANTWAR_OPERATOR_TOKEN"]);
+        "ANTWAR_USERNAME_CLAIM_LIMIT_RULE", "ANTWAR_FFA_RATING_ENABLED", "ANTWAR_MEMORY_LIMIT", "ANTWAR_STORE_NAMESPACE", "ANTWAR_REPLAY_BUCKET", "ANTWAR_PRIVATE_REPLAY_KEY", "ANTWAR_OPERATOR_TOKEN"]);
+      for (const svc of ["antwar", ...SLOTS.map(slot => `antwar-${slot}`)]) {
+        expect(env(svc), svc).toContainEqual({ name: "ANTWAR_FFA_RATING_ENABLED", value: "true" });
+      }
       // Credible regression: the post-mortem's configured limit missing from the create request, apart from its
       // memory, or in a form the server's parser rejects.
       const memory = spec("antwar").template.containers[0]!.resources.limits.memory;

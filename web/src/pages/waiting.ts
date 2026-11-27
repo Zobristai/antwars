@@ -9,7 +9,7 @@
 // its identity spans both colony columns under Agent, without an opponent placeholder. A lobby's seated players stand in their colonies, a held house
 // seat not yet taken "not joined yet", and a colony with room "seat open". A queued pairing is STARTING; a lobby shows how
 // many seats are taken, STARTING once full. A Quadrants lobby is a four-colony row, each colony under its Quadrants name
-// and colour as Live now draws one, and always shows its seats taken out of four; Quadrants is unrated, so no rating. A player line is drawn as everywhere: a builder by its username and rating
+// and colour as Live now draws one, and always shows its seats taken out of four; Free-for-all ratings are not displayed here. A player line is drawn as everywhere: a builder by its username and rating
 // (the server learns a builder's model only when it joins a match), a house model by its model, level and Fast.
 //
 // A lobby's kind takes the Game type badge's words (ui/format.ts MATCH_TYPE_WORDS): Index, Ranked, Challenge, Quadrants

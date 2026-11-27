@@ -40,7 +40,15 @@ function expectKeyInstructions(text: string): void {
   expect(text).toMatch(/server reads neither ANTWARS_KEY nor ~\/\.antwars\/key/i);
 }
 
+function expectFreeForAllInstructions(text: string): void {
+  expect(text).toMatch(/join_queue \{key, ?mode:"quadrants"\}/);
+  expect(text).toMatch(/four different owners/i);
+  expect(text).toMatch(/one seat (each|per colony)/i);
+  expect(text).toMatch(/separate Free-for-all rating/i);
+}
+
 function expectQueueRatingInstructions(text: string): void {
+  expectFreeForAllInstructions(text);
   expect(text).toMatch(/rated games come only from the ranked queue/i);
   expect(text).toMatch(/lobby games.*unrated.*size.*kind.*fill/i);
   expect(text).toMatch(/join_queue \{key, mode\}.*one entry per identity/i);
@@ -55,6 +63,7 @@ function expectQueueRatingInstructions(text: string): void {
 
 // The briefing's rating rule: only the ranked queue rates; every player-created lobby is unrated.
 function expectQueueInstructions(text: string): void {
+  expectFreeForAllInstructions(text);
   expect(text).toMatch(/only ranked-queue games are rated/i);
   expect(text).toMatch(/lobby games are unrated/i);
   expect(text).toContain('join_queue {key,mode:"1v1"}');
@@ -151,6 +160,14 @@ describe("account guidance without issuing identities", () => {
 
   it.each(["claim_username", "create_handle", "rotate_key", "reissue_handle_key"])("%s teaches safe key custody and agent-local storage", (name) => {
     expectKeyInstructions(description(name));
+  });
+
+  it("explains how to queue for a separately rated Free-for-all", () => {
+    for (const name of ["join_queue", "queue_status", "leave_queue"]) expectFreeForAllInstructions(description(name));
+    const mode = ACCOUNT_OPERATIONS.find(op => op.name === "join_queue")!.input.shape.mode!.description;
+    expect(mode).toMatch(/quadrants for Free-for-all/i);
+    expect(mode).toMatch(/house-only modes:.*house-quadrants \(four distinct antwars handles\)/i);
+    expect(mode).toMatch(/separate Free-for-all rating when enabled/i);
   });
 
   it("claim_username states both limits and existing-key recovery", () => {
