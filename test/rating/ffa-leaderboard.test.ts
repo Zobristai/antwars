@@ -1,6 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, it, vi } from "vitest";
 import { createPublicVisibility } from "../../src/identity/publicVisibility.ts";
+import { createTestRecordings } from "../../src/replays/test-recordings.ts";
 import { FFA_ESTIMATOR } from "../../src/rating/ffa.ts";
 import { createRatings } from "../../src/rating/ratings.ts";
 import { memoryWatchStore } from "../live/watch-fixtures.ts";
@@ -150,25 +151,32 @@ it("uses the current owner's retained name without exposing a released or purged
   });
 });
 
-it("keeps places without linking hidden, test or missing recordings, including on a cached board", async () => {
+it("keeps the places when a replay is private, unprovable, absent or marked test on another server", async () => {
   const { docs, store } = memoryWatchStore();
   const id = "00000000-0000-4000-8000-000000000001", hidden = "00000000-0000-4000-8000-000000000002";
-  const games = ["visible", "hidden", "test", "missing"];
+  const games = ["public", "excluded", "unproven", "test", "missing"], places = [1, 2, 3, 4, 1];
+  const lobby = (i: number) => `00000000-0000-4000-8000-00000000001${i}`;
   const replays = games.map((_, i) => `2026-11-27T10-00-00-000Z-${i + 1}`);
   docs.set(`identities/${id}`, { kind: "username", displayName: "Meadow", claimedAt: String(Date.now()) });
-  docs.set(`ratings-ffa/${id}`, { estimator: FFA_ESTIMATOR, mu: "28", sigma: "3", ratedMatches: "4", places: "[1,1,1,1]",
-    form: JSON.stringify(games.map((matchId, i) => ({ matchId, place: i + 1 }))) });
+  docs.set(`ratings-ffa/${id}`, { estimator: FFA_ESTIMATOR, mu: "28", sigma: "3", ratedMatches: "5", places: "[2,1,1,1]",
+    form: JSON.stringify(games.map((_, i) => ({ matchId: lobby(i), place: places[i] }))) });
   for (const [i, game] of games.entries()) {
-    docs.set(`lobbies/${game}`, { seats: JSON.stringify([{ id: game === "hidden" ? hidden : id }]) });
-    if (game !== "missing") docs.set(`watchMatches/${game}`, { replayId: replays[i] });
+    docs.set(`lobbies/${lobby(i)}`, { seats: "[]" });
+    if (game !== "missing") docs.set(`watchMatches/${lobby(i)}`, { replayId: replays[i] });
+    if (game !== "unproven") docs.set(`replayOwnership/${replays[i]}`, { version: "1", lobbyId: lobby(i), ownerIds: JSON.stringify([game === "excluded" ? hidden : id]) });
   }
-  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "none" }) }, [hidden]);
-  const tests = new Set([replays[2]]);
-  const ratings = createRatings(store, undefined, visibility, { marked: async () => tests, mark: async () => {} });
-  for (const replay of [replays[0], null]) {
+  const visibility = createPublicVisibility(store, { replayLobby: async () => ({ state: "found", lobbyId: lobby(2) }) }, [hidden]);
+  const local = createTestRecordings(store), elsewhere = createTestRecordings(store);
+  await elsewhere.mark(replays[3]);
+  // A previous unrelated read on this instance has cached a negative answer.
+  expect(await local.marked([replays[0]])).toEqual(new Set());
+  const ratings = createRatings(store, undefined, visibility, local);
+  const form = async () => {
     const page = await ratings.ffaLeaderboard();
     if (!page.ok) throw new Error(page.reason);
-    expect(page.value.entries[0].form).toEqual([replay, null, null, null].map((replayId, i) => ({ place: i + 1, replayId })));
-    tests.add(replays[0]);
-  }
+    return page.value.entries[0].form;
+  };
+  expect(await form()).toEqual(places.map((place, i) => ({ place, replayId: i === 0 ? replays[0] : null })));
+  await elsewhere.mark(replays[0]);
+  expect(await form()).toEqual(places.map(place => ({ place, replayId: null })));
 });
