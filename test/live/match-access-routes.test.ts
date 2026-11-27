@@ -5,7 +5,7 @@ import { createMatch } from "../../src/sim/map.ts";
 import { rulesConfig } from "../../src/sim/config.ts";
 import { step } from "../../src/sim/step.ts";
 import type { ReplayObject } from "../../src/replays/store.ts";
-import { ManualClock, RecordedServer } from "./helpers.ts";
+import { decodeData, ManualClock, RecordedServer } from "./helpers.ts";
 
 import { playable } from "../playable.ts";
 const cleanup: (() => unknown | Promise<unknown>)[] = [];
@@ -55,32 +55,40 @@ describe("live route access and mandatory delay", () => {
     expect(f.hub.watchStatus("chosen")).toEqual({ lobbyId: "chosen", started: true, playbackFinished: true, delaySeconds: rated ? 300 : 60 });
   });
 
-  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("%s streams immediately and finishes at match end under the default configuration", async mode => {
-    const finished = vi.fn();
-    const f = await fixture({ config: DEFAULT_LIVE_CONFIG, onPlaybackFinished: finished });
-    f.hub.startMatch(1, opening(), { lobbyId: "house", visibility: "public", rated: true, mode });
-    for (const path of ["/live/1", "/watch/live/house"]) {
-      expect((await attach(f, path)).status).toBe(200);
-      expect(dataWrites(f, path)).toHaveLength(1);
-      expect(dataWrites(f, path)[0]!.t).toBe(0);
+  it.each(["house-1v1", "house-2v2", "house-3v3", "house-4v4"] as const)("%s serves its running board 300 seconds behind on every live route", async mode => {
+    const f = await fixture();
+    const initial = opening(), paths = ["/live/1", "/live/current", "/watch/live/house"];
+    f.hub.startMatch(1, initial, { lobbyId: "house", visibility: "public", rated: false, mode });
+    for (const path of paths) expect((await attach(f, path)).status).toBe(200);
+    // The match has advanced enough ticks; the wall-clock floor still applies.
+    const out = step(initial, []);
+    f.hub.pushTick(1, { ...out, state: { ...out.state, tick: 300 * initial.config.ticksPerSecond } });
+    f.clock.advance(299_999);
+    for (const path of paths) expect(dataWrites(f, path)).toHaveLength(0);
+    f.clock.advance(1);
+    for (const path of paths) {
+      const frames = dataWrites(f, path);
+      expect(frames).toHaveLength(1);
+      expect(frames[0]!.t).toBe(300_000);
+      expect(decodeData(frames[0]!.text.slice(6).trim()).tick).toBe(initial.tick);
     }
-    expect(f.hub.watchStatus("house")).toMatchObject({ delaySeconds: 0, playbackFinished: false });
-    endMatch(f, 1);
-    expect(finished).toHaveBeenCalledOnce();
-    expect(f.hub.watchStatus("house")).toMatchObject({ delaySeconds: 0, playbackFinished: true });
-    for (const path of ["/live/1", "/watch/live/house"]) expect(dataWrites(f, path).at(-1)!.t).toBe(f.clock.now());
   });
 
-  it("keeps private house admission and bypasses even a larger configured floor", async () => {
-    const f = await fixture({ config: { ...DEFAULT_LIVE_CONFIG, delaySeconds: 600 },
+  it("keeps private house admission and honors a larger configured delay", async () => {
+    const f = await fixture({ config: { ...DEFAULT_LIVE_CONFIG, delaySeconds: 600 }, playoutMs: 100,
       currentInvite: async (_id, token) => token === "current" });
     f.hub.startMatch(1, opening(), { lobbyId: "secret", visibility: "private", rated: false, mode: "house-2v2" });
-    for (const path of ["/live/1", "/watch/live/secret"]) {
+    const paths = ["/live/1", "/watch/live/secret"];
+    for (const path of paths) {
       expect((await attach(f, path)).status).toBe(404);
       expect((await attach(f, path, "current")).status).toBe(200);
-      const response = f.server.responses.filter(row => row.path === path).at(-1)!;
-      expect(response.writes.some(write => write.text.startsWith("data:") && write.t === 0)).toBe(true);
     }
+    endMatch(f, 1);
+    f.clock.advance(599_999 - f.clock.now());
+    const frames = (path: string) => f.server.responses.filter(row => row.path === path).at(-1)!.writes.filter(w => w.text.startsWith("data:"));
+    for (const path of paths) expect(frames(path)).toHaveLength(0);
+    f.clock.advance(1);
+    for (const path of paths) expect(frames(path)[0]?.t).toBe(600_000);
     expect(f.hub.currentSeq()).toBeNull();
   });
 

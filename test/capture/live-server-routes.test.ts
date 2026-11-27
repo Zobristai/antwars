@@ -18,6 +18,8 @@ describe("scripted local server routes", () => {
     const catalog = await (await fetch(`${base}/watch/catalog`)).json();
     expect(catalog.lobbies).toEqual([]);
     expect(catalog.matches).toHaveLength(1);
+    // An instant scripted fixture is local, not a Model Index match.
+    expect(catalog.matches[0]).not.toHaveProperty("harnessPhase");
     expect(catalog.matches[0]).toMatchObject({ lobbyId: match.lobbyId, rated: false, delaySeconds: 0 });
     const seated = catalog.matches[0].colonies.flat();
     expect(seated).toHaveLength(match.state.agents.length);

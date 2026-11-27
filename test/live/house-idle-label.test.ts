@@ -176,7 +176,11 @@ it("wires the real Game activity through watch-controller and live hub without d
     controller.started(game.match!.seq, game.match!.state, game, hub);
     game.match!.state.tick = 19;
     const calls = game.match!.state.agents.map(a => game.call(a.id, { type: "observe", agentId: a.id }));
-    hub.pushTick(game.match!.seq, game.tick()!); await Promise.all(calls); clock.advance(100);
+    hub.pushTick(game.match!.seq, game.tick()!); await Promise.all(calls);
+    // Advance the match and spectator clocks until the observed call is due.
+    clock.advance(300_000);
+    game.match!.state.tick += 3000;
+    hub.pushTick(game.match!.seq, game.tick()!);
     const opening = encoded.map(decodeMessage).find(message => message.full)!;
     expect(opening.full!.setup.houseIdleTicks).toBe(20);
     expect(opening.full!.agents[0]!.lastHouseCallTick).toBe(0);

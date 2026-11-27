@@ -10,7 +10,8 @@ export function readPublicMatchCatalog(value: unknown): PublicMatchCatalog | nul
   const lobbies: PublicMatchCatalog["lobbies"][number][] = [];
   for (const entry of value.matches) {
     if (!record(entry) || !text(entry.lobbyId) || typeof entry.startedAt !== "number" || !Number.isFinite(entry.startedAt)
-      || typeof entry.rated !== "boolean" || typeof entry.delaySeconds !== "number" || (entry.delaySeconds !== 0 && entry.delaySeconds !== (entry.rated ? 300 : 60))) return null;
+      || typeof entry.rated !== "boolean"
+      || !(entry.delaySeconds === 0 || entry.delaySeconds === 300 || (!entry.rated && entry.delaySeconds === 60))) return null;
     matches.push({ lobbyId: entry.lobbyId, startedAt: entry.startedAt, rated: entry.rated, delaySeconds: entry.delaySeconds });
   }
   for (const entry of value.lobbies) {

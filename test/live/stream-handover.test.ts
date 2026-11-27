@@ -9,8 +9,8 @@
  *
  * A reference hub is pushed the same ticks with no handover. The resumed stream is checked against it:
  * its deltas are byte-identical and its full snapshots equal but for the match identity, which stays
- * the first server's. The delay rules are today's: 300 s for a rated match outside the house modes, 60 s
- * unrated, 0 s for house matches although they are rated; 10 ticks a second.
+ * the first server's. The delay rules are today's: 300 s for an index or rated match, 60 s
+ * for other unrated matches; 10 ticks a second.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_CONFIG, rulesConfig } from "../../src/sim/config.ts";
@@ -200,7 +200,7 @@ describe("a spectator reconnecting at the same lobby path after a handover", () 
 describe("delays across a handover", () => {
   it.each([
     { name: "an unrated match keeps its 60 s delay", access: { lobbyId: LOBBY, visibility: "public", rated: false } as const, seconds: 60 },
-    { name: "a house match keeps its 0 s delay although it is rated", access: { lobbyId: LOBBY, visibility: "public", rated: true, mode: "house-1v1" } as const, seconds: 0 },
+    { name: "an index match keeps its 300 s delay", access: { lobbyId: LOBBY, visibility: "public", rated: true, mode: "house-1v1" } as const, seconds: 300 },
   ])("$name", { timeout: 120_000 }, async ({ access, seconds }) => {
     const delayTicks = seconds * DEFAULT_CONFIG.ticksPerSecond;
     const run = await handOver(access, delayTicks + 1_400, [delayTicks + 300, delayTicks + 800]);
@@ -211,6 +211,46 @@ describe("delays across a handover", () => {
 });
 
 describe("restoring a save", () => {
+  it("restores an older index save at the rated delay, including across another handover", async () => {
+    const clock = new ManualClock();
+    const state = createMatch(735, playable({ ...DEFAULT_CONFIG, matchTicks: 5000 }));
+    // Build a format-1 fixture with a released opening board and one queued tick.
+    const source = new LiveHub({ clock, config: { ...DEFAULT_LIVE_CONFIG, delaySeconds: 0, paceBytesPerSecond: 1 } });
+    const tick = step(state, []);
+    source.startMatch(1, state);
+    source.pushTick(1, tick);
+    const save = await source.saveMatch(1);
+    source.close();
+    expect(save.meta.stream).toMatchObject({ delaySeconds: 0, released: true });
+    const access = { lobbyId: LOBBY, visibility: "public", rated: false, mode: "house-2v2" } as const;
+    const legacy = { ...save, meta: { ...save.meta, stream: { ...save.meta.stream as object, access } } };
+
+    const first = await serve(clock);
+    await first.hub.resumeMatch(2, tick.state, legacy);
+    const early = await watch(first);
+    expect(frames(early.response)).toEqual([]);
+    // Advance the match clock ahead of the wall clock. Neither the saved board nor
+    // the queued tick is due yet; saving again must not lose that distinction.
+    const ahead = step(tick.state, []);
+    ahead.state.tick = tick.state.tick + 300 * state.config.ticksPerSecond;
+    first.hub.pushTick(2, ahead);
+    clock.advance(100_000);
+    expect(frames(early.response)).toEqual([]);
+    const nextSave = await first.hub.saveMatch(2);
+    expect(nextSave.meta.stream).toMatchObject({ delaySeconds: 300 });
+    const second = await serve(clock);
+    await second.hub.resumeMatch(3, ahead.state, nextSave);
+    const watcher = await watch(second);
+    clock.advance(199_999);
+    expect(frames(watcher.response)).toEqual([]);
+    clock.advance(1);
+    const ready = frames(watcher.response);
+    expect(ready).toHaveLength(1);
+    expect(ready[0]!.message.tick).toBe(tick.state.tick);
+    expect(ready[0]!.message.full).not.toBeNull();
+    expect(frames((await watch(second)).response)[0]?.message.tick).toBe(tick.state.tick);
+  });
+
   it("refuses a save of another tick than the match it would resume", async () => {
     const clock = new ManualClock();
     const config = playable({ ...DEFAULT_CONFIG, matchTicks: 200 });
