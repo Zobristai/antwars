@@ -185,3 +185,18 @@ it("retries an empty reopened stream instead of accepting metadata as a complete
   await vi.waitFor(() => expect(r.duration).toBe(6400));
   await seekFailsAfterRetries(r, "Recording download ended partway through a message.");
 });
+
+it("keeps the requested scrubber position while earlier batches are being reconstructed", async () => {
+  const r = open();
+  await r.first;
+  await vi.waitFor(() => expect(r.duration).toBe(6400));
+  r.seek(6300);
+  expect(r.seekTarget).toBe(6300);
+  await vi.waitFor(() => expect(r.stats.bufferedMessages).toBe(RECORDING_AHEAD));
+  expect(r.take(16)).toHaveLength(RECORDING_AHEAD);
+  expect(r.time).toBeLessThan(6300);
+  expect(r.seekTarget).toBe(6300);
+  expect(r.position).toBeLessThan(6300);
+  r.seek(-100);
+  expect(r.seekTarget).toBe(0);
+});

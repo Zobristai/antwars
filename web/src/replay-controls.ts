@@ -463,7 +463,7 @@ export function mountReplayControls(doc: Document, recording: Recording, names: 
     speed.disabled = recording.error !== null;
     seek.disabled = duration === null || duration === 0 || recording.error !== null;
     seek.max = String(duration ?? 0);
-    if (!interacting) seek.value = String(recording.position);
+    if (!interacting) seek.value = String(recording.seekTarget ?? recording.position);
     preview();
     // Keep this line's height reserved from mount, so discovery and seeking move no other controls.
     const text = recording.error ? "Recording unavailable" : recording.seeking ? "Seeking…" : duration === null
