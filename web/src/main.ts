@@ -25,6 +25,7 @@ import { ReplayFrames } from "./replay-frame.ts";
 import { Playback, QUEEN_FRAME_TILES, fallWindow, fallenNests, fallenQueenBox } from "./buffer.ts";
 import { createClock } from "./clock.ts";
 import { gpuReadback, realTimeSource, type RealNow } from "./timing.ts";
+import { watchContext } from "./context-recovery.ts";
 import { bakeSoil } from "./soil.ts";
 import { boardLook, type BoardLook } from "./board-look.ts";
 import { Territory } from "./territory.ts";
@@ -312,6 +313,16 @@ async function start(): Promise<void> {
   void loadIcons();
   document.body.appendChild(app.canvas);
   const renderer = app.renderer as WebGLRenderer;
+  let restoreTextures: (() => void) | undefined;
+  let reloading2d = false;
+  let prepareReload: (() => void) | undefined;
+  // Pixi's own restore listener runs first, rebuilding the GL resources but not their baked contents.
+  const context = watchContext(app.canvas, () => restoreTextures?.(), () => {
+    reloading2d = true;
+    prepareReload?.();
+    location.reload(); // Already on the 2D URL; replace() with a fragment could stay in this document.
+  });
+  window.addEventListener("pagehide", context.close, { once: true });
   const gl = renderer.gl;
   const dbg = gl.getExtension("WEBGL_debug_renderer_info");
   const rendererString = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
@@ -319,8 +330,11 @@ async function start(): Promise<void> {
 
   // Messages arrive from the stream or the recording (openSource); the first is always a full snapshot.
   // Until the first frame draws, web/index.html's waiting panel explains the delay.
-  const input = await openSource(params, clock, document, rejectReady);
-  if (!input) return;
+  const input = await openSource(params, clock, document, rejectReady, { isRecoveryReload: () => reloading2d });
+  if (!input) { context.close(); return; }
+  prepareReload = () => input.prepareFallback();
+  // A loss while loading the source must not leave the first atlas bake using a lost context.
+  if (gl.isContextLost()) await new Promise<void>(resolve => app.canvas.addEventListener("webglcontextrestored", () => resolve(), { once: true }));
   const { replay, feed, head, source, linkState } = input;
   // The page's one match: its colonies' colours, before anything draws them.
   setMatchColonies(colonyNamesOf(head.full!.setup), document);
@@ -392,6 +406,14 @@ async function start(): Promise<void> {
   const words = new Words({ w, h });
   const cues = new QueenBiteCues();
   const squads = new Squads(renderer, w);
+  const rebakeSoil = () => territory.resize(bakeSoil(renderer, w, h, physicalMap), { w, h, ...camera.view });
+  restoreTextures = () => {
+    rebakeSoil();
+    ants.restoreTexture();
+    food.restoreTexture();
+    battles.restoreTexture();
+    squads.restoreTexture();
+  };
   const destinationLines = new FlightLines();
   const lockoutDials = new LockoutDials();
   // A colony's point of view: its fog over the ground and territory, under everything the view has filtered.
@@ -456,7 +478,7 @@ async function start(): Promise<void> {
     tilt.start = { x: 0, y: h / 2 };
     tilt.end = { x: w, y: h / 2 };
     camera.resize(w, h, overlays.boardArea(w, h));
-    territory.resize(bakeSoil(renderer, w, h, physicalMap), { w, h, ...camera.view });
+    rebakeSoil();
     words.resize({ w, h });
     squads.resize(w);
     ants.setFit(antLengthPx(camera.fit.tilePx * scale), camera.fit.tilePx);
@@ -582,7 +604,7 @@ async function start(): Promise<void> {
   const relook = () => {
     lookShown = boardLook();
     territory.relook();
-    territory.resize(bakeSoil(renderer, w, h, physicalMap), { w, h, ...camera.view });
+    rebakeSoil();
   };
 
   const step = (): FrameResult => {
@@ -875,7 +897,7 @@ async function start(): Promise<void> {
 
   if (!capture) {
     const loop = () => {
-      step();
+      if (!context.lost) step();
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);

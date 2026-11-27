@@ -48,34 +48,44 @@ function consumeRendererHandover(view: Window | null, params: URLSearchParams): 
   } catch { return null; }
 }
 
-/** One board change, not a fresh visit: a replay reopened on the other board resumes where it had reached. */
+/** Carry a replay position across a board switch or an explicit 2D recovery reload, not an ordinary refresh. */
 export const REPLAY_POSITION_KEY = "antwar-replay-position";
-interface ReplayPosition { route: string; board: BoardMode; positionMs: number; at: number }
-function rememberReplayPosition(view: Window | null, params: URLSearchParams, positionMs: number): void {
-  if (!view || !(positionMs > 0)) return;
+interface ReplayPosition { recordingId?: string; recover2d?: true; route: string; board: BoardMode; positionMs: number; at: number }
+function rememberReplayPosition(view: Window | null, params: URLSearchParams, positionMs: number, recover2d: boolean, storedId: string | null): void {
+  // A bare replay selects the latest match on each visit. Pin this selection only for the recovery reload.
+  const recordingId = recover2d && params.get("replay") === "" ? storedId ?? undefined : undefined;
+  if (!view || (!recordingId && !(positionMs > 0))) return;
   try {
     view.sessionStorage.setItem(REPLAY_POSITION_KEY, JSON.stringify({
-      route: fallbackRoute(params, view.location.pathname), board: boardMode(params), positionMs, at: wallClockNow(),
+      route: fallbackRoute(params, view.location.pathname), board: recover2d ? "2d" : boardMode(params), ...(recover2d && { recover2d: true }), recordingId, positionMs, at: wallClockNow(),
     } satisfies ReplayPosition));
   } catch { /* Storage is optional: without it the other board starts the replay from its beginning. */ }
 }
-/** The stored position this page would resume: this replay, saved on the other board, recently, past the start. */
+/** The stored position this page would resume: this replay, recent and past the start, from a board switch or recovery. */
 function pendingReplayPosition(raw: string | null | undefined, view: Window | null, params: URLSearchParams): ReplayPosition | null {
   if (!raw) return null;
   const value: unknown = JSON.parse(raw);
   if (typeof value !== "object" || value === null ||
     !("route" in value) || value.route !== fallbackRoute(params, view?.location.pathname ?? "") ||
-    !("board" in value) || (value.board !== "2d" && value.board !== "3d") || value.board === boardMode(params) ||
+    !("board" in value) || (value.board !== "2d" && value.board !== "3d") ||
+    (value.board === boardMode(params) && !(value.board === "2d" && "recover2d" in value && value.recover2d === true)) ||
     !("at" in value) || typeof value.at !== "number" || !Number.isFinite(value.at) ||
     wallClockNow() < value.at || wallClockNow() - value.at > FALLBACK_HANDOVER_MS ||
-    !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs <= 0) return null;
-  return { route: value.route, board: value.board, positionMs: value.positionMs, at: value.at };
+    !("positionMs" in value) || typeof value.positionMs !== "number" || !Number.isFinite(value.positionMs) || value.positionMs < 0) return null;
+  let recordingId: string | undefined;
+  if ("recordingId" in value) {
+    if (!("recover2d" in value && value.recover2d === true) || value.board !== "2d" || params.get("replay") !== "" ||
+      typeof value.recordingId !== "string" || replayDate(value.recordingId) === null) return null;
+    recordingId = value.recordingId;
+  }
+  if (value.positionMs === 0 && !recordingId) return null;
+  return { route: value.route, board: value.board, recordingId, positionMs: value.positionMs, at: value.at };
 }
-function consumeReplayPosition(view: Window | null, params: URLSearchParams): number | null {
+function consumeReplayPosition(view: Window | null, params: URLSearchParams): ReplayPosition | null {
   try {
     const raw = view?.sessionStorage.getItem(REPLAY_POSITION_KEY);
     view?.sessionStorage.removeItem(REPLAY_POSITION_KEY);
-    return pendingReplayPosition(raw, view, params)?.positionMs ?? null;
+    return pendingReplayPosition(raw, view, params);
   } catch { return null; }
 }
 /**
@@ -120,7 +130,7 @@ export interface SpectatorSource {
   now(realMs: number): number;
   /** After the displayed result, automatic Watch chooses again; explicit links stay pinned. */
   nextMatch(): void;
-  /** Preserve this live selection for the imminent 3D-to-2D reload only. */
+  /** Preserve the live selection for an imminent recovery reload as 2D. */
   prepareFallback(): void;
   close(): void;
 }
@@ -268,7 +278,12 @@ export const LOBBY_SCREENS: LobbyScreens = {
   },
 };
 
-export async function openSource(params: URLSearchParams, clock: { now(): number }, doc: Document, reject: (error: Error) => void, liveOptions: Parameters<typeof openPreparedFeed>[3] = {}, screens: LobbyScreens = LOBBY_SCREENS): Promise<SpectatorSource | null> {
+type SourceOptions = NonNullable<Parameters<typeof openPreparedFeed>[3]> & {
+  /** The active 2D renderer is replacing this document after context loss, even if discovery is still pending. */
+  isRecoveryReload?: () => boolean;
+};
+
+export async function openSource(params: URLSearchParams, clock: { now(): number }, doc: Document, reject: (error: Error) => void, { isRecoveryReload, ...liveOptions }: SourceOptions = {}, screens: LobbyScreens = LOBBY_SCREENS): Promise<SpectatorSource | null> {
   const replay = params.has("replay");
   let storedId = replay ? params.get("replay") || null : null;
   const name = replay ? null : params.get("recording");
@@ -278,7 +293,8 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
   const automatic = !replay && !name && !params.has("lobby") && !local;
   const view = doc.defaultView;
   const rendererHandover = consumeRendererHandover(view, params);
-  let resumeAt = replay ? consumeReplayPosition(view, params) : null;
+  const handover = replay ? consumeReplayPosition(view, params) : null;
+  let resumeAt = handover?.positionMs || null;
   let resumeGeneration: number | null = null;
   let feed: PreparedFeed | null = null;
   let recording: Recording | null = null;
@@ -352,10 +368,15 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
       return null;
     }
   };
-  // Leaving an explicit replay (its board control, or the 3D board's fallback to 2D) keeps its position for the other board;
+  // Leaving an explicit replay keeps its position for a board switch or a recovery reload;
   // a position not yet resumed is passed on as it was.
   view?.addEventListener("pagehide", () => {
-    if (replay && recording) rememberReplayPosition(view, params, resumeAt ?? recording.position);
+    if (replay) {
+      const recovery = isRecoveryReload?.() ?? false;
+      // During a seek the decoder starts again at zero. Recover at the viewer's target, not that cursor.
+      const seekTarget = recovery ? recording?.seekTarget : null;
+      rememberReplayPosition(view, params, seekTarget ?? resumeAt ?? recording?.position ?? 0, recovery, storedId);
+    }
     close();
   }, { once: true });
   setFallback(null);
@@ -364,7 +385,7 @@ export async function openSource(params: URLSearchParams, clock: { now(): number
     const lobbyRecording = replay && params.has("lobby") && storedId !== null;
     if (replay) replayWaiting(doc);
     if (replay && storedId === null) {
-      storedId = await newestStoredReplay(fetch, abort.signal);
+      storedId = handover?.recordingId ?? await newestStoredReplay(fetch, abort.signal);
       if (storedId === null) { close(); noStoredReplays(doc); return null; }
     }
     if (automatic && !params.has("capture")) {

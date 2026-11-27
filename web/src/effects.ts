@@ -34,6 +34,7 @@ export const AIR_FIGHT = { r: 2, tint: 0xe8f4ff, alpha: 0.95, ringR: 6, dots: 8,
  * around them for as long as they stay engaged; its spark is never drawn on
  * the ground. */
 export class Battles {
+  readonly restoreTexture: () => void;
   readonly layer: ParticleContainer;
   private px: number;
   private pool: Particle[] = [];
@@ -42,7 +43,9 @@ export class Battles {
     this.px = 1 / tilePx;
     const g = new Graphics();
     g.circle(16, 16, 14).fill({ color: 0xffffff });
-    this.spark = renderer.generateTexture({ target: g, frame: new Rectangle(0, 0, 32, 32), antialias: true });
+    const spark = renderer.generateTexture({ target: g, frame: new Rectangle(0, 0, 32, 32), antialias: true });
+    this.spark = spark;
+    this.restoreTexture = () => renderer.render({ container: g, target: spark, clear: true, clearColor: [0, 0, 0, 0] });
     this.layer = new ParticleContainer({ dynamicProperties: { position: true, vertex: true, color: true, uvs: false, rotation: false }, texture: this.spark });
     this.layer.blendMode = "normal";
   }
