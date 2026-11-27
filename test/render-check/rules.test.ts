@@ -747,6 +747,8 @@ describe("render check widths and doubled text", () => {
     ]);
     expect(SURFACES.filter(s => s.textSizes?.some(size => size > 32)).map(s => [s.topBar ?? s.panelOnly, s.widths, s.textSizes]))
       .toEqual([[true, [320], [40, 64]], ["hud", [320], [64]], ["pages", [320], [64]]]);
+    expect(SURFACES.filter(s => s.textSizes?.includes(24)).map(s => [s.url, s.widths, s.textSizes]))
+      .toEqual([["/", [320], [24]], ["/rules", [320], [24]]]);
     const markLists = SURFACES.filter(surface => surface.markList);
     expect(markLists.map(({ markList, widths, textSizes, url }) => [markList, widths, textSizes, new URL(url, "http://localhost").searchParams.get("board")]))
       .toEqual([["3d", [320, 390], [32], null], ["2d", [320, 390], [32], "2d"]]);

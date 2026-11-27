@@ -123,6 +123,7 @@ export function longClockExcerpt(source: Buffer): Buffer {
 
 export const SURFACES: readonly Surface[] = [
   { id: "landing", url: "/", hud: false, what: "the front page" },
+  { id: "landing-intermediate-text", url: "/", hud: false, widths: [320], textSizes: [24], what: "the front page at intermediate phone text" },
   // Not capture=1: on Watch that also changes what the page shows with no live match.
   { id: "watch", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), its top matches' results hidden as a visitor first sees them" },
   { id: "watch-results-shown", url: "/?watch=1", hud: true, what: "Watch with no live match (fixture: no live match), in a browser that chose to show the top matches' results", storage: { "aw.topMatches.showResults": "true" } },
@@ -138,6 +139,7 @@ export const SURFACES: readonly Surface[] = [
   { id: "recordings-zoom-400", url: "/?page=matches", hud: false, what: "the recordings surface in a 1280 px window at 400 % browser zoom", fixtures: "recordings-fixture.json", focus: RECORDINGS_FOCUS, widths: [1280], textSizes: [DEFAULT_TEXT_SIZE], zoom: 4 },
   { id: "leaderboard", url: "/?page=leaderboard", hud: false, what: "the Leaderboard" },
   { id: "rules", url: "/rules", hud: false, what: "the Rules page, as the server renders it before a map is drawn" },
+  { id: "rules-intermediate-text", url: "/rules", hud: false, widths: [320], textSizes: [24], what: "Rules at intermediate phone text" },
   { id: "replay-free-for-all", url: `/?replay=${FREE_FOR_ALL_REPLAY}&capture=1`, hud: true, board: true, what: "a Free-for-all replay: the match HUD (Score Band) over the board" },
   { id: "replay-panel-large-text", url: `/?replay=${FREE_FOR_ALL_REPLAY}&board=2d&capture=1`, hud: true, board: true,
     panelOnly: true, widths: [320], textSizes: [40, 64], what: "The replay panel on a phone at above-double text" },
@@ -709,7 +711,7 @@ async function renderAll(o: Options): Promise<Render[]> {
           try {
             await page.goto(ORIGIN + surface.url, { waitUntil: "load", timeout: 30_000 });
             const settled = await settle(page, surface, evidence);
-            if (surface.id === "rules") {
+            if (surface.url === "/rules") {
               const missingSections = await rulesSectionsProblem(page);
               if (missingSections) invalid.push(missingSections);
             }
@@ -782,7 +784,7 @@ async function renderAll(o: Options): Promise<Render[]> {
                 invalid.push("the phone replay mark text did not follow the browser font size");
               }
             }
-            if (surface.id === "landing") {
+            if (surface.url === "/") {
               const address = await landingUrlFonts(page);
               urlFonts = address.fonts;
               if (address.problem) invalid.push(address.problem);

@@ -2332,6 +2332,226 @@
    "text": "Muse Wonder 1.0 MAX 1500 ×2",
    "extent": 2,
    "why": "Phone identity-row ruling: the whole name, model with badges, and rating with seat count may occupy two lines at doubled text; each unit stays on one line."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "wrap",
+   "element": "section.fg-hero > div.fg-hero-body > div.fg-hero-actions > a.d1-agent-button",
+   "text": "NEW: Your agent can challenge the top models",
+   "extent": 2,
+   "why": "The landing text already occupies two lines at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "wrap",
+   "element": "div.fg-records > section.d1p-card.d1p-rec4 > div.d1p-card-head > p.d1p-state",
+   "text": "5 recordings loaded, newest first · more remain",
+   "extent": 2,
+   "why": "The landing text already occupies two lines at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # NAME RATING Rank 1 GPT-6.1 TerraMAXFAST Rat",
+   "extent": 56,
+   "why": "The landing section gap was already this wide at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "text": "above: Bring your agent",
+   "extent": 55,
+   "why": "The landing section gap was already this wide at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 56,
+   "why": "The landing section gap was already this wide at intermediate phone text."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 440,
+   "why": "The decorative Rules banner is cropped to its frame on the phone; unchanged at intermediate text."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
+   "text": "",
+   "extent": 1,
+   "why": "Only the opening Rules card has the victory list; unchanged at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "wrap",
+   "element": "section.fg-hero > div.fg-hero-body > div.fg-hero-actions > a.d1-agent-button",
+   "text": "NEW: Your agent can challenge the top models",
+   "extent": 2,
+   "why": "The landing text already occupies two lines at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "wrap",
+   "element": "div.fg-records > section.d1p-card.d1p-rec4 > div.d1p-card-head > p.d1p-state",
+   "text": "5 recordings loaded, newest first · more remain",
+   "extent": 2,
+   "why": "The landing text already occupies two lines at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below div.fg-inner > section.fg-hero > picture.fg-hero-art > img",
+   "text": "above: ANTWARS MODEL INDEX · 1V1 10 SHOWN # NAME RATING Rank 1 GPT-6.1 TerraMAXFAST Rat",
+   "extent": 56,
+   "why": "The landing section gap was already this wide at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > div.fg-records > section.d1p-card.d1p-rec4",
+   "text": "above: Bring your agent",
+   "extent": 56,
+   "why": "The landing section gap was already this wide at intermediate phone text."
+  },
+  {
+   "surface": "landing-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "page-empty",
+   "element": "band below main.d1p.fg > div.fg-inner > section.fg-section.fg-agent > div.d1p-card",
+   "text": "above: Built with Zobrist Rules Inspired by @LambethEthan",
+   "extent": 56,
+   "why": "The landing section gap was already this wide at intermediate phone text."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "clipped",
+   "element": "div.aw-page-host > div.d1p > div.d1p-hero > img",
+   "text": "",
+   "extent": 440,
+   "why": "The decorative Rules banner is cropped to its frame on the phone; unchanged at intermediate text."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "part-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > ul.d1p-win",
+   "text": "",
+   "extent": 1,
+   "why": "Only the opening Rules card has the victory list; unchanged at intermediate phone text."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "grid-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
+   "text": "",
+   "extent": 38125,
+   "why": "The two Rules cards have different amounts of prose; intermediate text increases the height difference without cutting text."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
+   "extent": 43,
+   "why": "The Rules card keeps its section spacing as its text grows; at intermediate size its lines are visible and do not overlap."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Roboto",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "REFERENCE MAPS The map the seed selects sets the playable board: 128x96 or 128x1",
+   "extent": 43,
+   "why": "The Rules card keeps its section spacing as its text grows; at intermediate size its lines are visible and do not overlap."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "grid-uneven",
+   "element": "div.d1p-page > main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading",
+   "text": "",
+   "extent": 38701,
+   "why": "The two Rules cards have different amounts of prose; intermediate text increases the height difference without cutting text."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "START HERE HOW TO WIN Kill every enemy queen. Queens can be hurt after 5 minutes",
+   "extent": 44,
+   "why": "The Rules card keeps its section spacing as its text grows; at intermediate size its lines are visible and do not overlap."
+  },
+  {
+   "surface": "rules-intermediate-text",
+   "width": 320,
+   "textSize": 24,
+   "typeface": "Liberation Sans",
+   "rule": "tile-empty",
+   "element": "main.d1p-main > div.d1p-content.d1p-split > div.d1p-reading > section.d1p-card.d1p-rules-card",
+   "text": "REFERENCE MAPS The map the seed selects sets the playable board: 128x96 or 128x1",
+   "extent": 44,
+   "why": "The Rules card keeps its section spacing as its text grows; at intermediate size its lines are visible and do not overlap."
   }
  ]
 }

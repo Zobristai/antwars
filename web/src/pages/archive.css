@@ -555,6 +555,16 @@ td.c-model > .d1p-colony { display: block; }
 @media (width < 12em) {
   .d1p-index { margin-inline: calc(var(--aw-space-2) - var(--d1p-pad)); }
 }
+/* At phone zoom the active marker and the longest link need the full row. */
+@media (width < 192px) {
+  .d1p-index { margin-inline: calc(0px - var(--d1p-pad)); }
+}
+/* At phone zoom, give the reading cards the screen width. Keep their text
+   inset where possible, but not at the expense of a whole slash-joined word. */
+@media (width < 224px) {
+  .d1p-reading { margin-inline: calc(0px - var(--d1p-pad)); }
+  .d1p-rule { margin-inline: clamp(1px, (100% - 10rem) / 2, var(--d1p-inset)); }
+}
 .d1p-rule p wbr { display: none; }
 @media (320px <= width < 20em) {
   .d1p-rule p wbr { display: inline; }
