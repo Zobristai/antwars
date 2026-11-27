@@ -185,7 +185,7 @@ export function createRecordService(deps: RecordServiceDeps): RecordService {
       reason = failureReason(body, id);
       if (input.rated === true) {
         const record = JSON.parse(new TextDecoder().decode(body)) as MatchRecord;
-        if (record.result?.ratingChanges === undefined) {
+        if (record.setup?.colonies !== 4 && record.result?.ratingChanges === undefined) {
           record.unavailable.push(RATINGS_UNAVAILABLE);
           body = new TextEncoder().encode(JSON.stringify(record) + "\n");
         }
