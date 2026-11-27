@@ -310,7 +310,7 @@ export interface Lobbies {
    * lobby is rated in the same transaction, in the lobby's mode ("1v1" when it has
    * none), teams by colony with each identity once; nothing else is rated. An abandoned
    * house challenge whose absentColonies (the colonies whose seat never joined) include its
-   * held colony records heldAbsent; no other lobby records absentColonies. A quadrants lobby, never rated, also stores
+   * held colony records heldAbsent; no other lobby records absentColonies. A quadrants lobby also stores
    * result when given; no other lobby stores it. A malformed Free-for-all finish releases the slot all the same,
    * omitting result and leaving the lobby unrated with resultFailure recorded (skipping rating). A rated Free-for-all
    * result its rating step refuses (anything
@@ -359,10 +359,10 @@ export interface Lobbies {
   listPublic(): Promise<readonly Lobby[]>;
   /**
    * A queue pairing's match, inside the caller's transaction on this store: creates
-   * a public, rated lobby of that mode with the seats as given (size is the colony
+   * a public lobby of that mode with the seats as given (size is the colony
    * length; the creator is the first colony-0 seat) and starts it through
    * settleSlots, holding a free public slot or waiting for one. It is not listed in
-   * listings/public. A quadrants match is four one-seat colonies, unrated, carrying its four colony names.
+   * listings/public. A quadrants match has four named one-seat colonies and is rated only with ffaLiveEnabled; other queue matches are rated.
    */
   queuedMatchWrites(
     read: TransactionRead,
@@ -443,7 +443,7 @@ export interface UnstartedLobby {
 }
 
 export interface LobbySettings {
-  /** Default off. Also requires an explicitly rated match; this does not enable the unrated quadrants queue. */
+  /** Rate public Free-for-all queue matches at pairing and apply ratings on release. Default off. */
   readonly ffaLiveEnabled?: boolean;
   /** Match slots per kind; the launch cap is one of each. */
   readonly publicSlots?: number;
@@ -885,7 +885,7 @@ export function createLobbies(store: Store, identities: Identities, settings: Lo
     // House admission changes who can pair, not the match the slot plays or its rating pool.
     const mode = queue === "house-quadrants" ? QUADRANTS : queue;
     const quadrants = mode === QUADRANTS;
-    const rated = queue === "house-quadrants" ? settings.ffaLiveEnabled === true : !quadrants;
+    const rated = !quadrants || settings.ffaLiveEnabled === true;
     const size = colonies[0]?.length ?? 0;
     if (quadrants) {
       if (colonies.length !== 4 || colonies.some((colony) => colony.length !== 1)) throw new Error("a quadrants match needs four colonies of one seat each");

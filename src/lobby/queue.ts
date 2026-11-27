@@ -21,7 +21,7 @@ import { isWaitToken, matchedQueueWaitWrites, repointWrites, waitPath, type Wait
  * House modes admit only handles of the antwars username (refused `not_house`
  * otherwise) and pair them with each other. House-quadrants takes four distinct handles, one per colony.
  *
- * Quadrants is an unrated four-colony mode: a join waits until three waiting entries
+ * Free-for-all (quadrants) has its own rating when enabled: a join waits until three waiting entries
  * exist whose owners differ from each other and from the joiner's, then the four become
  * one public lobby of four one-seat colonies. It is refused `no_quadrant_map` while its
  * map rotation holds no quadrant map.

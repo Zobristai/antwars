@@ -162,6 +162,7 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   h = await startHarness({ simConfig: current });
   const agent = await h.connect();
   const tools = (await agent.client.listTools()).tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
+  // Repinned for the public Free-for-all join instructions and the two-colony qualifier on Glicko.
   // Changes account/key/lobby/rejoin guidance only; preceding economy and gameplay stay pinned.
   // The compact found_queen clause names enemyQueens; observe describes view.enemyQueens. Join briefings unchanged.
   // Preserve the independent omission-sentence assertion and repin only the intended account guidance.
@@ -244,9 +245,9 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   };
   const historical = { ...current, queenKillsFirst: undefined, countMarks: { ...current.countMarks!, renewOnRelay: undefined } };
   const historicalText = briefing(historical).replace(omissionSentence, "").replace(antCap, "");
-  expect(sha(beforeVocabulary(historicalText))).toBe("7e2e4a0c3ce52b8c3c2e7b5f89408ecab76e4ee3c1958807b23b29cc6b37ea06");
-  expect(sha(historicalText)).toBe("eeef3caecbde9d10f083347a8e703555fe4621c2e8e5bd98a5d516ba73bba0ed");
-  expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("e92e6333baf22fe680a6b6ee14433dba48561547562e3db838c5e4c0680c806e");
+  expect(sha(beforeVocabulary(historicalText))).toBe("3cc6e7934dfb78a13626ba4b7b10a41218061afa0718101b381e0c0972510cbe");
+  expect(sha(historicalText)).toBe("bd5389d97ecb408f1cd01c185a412577a3d96a3974e3f223bdfa565dfba5fcb9");
+  expect(sha(joinBriefing(historical).replace(omissionSentence, "").replace(antCap, ""))).toBe("231b30ed6899aa760c2e417f47dfd87464750fc413ab6fecf84b7b8243ad9447");
   expect(briefing(current)).toContain("queen kills>kills>territory>ants alive>food delivered>draw");
   expect(joinBriefing(current)).toContain("queen kills, kills, territory, ants alive, food delivered, draw");
   // Restore only the previous lifetime sentence to compare all other text with its pinned contract.
@@ -254,9 +255,9 @@ it("pins the current configured briefing, join briefing and tool list", async ()
   expect(briefing(current).split(renewal)).toHaveLength(2);
   const currentText = briefing(current).replace(renewal, "the mark keeps its original 180 s lifetime").replace(omissionSentence, "").replace(antCap, "");
   expect(currentText).not.toMatch(/steer/i);
-  expect(sha(beforeVocabulary(currentText))).toBe("776213220619df983ca7b2e3a66933acb74d930c5ec54386d149ccd383599ed9");
+  expect(sha(beforeVocabulary(currentText))).toBe("693afbd0ce3c969ee3c5f62e072d1e13b7dbeb5f4679fc2a2dea5af6238e046e");
   expect(joinBriefing(current).split(omissionSentence)).toHaveLength(2);
-  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("17cf0f2d286c9e4cf0f539e496dc3f945db126ca739f47f801d50387bdfbb12a");
+  expect(sha(joinBriefing(current).replace(omissionSentence, "").replace(antCap, ""))).toBe("d2484147640255bf46feefdededd45e1b02d8a8f34fb552bd2c53c4aaa562e60");
   // Join advertises optional self-reported thinkingLevel. Rules 26 adds LINE and toTileX/toTileY to count_mark.
   // Briefing, join briefing and observe repinned for the one idle rule only (idle-rule line, countdown wording, 180 s lines removed); the tool pin carries the harness idle limit (86400 s).
   // Rules-27 tool list repinned for the found_queen, count_mark and observe descriptions.

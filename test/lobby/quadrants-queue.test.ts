@@ -1,7 +1,7 @@
 /// <reference types="node" />
-// The quadrants queue mode at the lobby layer: four distinct owners make one unrated lobby of four one-seat colonies,
+// The quadrants queue mode at the lobby layer: four distinct owners make one public lobby of four one-seat colonies,
 // the mode is refused while its map rotation holds no quadrant map, the lobby stores its four fixed colony names, and its
-// release stores the result and rates nothing. Run on an in-memory store and on the Firestore emulator.
+// release stores the result and rates it only when enabled. Run on an in-memory store and on the Firestore emulator.
 import { describe, expect, it } from "vitest";
 import { createIdentities } from "../../src/identity/identities.ts";
 import { createLobbies, type MatchOutcome, type MatchResult } from "../../src/lobby/lobbies.ts";
@@ -63,13 +63,13 @@ type Backend = "memory" | "Firestore emulator";
 let counter = 0;
 
 /** quadrantMaps: the rotation the lobbies serve, or "shipped" for the default (quadrantMatchMaps()). */
-function world(backend: Backend, quadrantMaps: readonly MapDefinition[] | "shipped" = [FIXTURE]) {
+function world(backend: Backend, quadrantMaps: readonly MapDefinition[] | "shipped" = [FIXTURE], ffaLiveEnabled = false) {
   const clock = { t: Date.UTC(2026, 10, 14, 9, 0, 0) };
   const store = backend === "memory" ? memoryStore()
     : createFirestore({ projectId, namespace: `quad${process.pid}-${Date.now().toString(36)}-${counter++}`, emulatorHost: host });
   const identities = createIdentities(store);
   const lobbies = createLobbies(store, identities, {
-    publicSlots: 1, privateSlots: 1, now: () => clock.t, random: () => 0, ...(quadrantMaps === "shipped" ? {} : { quadrantMaps }),
+    publicSlots: 1, privateSlots: 1, ffaLiveEnabled, now: () => clock.t, random: () => 0, ...(quadrantMaps === "shipped" ? {} : { quadrantMaps }),
   });
   const ratings = createRatings(store);
   const claim = async (name: string) => {
@@ -229,10 +229,14 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       expect(value(await w.lobbies.readLobby(lobbyId)).colonyNames).toEqual(NAMES);
     });
 
-    it("rates nothing for a quadrants release with an outcome a rated lobby rates, while a rated 1v1 released the same way is rated", async () => {
+    it("leaves a public Free-for-all unrated with rating disabled, while a ranked 1v1 still rates", async () => {
       const w = world(backend);
       const { lobbyId, ids } = await quadrantsLobby(w, "q");
-      await playAndRelease(w, lobbyId, "run-1", "colony_0_won");
+      expect(value(await w.lobbies.readLobby(lobbyId)).rated).toBe(false);
+      await playAndRelease(w, lobbyId, "run-1", "colony_0_won", { reason: "time_up", eliminations: [],
+        ffa: { version: 1, order: [0, 2, 1, 3], territoryWinnerFirst: false, rateable: true } });
+      expect(await w.raw(`ffaMatches/${lobbyId}`)).toBeNull();
+      for (const id of ids) expect(await w.raw(`ratings-ffa/${id}`)).toBeNull();
       const doc = (await w.raw(`lobbies/${lobbyId}`))!;
       expect(doc).toMatchObject({ state: "ended", outcome: "colony_0_won", rated: "false" });
       expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
@@ -261,14 +265,10 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       for (const player of [red, blue]) expect((await w.ratings.readRating(player.id, "1v1")).ratedMatches).toBe(1);
     });
 
-    it.each(["winner", "time_up", "queens_killed"] as const)("releases an explicitly rated Free-for-all %s with the rating gate on, saving finish metadata and isolated ratings once", async ending => {
-      const w = world(backend);
+    it.each(["winner", "time_up", "queens_killed"] as const)("releases a public queue Free-for-all %s with the rating gate on, saving finish metadata and isolated ratings once", async ending => {
+      const w = world(backend, [FIXTURE], true);
       const { lobbyId, ids } = await quadrantsLobby(w, "enabled");
-      // Test-only admission: production queues continue to create unrated Free-for-all matches.
-      await w.store.transaction(async () => ({ result: null, writes: [{ op: "update", path: `lobbies/${lobbyId}`, fields: { rated: "true" } }] }));
-      const gated = createLobbies(w.store, createIdentities(w.store), {
-        publicSlots: 1, privateSlots: 1, ffaLiveEnabled: true, now: () => w.clock.t,
-      });
+      expect(value(await w.lobbies.readLobby(lobbyId)).rated).toBe(true);
       const before = (await w.raw(`lobbies/${lobbyId}`))!;
       const seats = JSON.parse(before.seats!) as { id: string; colony: number }[];
       let result: MatchResult = { reason: "time_up", eliminations: [{ colony: 1, tick: 50 }],
@@ -286,10 +286,10 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
           ? [] : [{ colony: c.id, tick: c.eliminated.tick }]) };
       }
       const finish = result.ffa!;
-      await gated.registerInstance("public-0", { runId: "rated-run", ...INSTANCE });
-      value(await gated.beginMatch(lobbyId, "public-0", "rated-run"));
+      await w.lobbies.registerInstance("public-0", { runId: "rated-run", ...INSTANCE });
+      value(await w.lobbies.beginMatch(lobbyId, "public-0", "rated-run"));
       expect((await w.raw("slots/public-0"))?.lobbyId).toBe(lobbyId);
-      expect(value(await gated.endMatch(lobbyId, "rated-run", outcome, undefined, undefined, undefined, undefined, result))).toEqual({ next: null });
+      expect(value(await w.lobbies.endMatch(lobbyId, "rated-run", outcome, undefined, undefined, undefined, undefined, result))).toEqual({ next: null });
       const ended = (await w.raw(`lobbies/${lobbyId}`))!;
       expect(ended).toMatchObject({ state: "ended", slot: "", outcome, rated: "true" });
       expect(JSON.parse(ended.result!)).toEqual(result);
@@ -310,7 +310,7 @@ for (const backend of ["memory", "Firestore emulator"] as const) {
       }
       for (const id of ids) for (const mode of RANKED_MODES) expect(await w.raw(`${ratingCollection(mode)}/${id}`)).toBeNull();
       expect(await w.raw(`ratedMatches/${lobbyId}`)).toBeNull();
-      expect(await gated.endMatch(lobbyId, "rated-run", outcome, undefined, undefined, undefined, undefined, result)).toEqual({ ok: false, reason: "not_holding" });
+      expect(await w.lobbies.endMatch(lobbyId, "rated-run", outcome, undefined, undefined, undefined, undefined, result)).toEqual({ ok: false, reason: "not_holding" });
       expect(await w.raw(`ffaMatches/${lobbyId}`)).toEqual(history);
       expect(await w.raw(`lobbies/${lobbyId}`)).toEqual(ended);
       for (const [id, fields] of stored) expect(await w.raw(`ratings-ffa/${id}`)).toEqual(fields);
