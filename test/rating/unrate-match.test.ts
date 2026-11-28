@@ -37,6 +37,7 @@ async function fixture(outcome: "a" | "draw" = "a") {
   const board = async () => value(await ratings.leaderboard({ scope: "house", mode: "house-1v1" })).entries;
   const before = await board();
   docs.set(path, lobby(1000, players, outcome === 'draw' ? 'draw' : 'colony_0_won'));
+  docs.set(`watchMatches/${target}`, { replayId: '2026-11-28T14-44-18-887Z-30818361372128' });
   await ratings.applyResult({ matchId: target, teams: [[players[0]], [players[1]]], mode: 'house-1v1', at: 1000, winner: outcome });
   commits.length = 0;
   return { docs, store, commits, players, rowPaths, before, board };
@@ -48,10 +49,10 @@ it.each(["a", "draw"] as const)("previews then removes only the latest %s result
   const rows = await unrateMatch(store, target);
   expect(docs).toEqual(snapshot);
   for (const [i,s] of seats.entries()) {
-    expect(rows[i].after).toEqual({ rating: s.rating, rd: s.rd, wins: s.wins, losses: s.losses, draws: 0, ratedMatches: s.wins+s.losses, form: s.form });
+    expect(rows[i].after).toEqual({ rating: s.rating, rd: s.rd, wins: s.wins, losses: s.losses, draws: 0, ratedMatches: s.wins+s.losses, form: s.replays.map((replayId, j) => ({ result: s.form[j], replayId })) });
     expect(before.find(r => r.displayName === `antwars/${s.handle}`)?.form.map(f => f.replayId)).toEqual(s.replays);
   }
-  expect(await unrateMatch(store, target, true)).toEqual(rows);
+  expect(await unrateMatch(store, target, true, rows)).toEqual(rows);
   expect(await board()).toEqual(before);
   expect(commits.map(ws => ws.map(w => w.path))).toEqual([[...rowPaths, marker, path]]);
   expect(docs.has(marker)).toBe(false);
@@ -84,12 +85,13 @@ it.each(['running', 'unrated', 'other mode', 'abandoned', 'marker', 'form', 'rat
 
 it('re-reads a changed row on transaction retry rather than applying the first plan', async () => {
   const { store, docs, commits, rowPaths } = await fixture();
+  const preview = await unrateMatch(store, target);
   const racing: Store = { ...store, async transaction(step) {
     await store.transaction(async read => ({result: await step(read), writes: []}));
     docs.set(rowPaths[1], {...docs.get(rowPaths[1]), ratedMatches: '15'});
     return store.transaction(step);
   } };
-  await expect(unrateMatch(racing, target, true)).rejects.toThrow();
+  await expect(unrateMatch(racing, target, true, preview)).rejects.toThrow();
   expect(commits).toEqual([]);
 });
 
@@ -99,4 +101,14 @@ it('rejects malformed arguments without emitting raw data', () => {
   expect(result.stdout).toBe('');
   expect(result.stderr).toMatch(/^No confirmed result\./);
   expect(result.stderr).not.toContain('private/path');
+});
+
+it('refuses a different public recording with the same result after preflight, before any commit', async () => {
+  const { store, docs, commits } = await fixture();
+  const preview = await unrateMatch(store, target);
+  docs.set('watchMatches/p1-4', { replayId: seats[0].replays[2] });
+  await expect(unrateMatch(store, target, true, preview)).rejects.toThrow('differ from preview');
+  expect(commits).toHaveLength(0);
+  docs.set('watchMatches/p1-4', { replayId: 'unknown-private-recording' });
+  await expect(unrateMatch(store, target)).rejects.toThrow('known public recordings');
 });

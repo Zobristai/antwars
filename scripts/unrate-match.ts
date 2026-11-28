@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { houseOwnedAmong } from "../src/identity/houseOwnership.js";
 import {
   EMPTY_RECORD, MAX_PAGE_SIZE, NATURAL_OUTCOMES, encodeRating, isValidId, letterFor, lobbySeats,
   matchTime, recordFields, storedRecord, storedState, withResult, type LobbySeat, type RatingRecord,
 } from "../src/rating/ratings.js";
-import { firestoreFromEnv, type Fields, type Store, type Write } from "../src/store/firestore.js";
+import { firestoreFromEnv, type Fields, type Store, type TransactionRead, type Write } from "../src/store/firestore.js";
 
 function requireThat(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -42,13 +44,27 @@ function changesFor(marker: Fields | null | undefined, seats: readonly LobbySeat
     return { before: Number(before), after: Number(after), rdBefore: Number(rdBefore), rdAfter: Number(rdAfter) };
   });
 }
-type Summary = { rating: number; rd: number; ratedMatches: number; wins: number; losses: number; draws: number; form: string };
-function figures(rating: number, rd: number, record: RatingRecord): Summary {
-  const { wins, losses, draws, form } = record;
-  return { rating, rd, ratedMatches: wins + losses + draws, wins, losses, draws, form: form.map(e => e.result).join("") };
+// Only recordings already on the public board for this correction may appear in a
+// report. A stored watch link by itself is not evidence that a recording is public.
+const publicReplays = new Set([
+  "2026-11-28T14-44-18-887Z-30818361372128", "2026-11-26T05-51-06-695Z-7127678893463",
+  "2026-11-24T12-05-47-118Z-50297281609990", "2026-11-23T18-32-21-094Z-264686538496895",
+  "2026-11-23T16-12-31-948Z-196840063753874", "2026-11-13T12-39-51-207Z-44146181134910",
+  "2026-11-28T05-40-59-833Z-50398100979275", "2026-11-27T14-09-02-924Z-173088077994558",
+  "2026-11-26T15-22-17-887Z-133111585939279", "2026-11-25T21-29-36-668Z-19760227250438",
+]);
+async function figures(read: TransactionRead, rating: number, rd: number, record: RatingRecord) {
+  const { wins, losses, draws } = record;
+  const watches = await read(record.form.map(e => `watchMatches/${e.matchId}`));
+  const form = record.form.map(({ result, matchId }) => {
+    const replayId = watches.get(`watchMatches/${matchId}`)?.replayId;
+    requireThat(replayId && publicReplays.has(replayId), "Form does not match known public recordings");
+    return { result, replayId };
+  });
+  return { rating, rd, ratedMatches: wins + losses + draws, wins, losses, draws, form };
 }
 
-export async function unrateMatch(store: Store, id: string, apply = false) {
+export async function unrateMatch(store: Store, id: string, apply = false, expectedPreview?: unknown) {
   requireThat(isValidId(id), "Invalid lobby id");
   const target = `lobbies/${id}`, marker = `ratedMatches/${id}`;
   const initial = await store.get(target);
@@ -88,7 +104,7 @@ export async function unrateMatch(store: Store, id: string, apply = false) {
         current = withResult(prior, letterFor(g.winner, g.seats.find(s => s.id === seat.id)!.colony), g.matchId);
       }
       requireThat(stored && Object.entries(recordFields(current)).every(([k,v]) => row[k] === v), "Record disagrees with rated history");
-      const before = figures(state.rating, state.rd, current);
+      const before = await figures(read, state.rating, state.rd, current);
       let after = before;
       if (changes) {
         const c = changes[i], previous = games.at(-2);
@@ -97,13 +113,16 @@ export async function unrateMatch(store: Store, id: string, apply = false) {
         const previousChanges = changesFor((await read([prevPath])).get(prevPath), previous.seats);
         const prev = previousChanges[previous.seats.findIndex(s => s.id === seat.id)];
         requireThat(prev.after === c.before && prev.rdAfter === c.rdBefore, "Prior change disagrees with restoration");
-        after = figures(c.before, c.rdBefore, prior);
+        after = await figures(read, c.before, c.rdBefore, prior);
         const rating = encodeRating(after.rating);
         writes.push({ op: "update", path, fields: { rating, houseRating: rating, rd: encodeRating(after.rd),
           ratedAt: String(previous.at), ratedMatches: String(after.ratedMatches), ...recordFields(prior) } });
       }
       rows.push({ handle: row.displayName, before, after });
     }
+    rows.sort((a,b) => a.handle < b.handle ? -1 : a.handle > b.handle ? 1 : 0);
+    // Guard the actual commit on the reviewed preview, not just a later comparison of stdout.
+    if (apply) requireThat(isDeepStrictEqual(rows, expectedPreview), "Rows differ from preview; not applying");
     writes.push({ op: "delete", path: marker }, { op: "update", path: target, fields: { rated: "false" } });
     return { result: rows, writes: apply ? writes : [] };
   });
@@ -115,7 +134,9 @@ if (import.meta.main) {
     requireThat(isValidId(id) && (flag === undefined || flag === "--apply") && !extra.length, "Invalid arguments");
     const store = firestoreFromEnv(process.env);
     requireThat(store, "No store selected");
-    console.log(JSON.stringify(await unrateMatch(store, id, flag === "--apply")));
+    // Apply takes the verified preview JSON on stdin. A bare --apply is not enough.
+    const preview = flag === "--apply" ? JSON.parse(readFileSync(0, "utf8")) : undefined;
+    console.log(JSON.stringify(await unrateMatch(store, id, flag === "--apply", preview)));
   } catch {
     console.error("No confirmed result. Check the lobby, rated history and store settings before proceeding.");
     process.exitCode = 1;
