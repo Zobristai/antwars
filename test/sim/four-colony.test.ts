@@ -474,8 +474,10 @@ it("keeps every colony's food store a finite number and hatches ants in colonies
 });
 
 describe("an agent's view in a four-colony match", () => {
-  it("shows its own territory only, names enemies by colony, and gives colonies 2 and 3 no name", () => {
+  it("keeps own territory global, identifies sighted enemy holdings by colony, and gives colonies 2 and 3 no name", () => {
     const state = playedMatch(300);
+    // Fragmented holdings exercise all three enemies from each colony's perspective, including colony zero.
+    for (let i = 0; i < state.owner.length; i++) state.owner[i] = i % 5 - 1;
     const grid = buildGrid(state);
     for (const agent of state.agents) {
       const view = takeView(state, grid, agent);
@@ -483,7 +485,15 @@ describe("an agent's view in a four-colony match", () => {
       const own = view.territoryRows.join("").split("").filter(c => c === "#").length;
       expect(own).toBe(state.owner.filter(o => o === agent.colony).length);
       for (const cell of view.cells) for (const ant of cell.ants) expect(ant.colony).toBe(state.ants.find(a => a.id === ant.antId)!.colony);
-      expect(JSON.stringify(view)).not.toMatch(/enemyTerritory|enemyTiles/);
+      const eyes = state.ants.filter(a => a.colony === agent.colony && a.hp > 0);
+      const expected: Record<number, number[]> = {};
+      state.owner.forEach((owner, i) => {
+        const x = i % state.config.mapWidth, y = Math.floor(i / state.config.mapWidth);
+        if (owner >= 0 && owner !== agent.colony && eyes.some(a =>
+          (Math.floor(a.x / SUB) - x) ** 2 + (Math.floor(a.y / SUB) - y) ** 2 <= state.config.sightTiles ** 2)) (expected[owner] ??= []).push(i);
+      });
+      expect(Object.keys(expected)).toHaveLength(3);
+      expect(view.sightedEnemyTiles).toEqual(expected);
     }
   });
 

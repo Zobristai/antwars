@@ -115,9 +115,9 @@ export function pagedView(game: Game, config: SimConfig, view: AgentView, withMa
   if (page === null) return cellError("bad_cells_cursor", "Cell cursor is stale, foreign, malformed or no longer retained.");
   const { snapshot, offset } = page;
   let end = offset === 0 ? Math.max(snapshot.squadCells, Math.min(1, snapshot.cells.length)) : Math.min(offset + 1, snapshot.cells.length);
-  const { cells: _cells, events: _events, territoryRows, ...rest } = publicView;
+  const { cells: _cells, events: _events, territoryRows, sightedEnemyTiles, ...rest } = publicView;
   const { secondsLeft: _secondsLeft, ticksLeft: _ticksLeft, ...ended } = rest;
-  const compact = { ...(view.result === null ? rest : ended), ...(withMap ? { territory: packTerritory(territoryRows, config.mapWidth, config.mapHeight) } : {}) };
+  const compact = { ...(view.result === null ? rest : ended), ...(withMap ? { territory: packTerritory(territoryRows, config.mapWidth, config.mapHeight, sightedEnemyTiles) } : {}) };
   const history = game.eventHistory(view.agentId);
   let cursor = since ?? game.eventCursor(view.agentId);
   const indices: number[] = [];

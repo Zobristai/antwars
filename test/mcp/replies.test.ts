@@ -1,6 +1,6 @@
-import { TERRITORY_TEXT, unpackTerritory } from "../../src/mcp/territory.js";
+import { unpackTerritory } from "../../src/mcp/territory.js";
 import { MARK_TABLE_TEXT } from "../../src/mcp/markTable.js";
-import { COMPACT_VIEW_TEXT } from "../../src/mcp/briefing.js";
+import { COMPACT_VIEW_TEXT, TERRITORY_TEXT } from "../../src/mcp/briefing.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { COLONY_NAMES } from "../../src/sim/config.js";
 import { observeWaitMs } from "../../src/mcp/tools.js";

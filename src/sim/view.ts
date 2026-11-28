@@ -101,6 +101,8 @@ export interface AgentView {
   readonly flyers?: readonly ViewFlyer[];
   /** The colony's own territory: one string per map row, '#' own tile, '.' otherwise. */
   readonly territoryRows: readonly string[];
+  /** Enemy-owned tile indices in current colony sight, grouped by the colony id used in cells. */
+  readonly sightedEnemyTiles: Readonly<Record<number, readonly number[]>>;
   /** Original-tile physical area; fine terrain may leave a fractional boundary cell. */
   readonly territoryTiles: number;
   /** Own tiles as a permille share of the map. */
@@ -363,13 +365,17 @@ export function takeView(state: SimState, grid: Grid, agent: Agent, visibility =
       ...countOf(state, m, patrol),
     }));
 
+  const sight = visibility.range(agent.colony, config.sightTiles);
+  const sightedEnemyTiles: Record<number, number[]> = {};
   const rows: string[] = [];
   let own = 0;
   for (let ty = 0; ty < config.mapHeight; ty += 1) {
     let row = "";
     for (let tx = 0; tx < config.mapWidth; tx += 1) {
-      const mine = state.owner[tileIndex(config, tx, ty)] === agent.colony;
+      const index = tileIndex(config, tx, ty), owner = state.owner[index]!;
+      const mine = owner === agent.colony;
       if (mine) own += 1;
+      else if (owner >= 0 && sight[index] === 1) (sightedEnemyTiles[owner] ??= []).push(index);
       row += mine ? "#" : ".";
     }
     rows.push(row);
@@ -418,6 +424,7 @@ export function takeView(state: SimState, grid: Grid, agent: Agent, visibility =
       ...(m.toTileX === undefined || m.toTileY === undefined ? {} : { toTileX: m.toTileX, toTileY: m.toTileY }), ...countOf(state, m, patrol) })),
     ...(config.flyers === undefined ? {} : { flyers: flyersOf(state, agent.colony) }),
     territoryRows: rows,
+    sightedEnemyTiles,
     territoryTiles: own / physicalTileArea(config),
     territorySharePermille: Math.trunc((own * 1000) / (config.mapWidth * config.mapHeight)),
     events,

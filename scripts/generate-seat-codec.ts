@@ -14,7 +14,7 @@ export const SEAT_CODEC_PATH = fileURLToPath(new URL("packages/antwars-seat/lib/
 /** Server source files and the top-level functions taken from each, in output order. */
 const SOURCES: readonly { file: string; functions: readonly string[] }[] = [
   { file: "src/sim/view.ts", functions: ["expandCells"] },
-  { file: "src/mcp/territory.ts", functions: ["tileCount", "unpackTerritory"] },
+  { file: "src/mcp/territory.ts", functions: ["tileCount", "unpackTerritory", "unpackEnemyTiles"] },
   { file: "src/mcp/markTable.ts", functions: ["unpackMarks"] },
 ];
 
@@ -54,6 +54,7 @@ export function renderSeatCodec(): string {
     ...SOURCES.map(({ file, functions }) => `//   ${functions.join(", ")}  ${file}`),
     "// Conformance fixtures every implementation should pass: test/fixtures/seat-codec/conformance.json",
     "",
+    'import { inflateSync } from "node:zlib";',
     `const MAX_BOARD_SIDE_TILES = ${MAX_BOARD_SIDE_TILES};`,
     `const SIGHTED_FLYER_CODES = ${JSON.stringify(SIGHTED_FLYER_CODES)};`,
     "",

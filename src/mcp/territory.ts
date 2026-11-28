@@ -1,3 +1,4 @@
+import { deflateSync, inflateSync } from "node:zlib";
 import { MAX_BOARD_SIDE_TILES } from "../sim/mapBoard.js";
 
 /** MCP-only projection. Simulation and replay consumers retain territoryRows. */
@@ -6,9 +7,9 @@ export interface PackedTerritory {
   readonly width: number;
   readonly height: number;
   readonly data: string;
+  /** Per colony: base64 of zlib-compressed little-endian uint16 tile-index deltas, starting from zero. */
+  readonly enemies?: Readonly<Record<number, string>>;
 }
-
-export const TERRITORY_TEXT = "observe map:true adds territory {encoding:'base64-bitset-lsb0',width,height,data}. Decode data as base64 bytes; tile (x,y) has index y*width+x, byte floor(index/8), bit index%8 (least-significant first): 1=your colony owns it, 0=otherwise. Rows are contiguous, with no row padding; unused final bits are zero.";
 
 function tileCount(width: number, height: number): number {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > MAX_BOARD_SIDE_TILES || height > MAX_BOARD_SIDE_TILES) {
@@ -17,8 +18,8 @@ function tileCount(width: number, height: number): number {
   return width * height;
 }
 
-/** Fixed size for every ownership pattern, including a checkerboard. */
-export function packTerritory(rows: readonly string[], width: number, height: number): PackedTerritory {
+/** The own bitset has fixed size. Each enemy stream contains only its sighted indices. */
+export function packTerritory(rows: readonly string[], width: number, height: number, sightedEnemies?: Readonly<Record<number, readonly number[]>>): PackedTerritory {
   const count = tileCount(width, height);
   if (rows.length !== height || rows.some(row => row.length !== width || /[^#.]/.test(row))) {
     throw new Error("Invalid territory rows");
@@ -30,7 +31,22 @@ export function packTerritory(rows: readonly string[], width: number, height: nu
       bytes[index >> 3]! |= 1 << (index & 7);
     }
   }
-  return { encoding: "base64-bitset-lsb0", width, height, data: bytes.toString("base64") };
+  const territory = { encoding: "base64-bitset-lsb0" as const, width, height, data: bytes.toString("base64") };
+  if (sightedEnemies === undefined) return territory;
+  const enemies: Record<number, string> = {};
+  for (const [colony, indices] of Object.entries(sightedEnemies)) {
+    // takeView collects in tile order. Encode only those tiles; repeated gaps also compress on dense maps.
+    if (!indices.length) continue;
+    const gaps = Buffer.alloc(indices.length * 2);
+    let previous = 0;
+    for (const [k, i] of indices.entries()) {
+      if (!Number.isInteger(i) || i < 0 || i >= count || (k > 0 && i <= previous)) throw new RangeError("Invalid enemy tile index");
+      gaps.writeUInt16LE(i - previous, k * 2);
+      previous = i;
+    }
+    enemies[Number(colony)] = deflateSync(gaps).toString("base64");
+  }
+  return { ...territory, enemies };
 }
 
 /** Reference decoder for scripted clients and exact-ownership checks. */
@@ -49,4 +65,22 @@ export function unpackTerritory(territory: PackedTerritory): string[] {
     const index = y * width + x;
     return (bytes[index >> 3]! & (1 << (index & 7))) === 0 ? "." : "#";
   }).join(""));
+}
+
+/** Expand one enemy's sighted tile indices. At most one uint16 per board tile may be inflated. */
+export function unpackEnemyTiles(territory: PackedTerritory, colony: number): number[] {
+  const count = tileCount(territory.width, territory.height);
+  const data = territory.enemies?.[colony];
+  if (data === undefined) return [];
+  const gaps = inflateSync(Buffer.from(data, "base64"), { maxOutputLength: count * 2 });
+  if (!gaps.length || gaps.length % 2) throw new Error("Invalid enemy territory length");
+  const tiles: number[] = [];
+  let index = 0;
+  for (let k = 0; k < gaps.length; k += 2) {
+    const gap = gaps.readUInt16LE(k);
+    index += gap;
+    if ((k > 0 && gap === 0) || index >= count) throw new Error("Invalid enemy territory index");
+    tiles.push(index);
+  }
+  return tiles;
 }

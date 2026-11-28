@@ -1,7 +1,7 @@
 // Readable observe view. The cell, territory and mark decoders are generated from the
 // server's reference decoders (the harness is installed alone and cannot import src/):
 // see codec.generated.mjs, scripts/generate-seat-codec.ts and test/codec.test.mjs.
-import { expandCells, unpackMarks, unpackTerritory } from "./codec.generated.mjs";
+import { expandCells, unpackEnemyTiles, unpackMarks, unpackTerritory } from "./codec.generated.mjs";
 
 export { expandCells, unpackMarks, unpackTerritory };
 
@@ -57,7 +57,7 @@ export function cellLines(cells, own, byColony = false) {
   return [...rows].map(([y, row]) => `y${y}: ${row.map((t) => `${t.from}${t.to === t.from ? "" : `-${t.to}`}${t.content}`).join(" ")}`);
 }
 
-/** Own territory rows as x ranges; rows with no own tile are omitted. */
+/** One ownership mask as x ranges per row; empty rows are omitted. */
 export function territoryLines(rows) {
   const lines = [];
   rows.forEach((row, y) => {
@@ -98,6 +98,25 @@ export function renderView(data) {
   if (view.territory) {
     const rows = territoryLines(unpackTerritory(view.territory));
     lines.push(`territory own (${view.territory.width}x${view.territory.height}; x ranges per row, rows without own tiles omitted):${rows.length ? "" : " none"}`, ...rows);
+    if (view.territory.enemies !== undefined) {
+      const enemies = Object.keys(view.territory.enemies);
+      if (!enemies.length) lines.push("territory enemy (in sight): none");
+      for (const colony of enemies) {
+        const { width } = view.territory;
+        const tiles = unpackEnemyTiles(view.territory, Number(colony));
+        lines.push(`territory enemy colony ${colony} (in sight):`);
+        for (let k = 0; k < tiles.length;) {
+          const y = Math.floor(tiles[k] / width), end = (y + 1) * width, ranges = [];
+          while (k < tiles.length && tiles[k] < end) {
+            const from = tiles[k++];
+            while (k < tiles.length && tiles[k] < end && tiles[k] === tiles[k - 1] + 1) k++;
+            const to = tiles[k - 1];
+            ranges.push(from === to ? `${from % width}` : `${from % width}-${to % width}`);
+          }
+          lines.push(`y${y}: ${ranges.join(" ")}`);
+        }
+      }
+    }
   } else lines.push("territory: not in this reply (observe with map:true)");
   for (const name of ["marks", "myMarks"]) {
     if (view[name] === undefined) continue;
