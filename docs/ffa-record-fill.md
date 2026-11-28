@@ -1,6 +1,10 @@
 # Fill historical Free-for-all place records
 
-After upgrading the rating writer, preview with the intended `GCLOUD_PROJECT` and `ANTWAR_STORE_NAMESPACE` set. For local data set `FIRESTORE_EMULATOR_HOST` to the loopback emulator. The server never runs this command automatically.
+After upgrading the rating writer, run the fill from a source checkout at the deployed revision. The runtime image contains neither the command nor its fill module. From the checkout root, use Node 24 and install the dependencies with `npm ci`.
+
+For production, use a compute host whose attached service identity can read the target Firestore data and write the rating rows. The client authenticates as that identity; a local cloud CLI login alone does not authenticate it. Set `GCLOUD_PROJECT` and `ANTWAR_STORE_NAMESPACE` to the intended store and leave `FIRESTORE_EMULATOR_HOST` unset. Only for a local rehearsal, set `FIRESTORE_EMULATOR_HOST` to the loopback emulator instead.
+
+Start with a read-only preview:
 
 ```sh
 node --import ./src/ts-resolve.mjs scripts/fill-ffa-records.ts
