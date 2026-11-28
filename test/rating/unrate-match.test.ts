@@ -63,8 +63,21 @@ it.each(["a", "draw"] as const)("previews then removes only the latest %s result
   expect(commits).toHaveLength(1);
 });
 
-it.each(['running', 'unrated', 'other mode', 'abandoned', 'marker', 'form', 'rating', 'prior marker', 'missing history', 'sol later', 'astra later'])("refuses %s without writes", async reason => {
+it.each([
+  ['running', 'Expected an ended, natural house duel'],
+  ['unrated', 'Lobby is not rated'],
+  ['other mode', 'Expected an ended, natural house duel'],
+  ['abandoned', 'Expected an ended, natural house duel'],
+  ['marker', 'Missing or mismatched rating changes'],
+  ['form', 'Record disagrees with rated history'],
+  ['rating', 'Rating is not the recorded post-match state'],
+  ['prior marker', 'Missing or mismatched rating changes'],
+  ['missing history', 'Not the latest rated result or incomplete history'],
+  ['sol later', 'Not the latest rated result or incomplete history'],
+  ['astra later', 'Not the latest rated result or incomplete history'],
+])("refuses %s without writes", async (reason, expectedError) => {
   const { store, docs, commits, rowPaths, players } = await fixture();
+  const preview = await unrateMatch(store, target);
   const modify = (p: string, f: Fields) => docs.set(p, { ...docs.get(p), ...f });
   if (reason === 'running') modify(path, { state: 'playing' });
   if (reason === 'unrated') modify(path, { rated: 'false' });
@@ -79,7 +92,7 @@ it.each(['running', 'unrated', 'other mode', 'abandoned', 'marker', 'form', 'rat
     const i = reason === 'sol later' ? 0 : 1;
     docs.set('lobbies/later', {...docs.get(path)!, createdAt: '2000', startsAt: '2001', seats: JSON.stringify([{id: players[i], colony: 0}, {id:'other', colony:1}])});
   }
-  await expect(unrateMatch(store, target, true)).rejects.toThrow();
+  await expect(unrateMatch(store, target, true, preview)).rejects.toThrow(expectedError);
   expect(commits).toHaveLength(0);
 });
 
