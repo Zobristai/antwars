@@ -18,6 +18,7 @@ export const C = {
   tableEmpty: "No rated players in this table.",
   tableFailed: "This table is unavailable. Refresh the leaderboard to try again.",
   nameColumn: "Name", eloColumn: "Rating", matchesColumn: "Rated matches", recordColumn: "Record", formColumn: "Last 5",
+  placeRecordColumn: "Record 1st–4th", placeWords: ["1st", "2nd", "3rd", "4th"],
   resultWords: { W: "Win", L: "Loss", D: "Draw" },
   watchReplay: "watch replay",
   /** The bubble on the front page and the Leaderboard, linking to the Antwars Model Index 1v1 board. */

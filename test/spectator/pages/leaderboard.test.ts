@@ -437,3 +437,17 @@ describe("no house slug on the rankings", () => {
     p.dispose();
   });
 });
+
+it("shows fewer than five places without padding and leaves a missing replay unlinked in both layouts", async () => {
+  const p = page(); p.choose("Ranked Free-for-all");
+  const id = "2026-11-27T10-00-00-000Z-1";
+  await p.answer("quadrants", new Response(JSON.stringify({ entries: [{ displayName: "Meadow", rating: 6, ratedMatches: 2,
+    places: [0, 1, 0, 1], form: [{ place: 2, replayId: id }, { place: 4, replayId: null }] }] })));
+  for (const layout of ["d1p-wide", "d1p-narrow"]) {
+    const nodes = p.root.byClass(layout)[0].byClass("d1p-form-mark");
+    expect(nodes.map(n => [n.tag, n.dataset.result])).toEqual([["a", "2"], ["span", "4"]]);
+    expect(nodes[0].href).toContain(id);
+    expect(nodes[0].title).toBe("2nd place, watch replay");
+  }
+  p.dispose();
+});

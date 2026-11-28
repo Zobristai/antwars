@@ -227,27 +227,47 @@ const eloNodes = (doc: Document, entry: LeaderboardRow, mode: LeaderboardMode): 
 };
 /** Last 5, newest first: a result stamp each, a link to its replay where one is stored. Each link is keyed by
  * its table and layout (place), player and replay, so a redraw of another table keeps focus on it. */
-const formNodes = (doc: Document, entry: LeaderboardRow, search: string, place: string): HTMLElement[] => formMarks(entry, search).map(mark => {
-  const letter = h(doc, "span", undefined, mark.result);
-  letter.setAttribute("aria-hidden", "true");
-  const words = h(doc, "span", "d1p-sr", mark.label);
-  let node: HTMLElement;
-  if (mark.href === null) node = h(doc, "span", "d1p-form-mark");
-  else {
-    const link = h(doc, "a", "d1p-form-mark");
-    link.href = mark.href;
-    link.title = mark.label;
-    link.dataset.key = `form|${place}|${entry.displayName}|${mark.href}`;
-    node = link;
-  }
-  node.dataset.result = mark.result;
-  node.append(letter, words);
-  return node;
-});
+function placeStrip(doc: Document, places: readonly number[]): HTMLElement {
+  const strip = h(doc, "span", "d1p-place-strip");
+  strip.setAttribute("role", "img");
+  strip.setAttribute("aria-label", places.map((n, i) => `${C.placeWords[i]}: ${n}`).join(", "));
+  places.forEach(n => {
+    const segment = h(doc, "span", undefined, String(n));
+    segment.style.flexGrow = String(n);
+    segment.setAttribute("aria-hidden", "true");
+    strip.append(segment);
+  });
+  return strip;
+}
+const formNodes = (doc: Document, entry: LeaderboardRow, search: string, place: string): HTMLElement[] => {
+  const marks = entry.placeRecord?.form.map(({ place, replayId }) => {
+    const words = `${C.placeWords[place - 1]} place`;
+    return { result: String(place), label: replayId ? `${words}, ${C.watchReplay}` : words,
+      href: replayId ? keep(`/?replay=${encodeURIComponent(replayId)}`, search) : null };
+  }) ?? formMarks(entry, search);
+  return marks.map(mark => {
+    const letter = h(doc, "span", undefined, mark.result);
+    letter.setAttribute("aria-hidden", "true");
+    const words = h(doc, "span", "d1p-sr", mark.label);
+    let node: HTMLElement;
+    if (mark.href === null) node = h(doc, "span", "d1p-form-mark");
+    else {
+      const link = h(doc, "a", "d1p-form-mark");
+      link.href = mark.href;
+      link.title = mark.label;
+      link.dataset.key = `form|${place}|${entry.displayName}|${mark.href}`;
+      node = link;
+    }
+    node.dataset.result = mark.result;
+    node.append(letter, words);
+    return node;
+  });
+};
 
 /** The board as a real table on wide screens, and as labelled stacked rows under 46rem, as Matches does. */
 function rankingTable(doc: Document, table: RankingView, titleId: string, search: string, mode: LeaderboardMode): HTMLElement[] {
   const grid = h(doc, "table", "d1p-table d1p-lb d1p-wide");
+  if (mode === "quadrants") grid.classList.add("d1p-ffa-table");
   grid.setAttribute("aria-labelledby", titleId);
   const head = h(doc, "thead"), labels = h(doc, "tr");
   const rank = h(doc, "th", "c-rank");
@@ -259,7 +279,7 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
   labels.append(rank);
   // Record and Last 5 follow main, beside rated matches.
   const columns = [
-    [C.nameColumn, "c-name"], [C.eloColumn, "c-elo"], [C.matchesColumn, "c-matches"], [C.recordColumn, "c-record"], [C.formColumn, "c-form"],
+    [C.nameColumn, "c-name"], [C.eloColumn, "c-elo"], [C.matchesColumn, "c-matches"], [mode === "quadrants" ? C.placeRecordColumn : C.recordColumn, "c-record"], [C.formColumn, "c-form"],
   ] as const;
   for (const [text, cls] of columns) {
     const cell = h(doc, "th", cls, text);
@@ -292,6 +312,7 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
   narrowHead.setAttribute("aria-hidden", "true");
   narrowHead.append(h(doc, "span", "d1p-kicker c-rank", "#"), h(doc, "span", "d1p-kicker", C.nameColumn), h(doc, "span", "d1p-kicker c-elo", C.eloColumn));
   const list = h(doc, "ul", "d1p-rows d1p-lb-rows");
+  if (mode === "quadrants") narrow.classList.add("d1p-ffa-narrow");
   list.setAttribute("aria-labelledby", titleId);
   narrow.append(narrowHead, list);
   const stat = (label: string, ...value: (Node | string)[]) => {
@@ -310,7 +331,9 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
     elo.append(...eloNodes(doc, entry, mode));
     const form = h(doc, "td", "c-form");
     form.append(...formNodes(doc, entry, search, `${titleId}|wide`));
-    row.append(place, name, elo, h(doc, "td", "c-matches", String(entry.ratedMatches)), h(doc, "td", "c-record", record), form);
+    const recordCell = h(doc, "td", "c-record", record);
+    if (entry.placeRecord) recordCell.append(placeStrip(doc, entry.placeRecord.places));
+    row.append(place, name, elo, h(doc, "td", "c-matches", String(entry.ratedMatches)), recordCell, form);
     body.append(row);
 
     const item = h(doc, "li");
@@ -323,6 +346,7 @@ function rankingTable(doc: Document, table: RankingView, titleId: string, search
     const stats = h(doc, "p", "d1p-line d1p-lb-stats");
     stats.append(stat(C.matchesColumn, String(entry.ratedMatches)));
     // Without a reconciled record, Record and Last 5 show nothing, as the table's cells do.
+    if (entry.placeRecord) stats.append(stat(C.recordColumn, placeStrip(doc, entry.placeRecord.places)));
     if (record !== "") stats.append(stat(C.recordColumn, record));
     const marks = formNodes(doc, entry, search, `${titleId}|narrow`);
     if (marks.length > 0) {
