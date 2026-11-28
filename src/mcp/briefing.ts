@@ -6,7 +6,6 @@ import { hasDistinctMapLayouts, mapLayoutDescription, quadrantLayoutDescription 
 import { colonyCountOf, undrawnBoardSizes, undrawnColonyCaps, undrawnMatchTicks, type BoardSize } from "../sim/mapBoard.js";
 import { agentLimitText, DEFAULT_MCP_CONFIG, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, houseIdleSecondsOf, type McpConfig } from "./config.js";
 import { CELL_ENCODING, FLYER_CELL_ENCODING, FOUR_COLONY_CELL_ENCODING, FOUR_COLONY_FLYER_CELL_ENCODING } from "../sim/view.js";
-import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
 import { USERNAME_RETENTION_TEXT } from "../identity/retention.js";
 import { gridScaleOf } from "../sim/gridScale.js";
@@ -125,7 +124,9 @@ function flyerPatrolText(config: SimConfig): string {
 
 export const MY_MARKS_TEXT = "myMarks: every live mark you laid, in or out of smell range, with its tile tileX/tileY; a LINE mark adds its second end toTileX/toTileY.";
 
-export const COMPACT_VIEW_TEXT = "Decode via observe tool. map:true territory: base64-bitset-lsb0; marks/myMarks: columnar-v1.";
+export const TERRITORY_TEXT = "map:true territory.data=own base64-bitset-lsb0 (i=y*width+x). enemies[n]=sighted tiles of colony n (ant/queen number): base64, inflate zlib, sum uint16LE deltas from 0.";
+
+export const COMPACT_VIEW_TEXT = "Decode via observe tool. map:true territory: base64-bitset-lsb0; enemies[n]=sighted tiles of colony n (ant/queen number); marks/myMarks: columnar-v1.";
 
 /** Rules 27: no colony brood vote, so squad_replaced is the one seat-private notice. */
 export const SEAT_NOTICE_TEXT = "Seat-private priority event: squad_replaced (tick) means no ant from your last nonempty squad remains and other ants now fill it; initial assignment and partial changes do not count. It survives reconnects and match end in since:0 history, and reaches you outside squad sight, like own-queen events.";
@@ -208,9 +209,11 @@ function fourColonyJoinWinText(config: SimConfig): string {
 /** A quadrant board lays its own food: the seeded two-colony patches never apply (src/sim/quadrantMap.ts). */
 const FOUR_COLONY_FOOD_TEXT = "Food: every quadrant holds the same food patches, mirrored left to right and top to bottom, and the match seed places more food in the contested centre.";
 
-/** What a four-colony seat sees of the other colonies: its own territory only; enemies in sight by colony. */
+const ENEMY_TERRITORY_TEXT = "map:true shows enemy-held tiles in colony sight, keyed by the colony number used on ants and queens.";
+
+/** Four-colony matches show local enemy ownership but not global enemy shares. */
 function fourColonySightText(config: SimConfig): string {
-  return `Territory: you see your own colony's only; no enemy territory tiles, totals or share are shown. Enemy ants and queens in sight carry their colony number (cells${usesCompactAgentText(config) ? ", view.enemyQueens colony" : ""}).`;
+  return `Territory: ${ENEMY_TERRITORY_TEXT} No enemy territory totals or share are shown. Enemy ants and queens in sight carry their colony number (cells${usesCompactAgentText(config) ? ", view.enemyQueens colony" : ""}).`;
 }
 
 /** undrawn: the seed has not yet drawn the map, so config is the rotation's, not the match's.
@@ -305,7 +308,7 @@ export function observeDetailText(config: SimConfig, mcpConfig: McpConfig = DEFA
   // A four-colony observe status has no enemy share; its replies add opponents and the seat's own elimination.
   const status = fourColonies(config)
     ? `observe status: [${FOUR_COLONY_IDLE_COUNTDOWN_TEXT}, space-separated resetting tools]. Shares: whole-map permille (1000=map). territoryTiles counts original-size tile areas, not fine tiles. ${fourColonySightText(config)} ${FOUR_COLONY_REPLY_TEXT} ${FOUR_COLONY_POST_MATCH_TEXT}`
-    : `observe status: [${context.house ? "idleSecondsLeft: seconds to abandonment, null unseated or match ended" : IDLE_COUNTDOWN_TEXT}, space-separated resetting tools${config.rules === "redesign" ? ", enemy share" : ""}]. Shares: whole-map permille (1000=map). territoryTiles counts original-size tile areas, not fine tiles.${config.rules === "redesign" ? " Enemy share: your tick/sight; enemy map fogged." : " Enemy share/map hidden."} ${POST_MATCH_OBSERVE_TEXT}`;
+    : `observe status: [${context.house ? "idleSecondsLeft: seconds to abandonment, null unseated or match ended" : IDLE_COUNTDOWN_TEXT}, space-separated resetting tools${config.rules === "redesign" ? ", enemy share" : ""}]. Shares: whole-map permille (1000=map). territoryTiles counts original-size tile areas, not fine tiles.${config.rules === "redesign" ? " Enemy share: your tick/sight." : " Enemy share hidden."} ${POST_MATCH_OBSERVE_TEXT}`;
   return `${status} houseIdleSeconds is the live server limit.${withIdleRule ? ` ${idleRuleText(config, mcpConfig)}` : ""}${config.countMarks?.combatTotals ? " Unspent colony food: view.queenFounding.foodStore. Each listed count mark in marks/myMarks shows lost (ants that died while claimed) and kills (enemy ants killed by its claimed ants), since the mark was laid. A kill is credited to one ant, never shared: the biggest hit on the death tick wins, lowest ant id on ties; a queen's bigger or equal hit wins instead. Only that ant's current mark gets the kill, even if the ant also dies. Released ants no longer add to that mark. Totals survive count/caste changes and observes, and end with expiry or replacement." : ""}${config.patrolLinkTiles === undefined ? "" : " Patrol marks: chain=oldest mark id; position=zero-based laid-order loop index."}`;
 }
 

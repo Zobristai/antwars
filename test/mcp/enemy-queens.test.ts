@@ -108,7 +108,7 @@ describe("observe enemyQueens restates the reply's own cells", () => {
     expect(tools.tools.find(t => t.name === "observe")!.description).toContain(ENEMY_QUEENS_TEXT);
     expect(briefing(config)).toContain("enemyQueens: in-sight only (tile, hp).");
     // The same rules reply still states that enemies outside sight are fogged.
-    expect(briefing(config)).toContain("enemy map fogged.");
+    expect(briefing(config)).toContain("enemies[n]=sighted tiles of colony n");
     expect(briefing(config)).toContain(colonyVisibilityText(config));
     const older = playable(rulesConfig("v4"));
     expect(usesCompactAgentText(older)).toBe(false);

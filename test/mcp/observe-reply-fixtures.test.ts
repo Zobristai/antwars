@@ -15,7 +15,7 @@ const view: AgentView = {
   tick: 12, agentId: "seat-1", colony: 0, idle: false, ticksLeft: 600, secondsLeft: 60,
   squad: [], order: { kind: "hold" }, orderStatus: "holding", nextCommandTick: 20,
   cells: [{ tileX: 2, tileY: 3, food: 4, ants: [] }], marks: [], myMarks: [],
-  territoryRows: [], territoryTiles: 0, territorySharePermille: 0, events: [], result: null,
+  territoryRows: [], sightedEnemyTiles: {}, territoryTiles: 0, territorySharePermille: 0, events: [], result: null,
 };
 const history: ObserveEvent[] = [
   { type: "fight", tick: 10, antId: 1, targetId: 2, colony: 0, tileX: 2, tileY: 3 },
