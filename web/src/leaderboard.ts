@@ -16,6 +16,11 @@ export interface LeaderboardRow {
   readonly tally?: LeaderboardTally | null;
   /** Up to five newest rated results, newest first; empty when there is no tally. */
   readonly form?: readonly FormLetter[];
+  readonly placeRecord?: PlaceRecord;
+}
+export interface PlaceRecord {
+  readonly places: readonly number[];
+  readonly form: readonly { readonly place: 1 | 2 | 3 | 4; readonly replayId: string | null }[];
 }
 export interface LeaderboardTally { readonly wins: number; readonly losses: number; readonly draws: number }
 export interface FormLetter {
@@ -35,6 +40,7 @@ const modelText = (value: unknown): value is string | null => value === null || 
 const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 /** A server replay id (UTC start stamp and sequence, at most 41 characters); anything else is never linked. */
 const REPLAY_ID = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[1-9]\d*$/;
+const validReplay = (id: unknown): id is string => typeof id === "string" && id.length <= 41 && REPLAY_ID.test(id);
 const RESULTS: readonly unknown[] = ["W", "L", "D"];
 
 /** All three counts adding up to ratedMatches, or all three null/absent (no tally); undefined means invalid. */
@@ -51,14 +57,28 @@ function readForm(value: unknown, tally: LeaderboardTally | null): FormLetter[] 
   for (const entry of form) {
     if (!record(entry) || !RESULTS.includes(entry.result)) return undefined;
     const replayId = entry.replayId ?? null;
-    if (replayId !== null && (typeof replayId !== "string" || replayId.length > 41 || !REPLAY_ID.test(replayId))) return undefined;
+    if (replayId !== null && !validReplay(replayId)) return undefined;
     letters.push({ result: entry.result as FormLetter["result"], replayId });
   }
   return letters;
 }
 
+function readPlaceRecord(places: unknown, form: unknown, matches: number): PlaceRecord | null {
+  if (!Array.isArray(places) || places.length !== 4 || !places.every(count) || places.reduce((n, v) => n + v, 0) !== matches ||
+      !Array.isArray(form) || form.length !== Math.min(5, matches)) return null;
+  const recent: { place: 1 | 2 | 3 | 4; replayId: string | null }[] = [];
+  for (const entry of form) {
+    if (!record(entry)) return null;
+    const { place, replayId } = entry;
+    if ((place !== 1 && place !== 2 && place !== 3 && place !== 4) || (replayId !== null && !validReplay(replayId))) return null;
+    recent.push({ place, replayId });
+  }
+  if (places.some((n, i) => n < recent.filter(v => v.place === i + 1).length)) return null;
+  return { places, form: recent };
+}
+
 /** Keep internal ids and any unexpected provider fields out of the displayed projection. */
-export function readLeaderboard(value: unknown): LeaderboardPage | null {
+export function readLeaderboard(value: unknown, mode?: LeaderboardMode): LeaderboardPage | null {
   if (!record(value) || !Array.isArray(value.entries) || value.entries.length > 100 ||
     (value.next !== undefined && (typeof value.next !== "string" || value.next.length === 0 || value.next.length > 1000))) return null;
   const entries: LeaderboardRow[] = [];
@@ -74,9 +94,12 @@ export function readLeaderboard(value: unknown): LeaderboardPage | null {
     if (rd !== null && (typeof rd !== "number" || !Number.isFinite(rd) || rd <= 0)) return null;
     if (!shortText(thinkingLevel) || !shortText(serviceTier) || typeof benchmark !== "boolean" || !modelText(model)) return null;
     const tally = readTally(row, row.ratedMatches);
-    const form = tally === undefined ? undefined : readForm(row.form, tally);
+    const hasPlaces = mode === "quadrants" && row.places != null;
+    const placeRecord = hasPlaces ? readPlaceRecord(row.places, row.form, row.ratedMatches) : null;
+    if (mode === "quadrants" && (tally !== null || (hasPlaces && !placeRecord))) return null;
+    const form = placeRecord ? [] : tally === undefined ? undefined : readForm(row.form, tally);
     if (tally === undefined || form === undefined) return null;
-    entries.push({ displayName: row.displayName, rating: row.rating, rd, ratedMatches: row.ratedMatches, thinkingLevel, serviceTier, benchmark, ...(model === null ? {} : { model }), tally, form });
+    entries.push({ displayName: row.displayName, rating: row.rating, rd, ratedMatches: row.ratedMatches, thinkingLevel, serviceTier, benchmark, ...(model === null ? {} : { model }), tally, form, ...(placeRecord ? { placeRecord } : {}) });
   }
   return { entries, ...(value.next === undefined ? {} : { next: value.next as string }) };
 }
@@ -101,7 +124,7 @@ export async function loadLeaderboard(cursor?: string, signal?: AbortSignal, req
   });
   if (response.status === 410 && cursor !== undefined && query?.mode === "quadrants") throw new StandingsExpired();
   if (!response.ok) throw new Error("Leaderboard unavailable. Try refreshing the list.");
-  const page = readLeaderboard(await response.json());
+  const page = readLeaderboard(await response.json(), query?.mode);
   if (!page) throw new Error("Leaderboard unavailable. Try refreshing the list.");
   return page;
 }

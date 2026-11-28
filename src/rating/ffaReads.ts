@@ -5,6 +5,8 @@ import { houseLabel } from "./houseLabels.js";
 import { readMany, type Fields, type QueryOptions, type Store } from "../store/firestore.js";
 import { FFA_COLLECTION, FFA_ESTIMATOR, FFA_INITIAL } from "./ffa.js";
 
+import { readPlaces, type PlaceRecord } from "./ffaRecord.js";
+
 /** The conservative OpenSkill score (not Glicko rating or RD). */
 export function ffaRating(fields: Fields | null) {
   const mu = fields ? Number(fields.mu) : FFA_INITIAL.mu;
@@ -25,7 +27,7 @@ const TTL_MS = 60_000;
 
 /** No stored sort key. Materialize both scopes from one consistent ratings scan, never from a caller's cursor time. */
 export function createFfaPage(store: Store, visibility?: BatchPublicVisibility) {
-  async function batch(rows: readonly (Position & ReturnType<typeof ffaRating>)[]) {
+  async function batch(rows: readonly (Position & ReturnType<typeof ffaRating> & { record: PlaceRecord | null })[]) {
     const ids = rows.map(row => row.identityId);
     const visible = visibility && await visibility.identitiesVisibleEach(ids);
     const publicRows = rows.filter(row => !visible || visible.get(row.identityId));
@@ -41,7 +43,7 @@ export function createFfaPage(store: Store, visibility?: BatchPublicVisibility) 
     }
     const owners = await readMany(store, [...missingOwners]);
     const houseId = docs.get(claim)?.identityId, now = Date.now();
-    return publicRows.map(row => {
+    return publicRows.map(({ record, ...row }) => {
       const fields = docs.get(pathOf(row.identityId)), ownerId = fields?.ownerId ?? row.identityId;
       const owner = docs.get(pathOf(ownerId)) ?? owners.get(pathOf(ownerId));
       const state = owner ? nameState(owner, now) : "purged";
@@ -49,7 +51,7 @@ export function createFfaPage(store: Store, visibility?: BatchPublicVisibility) 
         ? identityDisplay(row.identityId, fields, ownerId, { ...owner, nameState: state }) : placeholder(row.identityId);
       const benchmark = !!fields && ownerId === houseId;
       const label = benchmark ? houseLabel(displayName) : { thinkingLevel: null, serviceTier: null };
-      return { ...row, benchmark, displayName, ...label, rd: null, wins: null, losses: null, draws: null, form: [] };
+      return { ...row, benchmark, displayName, ...label, rd: null, wins: null, losses: null, draws: null, places: record?.places ?? null, form: record?.form ?? [] };
     });
   }
   async function build() {
@@ -58,7 +60,10 @@ export function createFfaPage(store: Store, visibility?: BatchPublicVisibility) 
     for (;;) {
       const page = await store.query(FFA_COLLECTION, { orderBy: "mu", direction: "ASCENDING", limit: 100, startAfter, readTime });
       readTime ??= page.readTime;
-      const rows = page.rows.map(({ path, fields }) => ({ identityId: path.slice(FFA_COLLECTION.length + 1), ...ffaRating(fields) }));
+      const rows = page.rows.map(({ path, fields }) => {
+        const rating = ffaRating(fields);
+        return { identityId: path.slice(FFA_COLLECTION.length + 1), ...rating, record: readPlaces(fields, rating.ratedMatches) };
+      });
       entries.push(...await batch(rows.filter(row => row.ratedMatches > 0)));
       if (page.rows.length < 100) break;
       const last = page.rows.at(-1)!;

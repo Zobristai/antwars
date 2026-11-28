@@ -1,10 +1,11 @@
+import type { Place, PlaceRecord } from "./ffaRecord.js";
 import { FFA_COLLECTION } from "./ffa.js";
 import { createFfaPage, ffaRating } from "./ffaReads.js";
 import { joinReads } from "../store/join-reads.js";
-import type { BatchPublicVisibility } from "../identity/publicVisibility.js";
+import { publiclyVisible, type BatchPublicVisibility } from "../identity/publicVisibility.js";
 import type { TestRecordings } from "../replays/test-recordings.js";
 /// <reference types="node" />
-import { FirestoreError, type Fields, type QueryResult, type Store, type TransactionRead, type TransactionStep, type Write } from "../store/firestore.js";
+import { FirestoreError, readMany, type Fields, type QueryResult, type Store, type TransactionRead, type TransactionStep, type Write } from "../store/firestore.js";
 import { createIdentities, type Identities } from "../identity/identities.js";
 import { placeholder } from "../identity/retention.js";
 import { HOUSE_USERNAME, houseOwnedAmong } from "../identity/houseOwnership.js";
@@ -190,7 +191,10 @@ export type LeaderboardOutcome<Row = LeaderboardEntry> =
 interface BoardOptions {
   readonly scope?: LeaderboardScope; readonly limit?: number; readonly cursor?: string; readonly signal?: AbortSignal;
 }
-type FfaEntry = Omit<LeaderboardEntry, "rd"> & ReturnType<typeof ffaRating> & { readonly rd: null };
+type FfaEntry = Omit<LeaderboardEntry, "rd" | "form"> & {
+  readonly places: PlaceRecord["places"] | null;
+  readonly form: readonly { readonly place: Place; readonly replayId: string | null }[];
+} & ReturnType<typeof ffaRating> & { readonly rd: null };
 
 export interface Ratings {
   /** The rating, RD and rated-match count in one mode, 1v1 when omitted; 1500, 350 and 0 before the identity's first rated result there. */
@@ -689,6 +693,35 @@ export function createRatings(
     for (const [id, replayId] of replayIds) if (tests?.has(replayId)) replayIds.delete(id);
     return { replayIds, times };
   }
+  /** Place chips keep their finish even when the recording cannot be offered. Resolve the immutable
+   * ranking snapshot's links separately on every read, with the public recording policy, not the lobby's. */
+  async function ffaReplayLinks(matchIds: readonly string[], signal?: AbortSignal): Promise<Map<string, string>> {
+    const matches = [...new Set(matchIds)];
+    const docs = await readMany(store, matches.map(id => `watchMatches/${id}`), signal);
+    const links = new Map<string, string>();
+    for (const matchId of matches) {
+      const replay = docs.get(`watchMatches/${matchId}`)?.replayId;
+      if (replay && isReplayId(replay)) links.set(matchId, replay);
+    }
+    if (!links.size) return links;
+    const ids = [...new Set(links.values())];
+    const tests = await testRecordings?.marked(ids, signal, true);
+    const candidates = ids.filter(id => !tests?.has(id));
+    let allowed: ReadonlySet<string> = new Set(candidates);
+    if (publicVisibility && candidates.length) {
+      try {
+        allowed = publicVisibility.replaysVisibleEach
+          ? await publicVisibility.replaysVisibleEach(candidates, signal ?? new AbortController().signal)
+          : new Set(await publiclyVisible(candidates, id => publicVisibility.replayVisible(id, signal), signal));
+      } catch {
+        signal?.throwIfAborted();
+        // No proof of visibility: return the places, never the unchecked links.
+        return new Map();
+      }
+    }
+    for (const [match, replay] of links) if (!allowed.has(replay)) links.delete(match);
+    return links;
+  }
   return {
     get houseBackfill() { return houseMarked.then(() => undefined); },
     async readRating(identityId, mode = "1v1") {
@@ -738,7 +771,9 @@ export function createRatings(
       }
       const page = await ffaPage({ limit, house: scope === "house", cursor: after, signal: options.signal });
       if (!page.ok) return page;
-      const entries = page.rows;
+      // Resolve only the returned page, against current visibility even when its ranking is cached.
+      const replayIds = await ffaReplayLinks(page.rows.flatMap(row => row.form.map(v => v.matchId)), options.signal);
+      const entries = page.rows.map(row => ({ ...row, form: row.form.map(({ place, matchId }) => ({ place, replayId: replayIds.get(matchId) ?? null })) }));
       const last = entries.at(-1);
       const next = page.more && last ? encodeCursor({ readTime: page.readTime, ratingKey: encodeRating(last.rating), identityId: last.identityId, mode, scope }) : undefined;
       return { ok: true, value: { entries, ...(next ? { next } : {}) } };

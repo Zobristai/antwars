@@ -9,9 +9,8 @@ import { countMarkVerbs, lineMarksEnabled } from "../sim/patrol.js";
 import { BROODS, COUNT_CASTES, COUNT_VERBS, WORDS, type Brood, type ColonyId, type MatchResult, type Order, type SimInput } from "../sim/types.js";
 import { VISIBLE_EVENT_KINDS, type AgentView } from "../sim/view.js";
 import { EMPTY_SQUAD_COUNT_MARK, FOUNDING_CHECKS, LINE_FROM_END_NOT_VISIBLE, LINE_TO_END_NOT_VISIBLE, type FoundingCheck } from "../sim/agents.js";
-import { briefing, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, foodRadixText, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText, relayLifetimeText, broodChoices, countCasteChoices } from "./briefing.js";
+import { briefing, TERRITORY_TEXT, countMarkJobText, WORD_MARK_ACTIONS, countMarkReplyText, foodRadixText, CELL_PAGING_TEXT, IDLE_COUNTDOWN_TEXT, joinBriefing, observeDetailText, POST_MATCH_OBSERVE_TEXT, SEAT_NOTICE_TEXT, colonyVisibilityText, usesCompactAgentText, ENEMY_QUEENS_TEXT, MY_MARKS_TEXT, spawnRemoveText, queenBroodText, queenSpawnOwnerText, NEW_QUEEN_BROOD_TEXT, markReachText, relayLifetimeText, broodChoices, countCasteChoices } from "./briefing.js";
 import { OBSERVE_REPLY_LIMITS, fitsReply, payload, pagedView, publicCountCaste, publicQueen, servedText, storedCall, type EventFilter, type ServedText } from "./replies.js";
-import { TERRITORY_TEXT } from "./territory.js";
 import { MARK_TABLE_TEXT } from "./markTable.js";
 import { agentLimitText, agentsPerColony, MAX_OBSERVE_WAIT_SECONDS, sessionExpiryText, type McpConfig } from "./config.js";
 import { nestFields, registerNestTool } from "./nestTools.js";
@@ -1021,7 +1020,7 @@ export function registerTools(server: McpServer, game: Game, session: SessionSta
         eventFilter: orNull(eventFilterSchema.optional()),
         cellsCursor: orNull(z.string().min(1).max(128).optional().describe("Omit to capture current colony sight, squad cells first. While view.cellsMore, pass view.cellsCursor to fetch the next frozen cellsTick page. A fresh observe replaces this cell snapshot; event since is independent.")),
         since: orNull(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional().describe("Omit for current-event sampling with own-queen/own-mark priority. Set 0 to replay every seat event from join, then continue with view.eventCursor while eventsMore. Explicit replay alone advances that cursor; it may repeat sampled events. History survives commands, refusals and reconnects for this match.")),
-        map: orNull(z.boolean().optional().describe("true to include territory, your colony's lossless base64-bitset-lsb0 ownership map; leave it out unless you need the map.")),
+        map: orNull(z.boolean().optional().describe("true to include territory: your own map and enemy-held tiles in colony sight, by colony number; leave it out unless you need the map.")),
         waitSeconds: orNull(
           z
             .number()

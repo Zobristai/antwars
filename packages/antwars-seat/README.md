@@ -361,7 +361,8 @@ shell commands apart and sends the command.
 
 `observe` and `board` are read-only and make exactly one `observe` call each,
 sent with `map:true` because the server includes the territory map only then
-(about 2 KB more per reply on a 128x96 board, no extra call). They print the
+(about 2 KB for your own tiles on a 128x96 board, plus the sighted enemy
+holdings; no extra call). They print the
 reply decoded, with nothing cut:
 
 - one JSON line of the other view fields (tick, colony, order, events, …);
@@ -375,7 +376,13 @@ reply decoded, with nothing cut:
   worker, `s` soldier, `f` flyer, `a` no caste; lowercase own, UPPERCASE enemy;
   hp in HP). A flyer, own or enemy, adds its state: `(grounded)`, `(flying)` or
   `(hovering)`. Example: `y48: 10-14f3 16Qown30:7w4,8S2.5,9F2(hovering)`;
-- `territory own`: the seat's own tiles as x ranges per row (`y48: 0-25 30`).
+- `territory own`: the seat's own tiles as x ranges per row (`y48: 0-25 30`);
+- `territory enemy colony <n>`: tiles that enemy holds within your colony’s current
+  sight, using the same row ranges and colony numbers as ants and queens. A colony
+  not listed has no visible holdings. Outside sight, enemy ownership is unknown.
+  In the raw reply, base64-decode `territory.enemies[n]` and inflate with zlib.
+  Read unsigned little-endian 16-bit deltas; their running sum, starting at
+  zero, gives each held tile’s `y * width + x` index.
 
 When the reply pages its cells, the `cells` line says `MORE CELLS FOLLOW` and
 names the `observe --cellsCursor C` that reads the next page; it never makes
@@ -384,10 +391,12 @@ that second call itself. `observe --raw` prints the server reply unchanged (with
 view prints the same readable form. The background observer calls `observe`
 without `map`.
 
-Printed size, measured by `test/board.test.mjs` on a 128x96 board: about 5.5 KB
-typically (raw reply 6.1 KB), 15 KB late in a match with about 950 ants in sight
-(raw 14.5 KB), and at most about 66 KB for a full server cell page of damaged
-ants (raw 49 KB), 85 KB if territory is also a 2x2 checkerboard.
+On the 128x96 test board, with a 60-tile patch of visible enemy ground, the
+readable reply is about 5.6 KB (6.2 KB raw), or 15.3 KB (14.5 KB raw) with
+950 ants in sight. In the two-colony stress fixture, each colony holds half
+of a 2x2 checkerboard, all visible: a full page of damaged ants and both
+territory sections prints about 105 KB (49 KB raw). These are measured
+examples from `test/board.test.mjs`, not limits on the readable output.
 
 ## Leaving the queue
 

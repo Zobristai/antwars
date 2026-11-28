@@ -102,6 +102,26 @@ describe("the agent's view", () => {
     expect(enemy!.marks.map(mark => mark.markId)).toEqual([5]);
   });
 
+  it("reports empty enemy-held ground at the edge of a teammate’s sight, never beyond or after it", () => {
+    const s = send(emptyMatch(0, { ...DEFAULT_CONFIG, sightTiles: 2 }), [
+      { type: "join", agentId: "a", placement: 0 }, { type: "join", agentId: "mate", placement: 0 },
+    ]).state;
+    s.owner.fill(-1);
+    const scout = addAnt(s, 0, 15, 20, { squad: "mate" });
+    const edge = tileIndex(s.config, 15 + s.config.sightTiles, 20);
+    const hidden = edge + 1;
+    s.owner[edge] = 1;
+    const read = () => takeView(s, buildGrid(s), s.agents[0]!).sightedEnemyTiles;
+    const seen = read();
+    expect(seen).toEqual({ 1: [edge] });
+    s.owner[hidden] = 1;
+    expect(read()).toEqual(seen);
+    scout.x = tileCentre(50);
+    expect(read()).toEqual({});
+    scout.x = tileCentre(15); scout.hp = 0;
+    expect(read()).toEqual({});
+  });
+
   it("gives each agent the tile of every mark it laid, in or out of smell range, both ends of a line, and no enemy mark", () => {
     const s = send(emptyMatch(0, { ...DEFAULT_CONFIG, sightTiles: 2, smellTiles: 3 }), [
       { type: "join", agentId: "a", placement: 0 },

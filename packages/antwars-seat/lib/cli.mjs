@@ -42,7 +42,7 @@ export const HELP = `antwars-seat — Antwars seat harness (state in ./.antwars-
   join-lobby <lobbyId> [--detach]           take a seat in that lobby (no queue), join; stops in the nest window like go
   observe [--raw] [--since N] [--wait S] [--cellsCursor C] [--map]
                                             read-only, one observe call (sent with map:true): the decoded map —
-                                            cells (food, queens with hp, ants by colony/caste/hp), own territory
+                                            cells (food, queens with hp, ants by colony/caste/hp), own territory and sighted enemy territory by colony
                                             rows, squad, queens, marks — nothing cut; says when more cells follow.
                                             --raw prints the server reply unchanged (map only with --map)
   board                                     read-only, exactly one observe call (map:true): the same decoded view
